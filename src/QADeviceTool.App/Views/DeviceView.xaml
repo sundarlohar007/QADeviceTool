@@ -1,0 +1,113 @@
+<UserControl x:Class="QADeviceTool.Views.DeviceView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:QADeviceTool.ViewModels">
+
+    <Grid Margin="24,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ═══════ LEFT: Device List ═══════ -->
+        <Border Grid.Column="0" Style="{StaticResource GlassCard}" Margin="0,0,8,0">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                    <TextBlock Text="Devices" Style="{StaticResource TextHeading2}" Margin="0,0,0,8" />
+                    <Button Style="{StaticResource SecondaryButton}" Content="Refresh"
+                            Command="{Binding RefreshDevicesCommand}"
+                            Padding="12,8" FontSize="12" HorizontalAlignment="Left" />
+                </StackPanel>
+
+                <TextBlock DockPanel.Dock="Top"
+                           Text="No devices detected. Connect via USB."
+                           Margin="0,8,0,0">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Devices.Count}" Value="0">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <ListBox ItemsSource="{Binding Devices}"
+                         SelectedItem="{Binding SelectedDevice}"
+                         Style="{StaticResource DarkListBox}"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource DarkListBoxItem}" />
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding PlatformIcon}" FontSize="22" 
+                                           VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding DisplayName}" 
+                                               Foreground="{StaticResource BrushTextPrimary}"
+                                               FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Serial}" Style="{StaticResource TextCaption}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- ═══════ RIGHT: Device Details & Actions ═══════ -->
+        <StackPanel Grid.Column="1" Margin="8,0,0,0">
+
+            <!-- Device Info Card -->
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel>
+                    <TextBlock Text="Device Details" Style="{StaticResource TextHeading2}" Margin="0,0,0,12" />
+                    <TextBlock Text="{Binding DeviceDetails}"
+                               Style="{StaticResource TextMono}"
+                               LineHeight="24"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- Actions Card -->
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel>
+                    <TextBlock Text="Actions" Style="{StaticResource TextHeading2}" Margin="0,0,0,16" />
+
+                    <WrapPanel>
+                        <Button Style="{StaticResource LargeActionButton}" Content="Mirror Screen"
+                                Command="{Binding StartMirrorCommand}" Margin="0,0,12,12" />
+                        <Button Style="{StaticResource SecondaryButton}" Content="Stop Mirror"
+                                Command="{Binding StopMirrorCommand}"
+                                Padding="24,16" FontSize="16" MinHeight="50"
+                                Margin="0,0,12,12" />
+                        <Button Style="{StaticResource LargeActionButton}" Content="Take Snapshot"
+                                Command="{Binding TakeSnapshotCommand}" Margin="0,0,12,12" />
+                    </WrapPanel>
+
+                    <!-- Status message -->
+                    <TextBlock Text="{Binding StatusMessage}"
+                               Style="{StaticResource TextBody}"
+                               Foreground="{StaticResource BrushAccent}"
+                               Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- iOS Note -->
+            <Border Style="{StaticResource GlassCard}" 
+                    Background="#10D29922" BorderBrush="{StaticResource BrushWarning}">
+                <StackPanel>
+                    <TextBlock Text="iOS Screen Mirroring" 
+                               Foreground="{StaticResource BrushWarning}"
+                               FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <TextBlock Text="Screen mirroring for iOS devices is not supported on Windows. Use AirPlay or a Mac-based tool for iOS mirroring."
+                               Style="{StaticResource TextBody}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Grid>
+</UserControl>

@@ -1,0 +1,177 @@
+﻿<Window x:Class="QADeviceTool.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:QADeviceTool"
+        xmlns:vm="clr-namespace:QADeviceTool.ViewModels"
+        xmlns:views="clr-namespace:QADeviceTool.Views"
+        Title="QA/QC Device Tool" 
+        Width="1280" Height="800"
+        MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BrushBackgroundDarkest}"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        ResizeMode="CanResizeWithGrip">
+
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
+    <Window.Resources>
+        <!-- View-ViewModel mappings -->
+        <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
+            <views:DashboardView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SessionViewModel}">
+            <views:SessionView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DeviceViewModel}">
+            <views:DeviceView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+            <views:SettingsView />
+        </DataTemplate>
+    </Window.Resources>
+
+    <Border CornerRadius="12" 
+            Background="{StaticResource BrushBackgroundDarkest}"
+            BorderBrush="{StaticResource BrushBorder}"
+            BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="44" />    <!-- Title bar -->
+                <RowDefinition Height="*" />      <!-- Content -->
+                <RowDefinition Height="32" />     <!-- Status bar -->
+            </Grid.RowDefinitions>
+
+            <!-- ═══════════════════ CUSTOM TITLE BAR ═══════════════════ -->
+            <Border Grid.Row="0" CornerRadius="12,12,0,0"
+                    MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Border.Background>
+                    <SolidColorBrush Color="#161B22" Opacity="0.85" />
+                </Border.Background>
+                <Grid>
+                    <StackPanel Orientation="Horizontal" Margin="16,0" VerticalAlignment="Center">
+                        <TextBlock Text="QA/QC Device Tool" 
+                                   Style="{StaticResource TextBody}"
+                                   Foreground="{StaticResource BrushTextPrimary}"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text=" v1.0" 
+                                   Style="{StaticResource TextCaption}"
+                                   VerticalAlignment="Center" Margin="4,0,0,0" />
+                    </StackPanel>
+
+                    <!-- Window controls -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,8,0">
+                        <Button Content="—" Click="Minimize_Click" Width="36" Height="28"
+                                Background="Transparent" Foreground="{StaticResource BrushTextSecondary}"
+                                BorderThickness="0" Cursor="Hand" FontSize="14" />
+                        <Button Content="☐" Click="Maximize_Click" Width="36" Height="28"
+                                Background="Transparent" Foreground="{StaticResource BrushTextSecondary}"
+                                BorderThickness="0" Cursor="Hand" FontSize="14" />
+                        <Button x:Name="CloseBtn" Content="✕" Click="Close_Click" Width="36" Height="28"
+                                Background="Transparent" Foreground="{StaticResource BrushTextSecondary}"
+                                BorderThickness="0" Cursor="Hand" FontSize="14" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ═══════════════════ MAIN CONTENT ═══════════════════ -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220" />  <!-- Sidebar -->
+                    <ColumnDefinition Width="*" />     <!-- Content -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Sidebar -->
+                <Border Grid.Column="0" 
+                        Background="{StaticResource BrushBackgroundDark}"
+                        BorderBrush="{StaticResource BrushBorderMuted}"
+                        BorderThickness="0,0,1,0">
+                    <DockPanel>
+                        <!-- Navigation -->
+                        <StackPanel DockPanel.Dock="Top" Margin="8,16">
+                            <TextBlock Text="NAVIGATION" 
+                                       Style="{StaticResource TextCaption}"
+                                       Margin="16,0,0,8" FontWeight="SemiBold" FontSize="11" />
+
+                            <RadioButton Style="{StaticResource NavButton}" 
+                                         Tag="" Content="Dashboard"
+                                         IsChecked="True"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Dashboard" />
+
+                            <RadioButton Style="{StaticResource NavButton}" 
+                                         Tag="" Content="Sessions"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Sessions" />
+
+                            <RadioButton Style="{StaticResource NavButton}" 
+                                         Tag="" Content="Devices"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Devices" />
+
+                            <RadioButton Style="{StaticResource NavButton}" 
+                                         Tag="" Content="Settings"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Settings" />
+                        </StackPanel>
+
+                        <!-- Device count indicator -->
+                        <Border DockPanel.Dock="Bottom" Margin="8,0,8,16"
+                                Style="{StaticResource GlassCard}" Padding="14">
+                            <StackPanel>
+                                <TextBlock Text="CONNECTED" Style="{StaticResource TextCaption}" FontSize="10" FontWeight="SemiBold" />
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <Ellipse Width="8" Height="8" Margin="0,0,8,0">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="{StaticResource BrushDanger}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ConnectedDeviceCount, Converter={x:Static local:IntToBoolConverter.Instance}}" Value="True">
+                                                        <Setter Property="Fill" Value="{StaticResource BrushSuccess}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <TextBlock Style="{StaticResource TextBody}">
+                                        <TextBlock.Text>
+                                            <Binding Path="ConnectedDeviceCount" StringFormat="{}{0} device(s)" />
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </DockPanel>
+                </Border>
+
+                <!-- Content area -->
+                <Border Grid.Column="1" Margin="0">
+                    <ContentPresenter Content="{Binding CurrentView}" />
+                </Border>
+            </Grid>
+
+            <!-- ═══════════════════ STATUS BAR ═══════════════════ -->
+            <Border Grid.Row="2" Background="{StaticResource BrushBackgroundDark}"
+                    CornerRadius="0,0,12,12"
+                    BorderBrush="{StaticResource BrushBorderMuted}"
+                    BorderThickness="0,1,0,0">
+                <DockPanel Margin="16,0">
+                    <TextBlock DockPanel.Dock="Left"
+                               Text="{Binding StatusBarText}"
+                               Style="{StaticResource TextCaption}"
+                               VerticalAlignment="Center" />
+                    <TextBlock DockPanel.Dock="Right"
+                               Style="{StaticResource TextCaption}"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Right">
+                        <Run Text="Please reach out to Sundar Lohar if any bugs/issues encountered | " />
+                        <Run Text="QA/QC Device Tool v1.0.0" />
+                    </TextBlock>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
