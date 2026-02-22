@@ -41,9 +41,6 @@ This tool relies on the following open-source projects:
 ## Author
 
 **Sundar Lohar**  
-Email: sundar.lohar@ubisoft.com  
-GitHub: [sundarlohar007](https://github.com/sundarlohar007)
-
 ---
 
-*Powered by AntiGravity*
+*Powered by Google AntiGravity*
