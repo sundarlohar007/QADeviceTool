@@ -19,6 +19,11 @@
 
   <!-- Copy bundled tools (scrcpy, platform-tools, libimobiledevice) to output -->
   <ItemGroup>
-    <None Include="tools\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="tools" />
+    <Content Include="tools\**\*" Exclude="tools\libimobiledevice-1.4.0\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>tools\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
   </ItemGroup>
 </Project>
