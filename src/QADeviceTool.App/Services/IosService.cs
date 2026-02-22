@@ -14,6 +14,7 @@ public class IosService
     private readonly string _ideviceInfo;
     private readonly string _ideviceSyslog;
     private readonly string _ideviceScreenshot;
+    private readonly string _ideviceInstaller;
 
     public IosService()
     {
@@ -21,6 +22,7 @@ public class IosService
         _ideviceInfo = ToolResolver.Resolve("ideviceinfo");
         _ideviceSyslog = ToolResolver.Resolve("idevicesyslog");
         _ideviceScreenshot = ToolResolver.Resolve("idevicescreenshot");
+        _ideviceInstaller = ToolResolver.Resolve("ideviceinstaller");
     }
 
     public async Task<ToolStatus> CheckAvailabilityAsync()
@@ -110,5 +112,14 @@ public class IosService
     {
         var result = await ProcessRunner.RunAsync(_ideviceScreenshot, $"-u {udid} \"{outputPath}\"", 15000);
         return result.Success;
+    }
+
+    // ─── IPA Installation ────────────────────────────────────────
+    public async Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath)
+    {
+        var result = await ProcessRunner.RunAsync(_ideviceInstaller, $"-u {udid} -i \"{ipaPath}\"", 120000);
+        if (result.Success)
+            return (true, "IPA installed successfully.");
+        return (false, result.Output.Trim());
     }
 }

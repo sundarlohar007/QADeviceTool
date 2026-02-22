@@ -129,4 +129,48 @@ public class AdbService
 
         return pullResult.Success;
     }
+
+    // ─── APK Installation ────────────────────────────────────────
+    public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath)
+    {
+        var result = await ProcessRunner.RunAsync(_adb, $"-s {serial} install -r \"{apkPath}\"", 120000);
+        if (result.Success && result.Output.Contains("Success"))
+            return (true, "APK installed successfully.");
+        return (false, result.Output.Trim());
+    }
+
+    // ─── Wireless ADB ────────────────────────────────────────────
+    public async Task<(bool Success, string Message)> EnableWirelessAsync(string serial, int port = 5555)
+    {
+        var result = await ProcessRunner.RunAsync(_adb, $"-s {serial} tcpip {port}", 10000);
+        if (!result.Success)
+            return (false, $"Failed to enable TCP mode: {result.Output.Trim()}");
+
+        // Get device IP address
+        var ipResult = await ProcessRunner.RunAsync(_adb, $"-s {serial} shell ip -f inet addr show wlan0", 5000);
+        if (ipResult.Success)
+        {
+            var match = Regex.Match(ipResult.Output, @"inet (\d+\.\d+\.\d+\.\d+)");
+            if (match.Success)
+                return (true, match.Groups[1].Value);
+        }
+
+        return (true, "TCP mode enabled. Find the device IP in Settings > About Phone > Status.");
+    }
+
+    public async Task<(bool Success, string Message)> ConnectWirelessAsync(string ipAddress, int port = 5555)
+    {
+        var target = $"{ipAddress}:{port}";
+        var result = await ProcessRunner.RunAsync(_adb, $"connect {target}", 10000);
+        if (result.Success && result.Output.Contains("connected"))
+            return (true, $"Connected to {target}");
+        return (false, result.Output.Trim());
+    }
+
+    public async Task<(bool Success, string Message)> DisconnectWirelessAsync(string ipAddress, int port = 5555)
+    {
+        var target = $"{ipAddress}:{port}";
+        var result = await ProcessRunner.RunAsync(_adb, $"disconnect {target}", 5000);
+        return (result.Success, result.Output.Trim());
+    }
 }

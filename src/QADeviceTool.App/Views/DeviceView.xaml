@@ -87,6 +87,8 @@
                                 Margin="0,0,12,12" />
                         <Button Style="{StaticResource LargeActionButton}" Content="Take Snapshot"
                                 Command="{Binding TakeSnapshotCommand}" Margin="0,0,12,12" />
+                        <Button Style="{StaticResource LargeActionButton}" Content="Install App"
+                                Command="{Binding InstallAppCommand}" Margin="0,0,12,12" />
                     </WrapPanel>
 
                     <!-- Status message -->
@@ -94,6 +96,54 @@
                                Style="{StaticResource TextBody}"
                                Foreground="{StaticResource BrushAccent}"
                                Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- Wireless ADB -->
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel>
+                    <TextBlock Text="Wireless ADB (Android)" Style="{StaticResource TextHeading2}" Margin="0,0,0,12" />
+                    <TextBlock Text="Connect to Android devices over Wi-Fi. First connect via USB, click Enable, then unplug USB and click Connect."
+                               Style="{StaticResource TextBody}" TextWrapping="Wrap" Margin="0,0,0,12" />
+
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding WirelessIpAddress, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="{StaticResource BrushBackgroundDarkest}"
+                                 Foreground="{StaticResource BrushTextPrimary}"
+                                 BorderBrush="{StaticResource BrushBorder}"
+                                 Padding="10,8" FontSize="14" VerticalContentAlignment="Center" />
+                        <TextBlock Grid.Column="0" Text="Device IP Address"
+                                   Foreground="{StaticResource BrushTextMuted}" FontSize="12"
+                                   VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WirelessIpAddress}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+
+                    <WrapPanel>
+                        <Button Style="{StaticResource PrimaryButton}" Content="Enable Wireless"
+                                Command="{Binding EnableWirelessCommand}"
+                                Padding="14,8" FontSize="13" Margin="0,0,8,8" />
+                        <Button Style="{StaticResource PrimaryButton}" Content="Connect"
+                                Command="{Binding ConnectWirelessCommand}"
+                                Padding="14,8" FontSize="13" Margin="0,0,8,8" />
+                        <Button Style="{StaticResource SecondaryButton}" Content="Disconnect"
+                                Command="{Binding DisconnectWirelessCommand}"
+                                Padding="14,8" FontSize="13" Margin="0,0,8,8" />
+                    </WrapPanel>
                 </StackPanel>
             </Border>
 

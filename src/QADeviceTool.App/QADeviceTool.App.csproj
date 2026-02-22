@@ -7,7 +7,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>QADeviceTool</AssemblyName>
     <RootNamespace>QADeviceTool</RootNamespace>
-    <Version>1.1.0</Version>
+    <Version>2.0.0</Version>
     <Company>QA/QC Device Tool</Company>
     <Product>QA/QC Device Tool</Product>
     <Description>Windows QA utility for manual game testers - device log capture, screen mirroring, and session management.</Description>
@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
   </ItemGroup>
 
   <!-- Copy bundled tools (scrcpy, platform-tools, libimobiledevice) to output -->
