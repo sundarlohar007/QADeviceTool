@@ -31,6 +31,13 @@ A Windows desktop utility for QA/QC game testers. Captures device logs, manages 
 dotnet publish src/QADeviceTool.App/QADeviceTool.App.csproj -c Release --self-contained -r win-x64 -p:PublishSingleFile=true -o ./publish
 ```
 
+## Acknowledgments
+
+This tool relies on the following open-source projects:
+
+- **[scrcpy](https://github.com/Genymobile/scrcpy)** — Android screen mirroring and control. Developed by [Genymobile](https://github.com/Genymobile).
+- **[libimobiledevice](https://github.com/libimobiledevice/libimobiledevice)** — iOS device communication and log capture. Developed by the [libimobiledevice](https://github.com/libimobiledevice) team.
+
 ## Author
 
 **Sundar Lohar**  
