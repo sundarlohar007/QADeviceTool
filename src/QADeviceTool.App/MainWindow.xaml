@@ -8,14 +8,29 @@
         Width="1280" Height="800"
         MinWidth="960" MinHeight="600"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource BrushBackgroundDarkest}"
+        Background="{x:Null}"
         WindowStyle="None"
         AllowsTransparency="True"
-        ResizeMode="CanResizeWithGrip">
+        ResizeMode="CanResize">
+    
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="12" GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
 
     <Window.DataContext>
         <vm:MainViewModel />
     </Window.DataContext>
+
+    <Window.Style>
+        <Style TargetType="Window">
+            <Style.Triggers>
+                <!-- Fix for WindowChrome maximizing exceeding screen bounds -->
+                <Trigger Property="WindowState" Value="Maximized">
+                    <Setter Property="Padding" Value="7" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Style>
 
     <Window.Resources>
         <!-- View-ViewModel mappings -->

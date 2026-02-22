@@ -23,8 +23,9 @@ errors*.txt
 # NuGet
 packages/
 
-# Installer output
-installer/
+# Installer outputs
+installer/*.msi
+installer/*.wixpdb
 *.zip
 
 # Bundled third-party tools (ADB, scrcpy, etc.)

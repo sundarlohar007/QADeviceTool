@@ -16,7 +16,7 @@ echo.
 
 REM Step 2: Build MSI using WiX
 echo [2/3] Building MSI installer...
-wix build installer\Package.wxs -o installer\QAQCDeviceTool-v2.0.0-Setup.msi -arch x64 -ext WixToolset.UI.wixext
+wix build installer\Package.wxs -b publish=publish -b installer=installer -o installer\QAQCDeviceTool-v2.0.0-Setup.msi -arch x64 -ext WixToolset.UI.wixext
 if %ERRORLEVEL% NEQ 0 (
     echo ERROR: MSI build failed!
     exit /b 1

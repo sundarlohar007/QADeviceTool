@@ -77,34 +77,33 @@
         <Border Grid.Column="1" Style="{StaticResource GlassCard}" Margin="8,0,0,0">
             <DockPanel>
                 <!-- Header with actions -->
-                <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <TextBlock Text="Live Log" Style="{StaticResource TextHeading2}"
-                               HorizontalAlignment="Left" VerticalAlignment="Center" />
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <TextBlock Text="Live Log" Style="{StaticResource TextHeading2}" Margin="0,0,0,12" />
                     
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <WrapPanel Margin="0,0,0,0">
                         <Button Style="{StaticResource PrimaryButton}" Content="Start"
                                 Command="{Binding StartCaptureCommand}"
-                                Padding="14,8" FontSize="12" Margin="0,0,4,0" />
+                                Padding="14,8" FontSize="12" Margin="0,0,8,8" />
                         <Button Style="{StaticResource SecondaryButton}" Content="Stop"
                                 Command="{Binding StopCaptureCommand}"
-                                Padding="14,8" FontSize="12" Margin="0,0,4,0" />
+                                Padding="14,8" FontSize="12" Margin="0,0,8,8" />
                         <Button Style="{StaticResource SecondaryButton}" Content="Save"
                                 Command="{Binding SaveLogCommand}"
-                                Padding="14,8" FontSize="12" Margin="0,0,4,0" />
+                                Padding="14,8" FontSize="12" Margin="0,0,8,8" />
                         <Button Style="{StaticResource SecondaryButton}" Content="Snap"
                                 Command="{Binding TakeSnapshotCommand}"
-                                Padding="14,8" FontSize="12" Margin="0,0,4,0" />
+                                Padding="14,8" FontSize="12" Margin="0,0,8,8" />
                         <Button Style="{StaticResource SecondaryButton}" Content="Open"
                                 Command="{Binding OpenSessionFolderCommand}"
-                                Padding="12,8" FontSize="12" Margin="0,0,4,0" />
+                                Padding="12,8" FontSize="12" Margin="0,0,8,8" />
                         <Button Style="{StaticResource SecondaryButton}" Content="Clear"
                                 Command="{Binding ClearLogCommand}"
-                                Padding="12,8" FontSize="12" Margin="0,0,4,0" />
+                                Padding="12,8" FontSize="12" Margin="0,0,8,8" />
                         <Button Style="{StaticResource SecondaryButton}" Content="Delete"
                                 Command="{Binding DeleteSessionCommand}"
-                                Padding="12,8" FontSize="12" />
-                    </StackPanel>
-                </Grid>
+                                Padding="12,8" FontSize="12" Margin="0,0,0,8" />
+                    </WrapPanel>
+                </StackPanel>
 
                 <!-- Status message -->
                 <TextBlock DockPanel.Dock="Top" Text="{Binding StatusMessage}" 

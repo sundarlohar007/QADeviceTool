@@ -60,104 +60,108 @@
         </Border>
 
         <!-- ═══════ RIGHT: Device Details & Actions ═══════ -->
-        <StackPanel Grid.Column="1" Margin="8,0,0,0">
+        <ScrollViewer Grid.Column="1" Margin="8,0,0,0"
+                      VerticalScrollBarVisibility="Auto" 
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,8,0">
 
-            <!-- Device Info Card -->
-            <Border Style="{StaticResource GlassCard}">
-                <StackPanel>
-                    <TextBlock Text="Device Details" Style="{StaticResource TextHeading2}" Margin="0,0,0,12" />
-                    <TextBlock Text="{Binding DeviceDetails}"
-                               Style="{StaticResource TextMono}"
-                               LineHeight="24"
-                               TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
+                <!-- Device Info Card -->
+                <Border Style="{StaticResource GlassCard}">
+                    <StackPanel>
+                        <TextBlock Text="Device Details" Style="{StaticResource TextHeading2}" Margin="0,0,0,12" />
+                        <TextBlock Text="{Binding DeviceDetails}"
+                                   Style="{StaticResource TextMono}"
+                                   LineHeight="24"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
 
-            <!-- Actions Card -->
-            <Border Style="{StaticResource GlassCard}">
-                <StackPanel>
-                    <TextBlock Text="Actions" Style="{StaticResource TextHeading2}" Margin="0,0,0,16" />
+                <!-- Actions Card -->
+                <Border Style="{StaticResource GlassCard}">
+                    <StackPanel>
+                        <TextBlock Text="Actions" Style="{StaticResource TextHeading2}" Margin="0,0,0,16" />
 
-                    <WrapPanel>
-                        <Button Style="{StaticResource LargeActionButton}" Content="Mirror Screen"
-                                Command="{Binding StartMirrorCommand}" Margin="0,0,12,12" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Stop Mirror"
-                                Command="{Binding StopMirrorCommand}"
-                                Padding="24,16" FontSize="16" MinHeight="50"
-                                Margin="0,0,12,12" />
-                        <Button Style="{StaticResource LargeActionButton}" Content="Take Snapshot"
-                                Command="{Binding TakeSnapshotCommand}" Margin="0,0,12,12" />
-                        <Button Style="{StaticResource LargeActionButton}" Content="Install App"
-                                Command="{Binding InstallAppCommand}" Margin="0,0,12,12" />
-                    </WrapPanel>
+                        <WrapPanel>
+                            <Button Style="{StaticResource LargeActionButton}" Content="Mirror Screen"
+                                    Command="{Binding StartMirrorCommand}" Margin="0,0,12,12" />
+                            <Button Style="{StaticResource SecondaryButton}" Content="Stop Mirror"
+                                    Command="{Binding StopMirrorCommand}"
+                                    Padding="24,16" FontSize="16" MinHeight="50"
+                                    Margin="0,0,12,12" />
+                            <Button Style="{StaticResource LargeActionButton}" Content="Take Snapshot"
+                                    Command="{Binding TakeSnapshotCommand}" Margin="0,0,12,12" />
+                            <Button Style="{StaticResource LargeActionButton}" Content="Install App"
+                                    Command="{Binding InstallAppCommand}" Margin="0,0,12,12" />
+                        </WrapPanel>
 
-                    <!-- Status message -->
-                    <TextBlock Text="{Binding StatusMessage}"
-                               Style="{StaticResource TextBody}"
-                               Foreground="{StaticResource BrushAccent}"
-                               Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
+                        <!-- Status message -->
+                        <TextBlock Text="{Binding StatusMessage}"
+                                   Style="{StaticResource TextBody}"
+                                   Foreground="{StaticResource BrushAccent}"
+                                   Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
 
-            <!-- Wireless ADB -->
-            <Border Style="{StaticResource GlassCard}">
-                <StackPanel>
-                    <TextBlock Text="Wireless ADB (Android)" Style="{StaticResource TextHeading2}" Margin="0,0,0,12" />
-                    <TextBlock Text="Connect to Android devices over Wi-Fi. First connect via USB, click Enable, then unplug USB and click Connect."
-                               Style="{StaticResource TextBody}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                <!-- Wireless ADB -->
+                <Border Style="{StaticResource GlassCard}">
+                    <StackPanel>
+                        <TextBlock Text="Wireless ADB (Android)" Style="{StaticResource TextHeading2}" Margin="0,0,0,12" />
+                        <TextBlock Text="Connect to Android devices over Wi-Fi. First connect via USB, click Enable, then unplug USB and click Connect."
+                                   Style="{StaticResource TextBody}" TextWrapping="Wrap" Margin="0,0,0,12" />
 
-                    <Grid Margin="0,0,0,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBox Grid.Column="0"
-                                 Text="{Binding WirelessIpAddress, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{StaticResource BrushBackgroundDarkest}"
-                                 Foreground="{StaticResource BrushTextPrimary}"
-                                 BorderBrush="{StaticResource BrushBorder}"
-                                 Padding="10,8" FontSize="14" VerticalContentAlignment="Center" />
-                        <TextBlock Grid.Column="0" Text="Device IP Address"
-                                   Foreground="{StaticResource BrushTextMuted}" FontSize="12"
-                                   VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding WirelessIpAddress}" Value="">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Grid>
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding WirelessIpAddress, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="{StaticResource BrushBackgroundDarkest}"
+                                     Foreground="{StaticResource BrushTextPrimary}"
+                                     BorderBrush="{StaticResource BrushBorder}"
+                                     Padding="10,8" FontSize="14" VerticalContentAlignment="Center" />
+                            <TextBlock Grid.Column="0" Text="Device IP Address"
+                                       Foreground="{StaticResource BrushTextMuted}" FontSize="12"
+                                       VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding WirelessIpAddress}" Value="">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
 
-                    <WrapPanel>
-                        <Button Style="{StaticResource PrimaryButton}" Content="Enable Wireless"
-                                Command="{Binding EnableWirelessCommand}"
-                                Padding="14,8" FontSize="13" Margin="0,0,8,8" />
-                        <Button Style="{StaticResource PrimaryButton}" Content="Connect"
-                                Command="{Binding ConnectWirelessCommand}"
-                                Padding="14,8" FontSize="13" Margin="0,0,8,8" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Disconnect"
-                                Command="{Binding DisconnectWirelessCommand}"
-                                Padding="14,8" FontSize="13" Margin="0,0,8,8" />
-                    </WrapPanel>
-                </StackPanel>
-            </Border>
+                        <WrapPanel>
+                            <Button Style="{StaticResource PrimaryButton}" Content="Enable Wireless"
+                                    Command="{Binding EnableWirelessCommand}"
+                                    Padding="14,8" FontSize="13" Margin="0,0,8,8" />
+                            <Button Style="{StaticResource PrimaryButton}" Content="Connect"
+                                    Command="{Binding ConnectWirelessCommand}"
+                                    Padding="14,8" FontSize="13" Margin="0,0,8,8" />
+                            <Button Style="{StaticResource SecondaryButton}" Content="Disconnect"
+                                    Command="{Binding DisconnectWirelessCommand}"
+                                    Padding="14,8" FontSize="13" Margin="0,0,8,8" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
 
-            <!-- iOS Note -->
-            <Border Style="{StaticResource GlassCard}" 
-                    Background="#10D29922" BorderBrush="{StaticResource BrushWarning}">
-                <StackPanel>
-                    <TextBlock Text="iOS Screen Mirroring" 
-                               Foreground="{StaticResource BrushWarning}"
-                               FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6" />
-                    <TextBlock Text="Screen mirroring for iOS devices is not supported on Windows. Use AirPlay or a Mac-based tool for iOS mirroring."
-                               Style="{StaticResource TextBody}" TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-        </StackPanel>
+                <!-- iOS Note -->
+                <Border Style="{StaticResource GlassCard}" 
+                        Background="#10D29922" BorderBrush="{StaticResource BrushWarning}">
+                    <StackPanel>
+                        <TextBlock Text="iOS Screen Mirroring" 
+                                   Foreground="{StaticResource BrushWarning}"
+                                   FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <TextBlock Text="Screen mirroring for iOS devices is not supported on Windows. Use AirPlay or a Mac-based tool for iOS mirroring."
+                                   Style="{StaticResource TextBody}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
     </Grid>
 </UserControl>
