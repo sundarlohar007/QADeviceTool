@@ -81,7 +81,7 @@ public class SessionService
             return false;
         }
 
-        var ctx = new CaptureContext(process, writer);
+        var ctx = new CaptureContext(process, writer, session);
         _activeCaptures[session.Id] = ctx;
 
         session.Status = SessionStatus.Capturing;
@@ -282,13 +282,12 @@ public class SessionService
     /// </summary>
     public bool HasActiveCapture => _activeCaptures.Count > 0;
 
-    /// <summary>
-    /// Returns the session ID currently capturing for the given device serial, or null.
-    /// </summary>
-    public string? GetActiveSessionIdForDevice(string deviceSerial)
+    public LogSession? GetActiveSessionForDevice(string deviceSerial)
     {
-        // LogSession stores DeviceId = serial
-        return _activeCaptures.Keys.FirstOrDefault();
+        return _activeCaptures.Values
+            .Where(ctx => ctx.Session.DeviceId == deviceSerial)
+            .Select(ctx => ctx.Session)
+            .FirstOrDefault();
     }
 
     /// <summary>
@@ -306,5 +305,5 @@ public class SessionService
         return session;
     }
 
-    private record CaptureContext(Process Process, StreamWriter Writer);
+    private record CaptureContext(Process Process, StreamWriter Writer, LogSession Session);
 }

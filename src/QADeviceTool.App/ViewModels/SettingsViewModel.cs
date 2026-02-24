@@ -30,7 +30,7 @@ public partial class SettingsViewModel : ObservableObject
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
-    private string _appVersion = "1.0.0";
+    private string _appVersion = "2.2.0";
 
     public SettingsViewModel(DependencyChecker dependencyChecker, SessionService sessionService)
     {

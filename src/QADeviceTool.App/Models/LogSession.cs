@@ -1,9 +1,11 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+
 namespace QADeviceTool.Models;
 
 /// <summary>
 /// Represents a log capture session.
 /// </summary>
-public class LogSession
+public partial class LogSession : ObservableObject
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string Name { get; set; } = string.Empty;
@@ -14,7 +16,12 @@ public class LogSession
     public DevicePlatform Platform { get; set; }
     public string LogFilePath { get; set; } = string.Empty;
     public string SessionDirectory { get; set; } = string.Empty;
-    public SessionStatus Status { get; set; } = SessionStatus.Idle;
+    
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusIcon))]
+    [NotifyPropertyChangedFor(nameof(DurationText))]
+    private SessionStatus _status = SessionStatus.Idle;
+    
     public long LogLineCount { get; set; }
 
     public string DurationText

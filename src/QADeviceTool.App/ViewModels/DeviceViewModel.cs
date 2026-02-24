@@ -17,6 +17,7 @@ public partial class DeviceViewModel : ObservableObject
     private readonly IosService _iosService;
     private readonly ScrcpyService _scrcpyService;
     private readonly DeviceMonitorService _deviceMonitor;
+    private readonly SessionService _sessionService;
     private readonly Dispatcher _dispatcher;
 
     [ObservableProperty]
@@ -38,12 +39,14 @@ public partial class DeviceViewModel : ObservableObject
         AdbService adbService,
         IosService iosService,
         ScrcpyService scrcpyService,
-        DeviceMonitorService deviceMonitor)
+        DeviceMonitorService deviceMonitor,
+        SessionService sessionService)
     {
         _adbService = adbService;
         _iosService = iosService;
         _scrcpyService = scrcpyService;
         _deviceMonitor = deviceMonitor;
+        _sessionService = sessionService;
         _dispatcher = Application.Current.Dispatcher;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
@@ -182,10 +185,38 @@ public partial class DeviceViewModel : ObservableObject
         {
             (bool success, string message) result;
 
+            Action<string> updateProgress = (line) => 
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    _dispatcher.Invoke(() => StatusMessage = $"[Installing] {line.Trim()}");
+                }
+            };
+
             if (SelectedDevice.Platform == DevicePlatform.Android)
-                result = await _adbService.InstallApkAsync(SelectedDevice.Serial, dialog.FileName);
+            {
+                result = await _adbService.InstallApkAsync(SelectedDevice.Serial, dialog.FileName, updateProgress);
+            }
             else
-                result = await _iosService.InstallIpaAsync(SelectedDevice.Serial, dialog.FileName);
+            {
+                // Pause logging if active; idevicesyslog locks the lockdown connection
+                var activeSession = _sessionService.GetActiveSessionForDevice(SelectedDevice.Serial);
+                if (activeSession != null)
+                {
+                    StatusMessage = "Pausing logs for install...";
+                    _sessionService.StopCapture(activeSession);
+                    await Task.Delay(1500); // Give the port time to free up
+                }
+
+                StatusMessage = $"Installing {System.IO.Path.GetFileName(dialog.FileName)}...";
+                result = await _iosService.InstallIpaAsync(SelectedDevice.Serial, dialog.FileName, updateProgress);
+
+                if (activeSession != null)
+                {
+                    StatusMessage = "Resuming logs...";
+                    _sessionService.StartCapture(activeSession);
+                }
+            }
 
             StatusMessage = result.success
                 ? result.message

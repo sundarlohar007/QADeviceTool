@@ -1,6 +1,7 @@
 <UserControl x:Class="QADeviceTool.Views.SessionView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="clr-namespace:QADeviceTool.Models">
 
     <Grid Margin="24,16">
         <Grid.ColumnDefinitions>
@@ -56,7 +57,19 @@
                          Style="{StaticResource DarkListBox}"
                          ScrollViewer.VerticalScrollBarVisibility="Auto">
                     <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource DarkListBoxItem}" />
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource DarkListBoxItem}">
+                            <Setter Property="ContextMenu">
+                                <Setter.Value>
+                                    <ContextMenu>
+                                        <MenuItem Header="Open Directory"  
+                                                  Command="{Binding DataContext.OpenSessionFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                                        <Separator Background="{StaticResource BrushBorderMuted}" Margin="0,4" />
+                                        <MenuItem Header="Delete Session" 
+                                                  Command="{Binding DataContext.DeleteSessionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                                    </ContextMenu>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
@@ -93,7 +106,10 @@
                         <Button Style="{StaticResource SecondaryButton}" Content="Snap"
                                 Command="{Binding TakeSnapshotCommand}"
                                 Padding="14,8" FontSize="12" Margin="0,0,8,8" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Open"
+                        <Button Style="{StaticResource PrimaryButton}" Content="Bug Report"
+                                Command="{Binding GenerateBugReportCommand}"
+                                Padding="14,8" FontSize="12" Margin="0,0,8,8" />
+                        <Button Style="{StaticResource SecondaryButton}" Content="Open Directory"
                                 Command="{Binding OpenSessionFolderCommand}"
                                 Padding="12,8" FontSize="12" Margin="0,0,8,8" />
                         <Button Style="{StaticResource SecondaryButton}" Content="Clear"
@@ -110,21 +126,78 @@
                            Foreground="{StaticResource BrushAccent}"
                            FontSize="12" Margin="0,0,0,6" />
 
-                <!-- Log viewer: TextBox with NO data binding — populated via AppendText from code-behind -->
-                <TextBox x:Name="LogTextBox"
-                         IsReadOnly="True"
-                         TextWrapping="NoWrap"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto"
-                         Background="{StaticResource BrushBackgroundDarkest}"
-                         Foreground="{StaticResource BrushTextSecondary}"
-                         FontFamily="{StaticResource FontMono}"
-                         FontSize="12"
-                         BorderBrush="{StaticResource BrushBorder}"
-                         BorderThickness="1"
-                         Padding="12"
-                         AcceptsReturn="True"
-                         UndoLimit="0" />
+                <!-- Filters -->
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <TextBlock Text="Filter:" VerticalAlignment="Center" Foreground="{StaticResource BrushTextSecondary}" Margin="0,0,8,0" />
+                        <ComboBox ItemsSource="{Binding LogLevels}" SelectedItem="{Binding SelectedLogLevel}" Width="100" Margin="0,0,16,0"
+                                  Background="{StaticResource BrushBackgroundDarkest}" Foreground="{StaticResource BrushTextPrimary}" />
+                    </StackPanel>
+
+                    <TextBox Grid.Column="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=250}" 
+                             Style="{StaticResource DarkTextBox}" />
+                </Grid>
+
+                <!-- Log viewer -->
+                <ListView x:Name="LogDataGrid"
+                          ItemsSource="{Binding LogEntriesView}"
+                          VirtualizingStackPanel.IsVirtualizing="True"
+                          VirtualizingStackPanel.VirtualizationMode="Recycling"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          Background="{StaticResource BrushBackgroundDarkest}"
+                          BorderBrush="{StaticResource BrushBorder}"
+                          BorderThickness="1"
+                          FontFamily="{StaticResource FontMono}"
+                          FontSize="12">
+                    
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Padding" Value="4,2" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Level}" Value="{x:Static models:LogLevel.Error}">
+                                    <Setter Property="Foreground" Value="#FFFF6B6B" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Level}" Value="{x:Static models:LogLevel.Warning}">
+                                    <Setter Property="Foreground" Value="#FFFAC041" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Level}" Value="{x:Static models:LogLevel.Debug}">
+                                    <Setter Property="Foreground" Value="#FF6CB9F0" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Level}" Value="{x:Static models:LogLevel.Info}">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Level}" Value="{x:Static models:LogLevel.Verbose}">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    
+                    <ListView.View>
+                        <GridView>
+                            <GridView.ColumnHeaderContainerStyle>
+                                <Style TargetType="GridViewColumnHeader">
+                                    <Setter Property="Background" Value="#10FFFFFF" />
+                                    <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+                                    <Setter Property="Padding" Value="8,4" />
+                                </Style>
+                            </GridView.ColumnHeaderContainerStyle>
+                            <GridViewColumn Header="Time" Width="100" DisplayMemberBinding="{Binding Timestamp}" />
+                            <GridViewColumn Header="Level" Width="60" DisplayMemberBinding="{Binding Level}" />
+                            <GridViewColumn Header="Message" Width="800" DisplayMemberBinding="{Binding Message}" />
+                        </GridView>
+                    </ListView.View>
+                </ListView>
             </DockPanel>
         </Border>
     </Grid>

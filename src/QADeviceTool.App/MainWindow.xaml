@@ -72,7 +72,7 @@
                                    Foreground="{StaticResource BrushTextPrimary}"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center" />
-                        <TextBlock Text=" v2.0.0" 
+                        <TextBlock Text=" v2.2.0" 
                                    Style="{StaticResource TextCaption}"
                                    VerticalAlignment="Center" Margin="4,0,0,0" />
                     </StackPanel>
@@ -183,7 +183,7 @@
                                VerticalAlignment="Center"
                                HorizontalAlignment="Right">
                         <Run Text="Please reach out to Sundar Lohar if any bugs/issues encountered | " />
-                        <Run Text="QA/QC Device Tool v2.0.0" />
+                        <Run Text="QA/QC Device Tool v2.2.0" />
                     </TextBlock>
                 </DockPanel>
             </Border>

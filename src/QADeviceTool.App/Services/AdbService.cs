@@ -98,6 +98,13 @@ public class AdbService
         return result.Success ? result.Output.Trim() : null;
     }
 
+    public async Task<string> ExecuteCommandAsync(string serial, string args)
+    {
+        var result = await ProcessRunner.RunAsync(_adb, $"-s {serial} {args}", 15000);
+        return result.Output;
+    }
+
+
     public async Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device)
     {
         device.OsVersion = await GetDevicePropertyAsync(device.Serial, "ro.build.version.release") ?? "Unknown";
@@ -131,9 +138,9 @@ public class AdbService
     }
 
     // ─── APK Installation ────────────────────────────────────────
-    public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath)
+    public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? outputCallback = null)
     {
-        var result = await ProcessRunner.RunAsync(_adb, $"-s {serial} install -r \"{apkPath}\"", 120000);
+        var result = await ProcessRunner.RunAsync(_adb, $"-s {serial} install -r \"{apkPath}\"", 600000, outputCallback);
         if (result.Success && result.Output.Contains("Success"))
             return (true, "APK installed successfully.");
         return (false, result.Output.Trim());

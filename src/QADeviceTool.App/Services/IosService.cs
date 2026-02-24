@@ -115,11 +115,18 @@ public class IosService
     }
 
     // ─── IPA Installation ────────────────────────────────────────
-    public async Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath)
+    public async Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath, Action<string>? outputCallback = null)
     {
-        var result = await ProcessRunner.RunAsync(_ideviceInstaller, $"-u {udid} -i \"{ipaPath}\"", 120000);
+        // Sanitize path for MSYS environment (which ideviceinstaller uses under the hood on Windows)
+        string sanitizedPath = ipaPath.Replace("\\", "/");
+        
+        var result = await ProcessRunner.RunAsync(_ideviceInstaller, $"-u {udid} -i \"{sanitizedPath}\"", 600000, outputCallback);
+
         if (result.Success)
             return (true, "IPA installed successfully.");
-        return (false, result.Output.Trim());
+
+        // ideviceinstaller sometimes outputs errors to stdout instead of stderr
+        string error = !string.IsNullOrWhiteSpace(result.Error) ? result.Error : result.Output;
+        return (false, $"Failed to install IPA. Error: {error.Trim()}");
     }
 }

@@ -8,9 +8,9 @@ namespace QADeviceTool.Helpers;
 public static class ProcessRunner
 {
     /// <summary>
-    /// Runs a command and returns its stdout output.
+    /// Runs a command and returns its stdout output. Optionally streams lines back as they arrive.
     /// </summary>
-    public static async Task<ProcessResult> RunAsync(string fileName, string arguments, int timeoutMs = 10000)
+    public static async Task<ProcessResult> RunAsync(string fileName, string arguments, int timeoutMs = 10000, Action<string>? outputCallback = null)
     {
         var result = new ProcessResult();
         try
@@ -28,8 +28,35 @@ public static class ProcessRunner
 
             process.Start();
 
-            var outputTask = process.StandardOutput.ReadToEndAsync();
-            var errorTask = process.StandardError.ReadToEndAsync();
+            var fullOutput = new System.Text.StringBuilder();
+            var fullError = new System.Text.StringBuilder();
+
+            // Background task to read stdout and trigger callback
+            var outputTask = Task.Run(async () =>
+            {
+                while (!process.StandardOutput.EndOfStream)
+                {
+                    var line = await process.StandardOutput.ReadLineAsync();
+                    if (line != null)
+                    {
+                        fullOutput.AppendLine(line);
+                        outputCallback?.Invoke(line);
+                    }
+                }
+            });
+
+            // Background task for stderr
+            var errorTask = Task.Run(async () =>
+            {
+                while (!process.StandardError.EndOfStream)
+                {
+                    var line = await process.StandardError.ReadLineAsync();
+                    if (line != null)
+                    {
+                        fullError.AppendLine(line);
+                    }
+                }
+            });
 
             var completed = await Task.Run(() => process.WaitForExit(timeoutMs));
 
@@ -41,8 +68,10 @@ public static class ProcessRunner
                 return result;
             }
 
-            result.Output = await outputTask;
-            result.Error = await errorTask;
+            await Task.WhenAll(outputTask, errorTask);
+
+            result.Output = fullOutput.ToString();
+            result.Error = fullError.ToString();
             result.ExitCode = process.ExitCode;
             result.Success = process.ExitCode == 0;
         }

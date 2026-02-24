@@ -14,56 +14,28 @@ public partial class SessionView : UserControl
 
         DataContextChanged += (_, _) =>
         {
-            // Unwire old VM
             if (_vm != null)
             {
-                _vm.LogAppend -= OnLogAppend;
-                _vm.LogCleared -= OnLogCleared;
-                _vm.LogReplaced -= OnLogReplaced;
+                _vm.ScrollToEndRequested -= OnScrollToEndRequested;
             }
 
             _vm = DataContext as SessionViewModel;
             if (_vm != null)
             {
-                _vm.LogAppend += OnLogAppend;
-                _vm.LogCleared += OnLogCleared;
-                _vm.LogReplaced += OnLogReplaced;
+                _vm.ScrollToEndRequested += OnScrollToEndRequested;
             }
         };
     }
 
-    private void OnLogAppend(string text)
+    private void OnScrollToEndRequested()
     {
-        // Use Background priority so button clicks (Input priority) are processed first
         Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
-            LogTextBox.AppendText(text);
-
-            // Trim if too long (keep last ~100K chars)
-            if (LogTextBox.Text.Length > 200_000)
+            if (LogDataGrid.Items.Count > 0)
             {
-                var keep = LogTextBox.Text.Substring(LogTextBox.Text.Length - 100_000);
-                LogTextBox.Clear();
-                LogTextBox.AppendText("... [earlier log trimmed] ...\n");
-                LogTextBox.AppendText(keep);
+                var lastItem = LogDataGrid.Items[LogDataGrid.Items.Count - 1];
+                LogDataGrid.ScrollIntoView(lastItem);
             }
-
-            LogTextBox.ScrollToEnd();
-        });
-    }
-
-    private void OnLogCleared()
-    {
-        Dispatcher.BeginInvoke(() => LogTextBox.Clear());
-    }
-
-    private void OnLogReplaced(string text)
-    {
-        Dispatcher.BeginInvoke(() =>
-        {
-            LogTextBox.Clear();
-            LogTextBox.AppendText(text);
-            LogTextBox.ScrollToEnd();
         });
     }
 }

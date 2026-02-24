@@ -130,6 +130,34 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Third-Party Software -->
+                    <Border Background="{StaticResource BrushBackgroundMedium}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="Third-Party Software" Foreground="{StaticResource BrushTextMuted}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <TextBlock Foreground="{StaticResource BrushTextPrimary}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" LineHeight="18">
+                                This application bundles the following open-source software (see 'licenses' folder):
+                            </TextBlock>
+                            
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="scrcpy" Foreground="{StaticResource BrushTextPrimary}" FontWeight="SemiBold" FontSize="12" Margin="0,0,8,0" />
+                                <TextBlock Grid.Column="1" Text="Apache License 2.0" Foreground="{StaticResource BrushTextMuted}" FontSize="12" />
+                            </Grid>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="libimobiledevice" Foreground="{StaticResource BrushTextPrimary}" FontWeight="SemiBold" FontSize="12" Margin="0,0,8,0" />
+                                <TextBlock Grid.Column="1" Text="GNU LGPL v2.1" Foreground="{StaticResource BrushTextMuted}" FontSize="12" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Powered By -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
                         <TextBlock Text="Powered by " Style="{StaticResource TextCaption}" VerticalAlignment="Center" />

@@ -54,7 +54,7 @@ public partial class MainViewModel : ObservableObject
         // Initialize child ViewModels
         DashboardVM = new DashboardViewModel(_adbService, _iosService, _scrcpyService, _sessionService, _deviceMonitor, _dependencyChecker);
         SessionVM = new SessionViewModel(_sessionService, _adbService, _iosService, _deviceMonitor);
-        DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor);
+        DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor, _sessionService);
         SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService);
 
         // Wire up device monitor events
