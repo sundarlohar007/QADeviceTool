@@ -51,8 +51,7 @@ Or simply run the provided `build_installer.bat` at the repository root.
 
 ## Author
 
-**Sundar Lohar**  
-sundar.lohar@ubisoft.com
+**Sundar Lohar**
 
 ---
 
