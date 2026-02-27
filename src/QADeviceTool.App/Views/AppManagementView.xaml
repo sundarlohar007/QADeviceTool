@@ -1,0 +1,141 @@
+<UserControl x:Class="QADeviceTool.Views.AppManagementView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:QADeviceTool.ViewModels">
+
+    <Grid Margin="24,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ═══════ LEFT: Device List ═══════ -->
+        <Border Grid.Column="0" Style="{StaticResource GlassCard}" Margin="0,0,8,0">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                    <TextBlock Text="Devices" Style="{StaticResource TextHeading2}" Margin="0,0,0,8" />
+                </StackPanel>
+
+                <TextBlock DockPanel.Dock="Top"
+                           Text="No devices detected. Connect via USB."
+                           Margin="0,8,0,0">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Devices.Count}" Value="0">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <ListBox ItemsSource="{Binding Devices}"
+                         SelectedItem="{Binding SelectedDevice}"
+                         Style="{StaticResource DarkListBox}"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource DarkListBoxItem}" />
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding PlatformIcon}" FontSize="22" 
+                                           VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding DisplayName}" 
+                                               Foreground="{StaticResource BrushTextPrimary}"
+                                               FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Serial}" Style="{StaticResource TextCaption}" />
+                                    <TextBlock Text="{Binding StatusText}" FontSize="11" Margin="0,2,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource BrushWarning}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding StatusText}" Value="Connected">
+                                                        <Setter Property="Foreground" Value="{StaticResource BrushPrimary}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding StatusText}" Value="Offline">
+                                                        <Setter Property="Foreground" Value="{StaticResource BrushError}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- ═══════ RIGHT: App Management ═══════ -->
+        <Border Grid.Column="1" Style="{StaticResource GlassCard}" Margin="8,0,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                    <TextBlock Text="Installed Applications" Style="{StaticResource TextHeading2}" />
+                    <TextBlock Text="Manage user applications (APK/IPA) on the selected device." Style="{StaticResource TextBody}" Margin="0,4,0,0" />
+                </StackPanel>
+
+                <WrapPanel Grid.Row="1" Margin="0,0,0,12">
+                    <Button Style="{StaticResource PrimaryButton}"
+                            Content="Install App"
+                            Command="{Binding InstallAppCommand}"
+                            Padding="16,8"
+                            Margin="0,0,12,0" />
+
+                    <Button Style="{StaticResource SecondaryButton}"
+                            Content="Refresh List"
+                            Command="{Binding RefreshAppsCommand}"
+                            Padding="16,8"
+                            Margin="0,0,12,0" />
+
+                    <Button Style="{StaticResource SecondaryButton}"
+                            Content="Uninstall Selected"
+                            Command="{Binding UninstallAppCommand}"
+                            Foreground="{StaticResource BrushError}"
+                            Padding="16,8" />
+                </WrapPanel>
+
+                <!-- DataGrid for Apps -->
+                <DataGrid Grid.Row="2"
+                          ItemsSource="{Binding InstalledApps}"
+                          SelectedItem="{Binding SelectedApp}"
+                          Style="{StaticResource DarkDataGrid}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Application Name" Binding="{Binding Name}" Width="250" />
+                        <DataGridTextColumn Header="Package / Bundle ID" Binding="{Binding PackageId}" Width="*" />
+                        <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="150" />
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- Status Bar -->
+                <Border Grid.Row="3" Background="{StaticResource BrushBackgroundDarkest}" CornerRadius="4" Padding="12,8" Margin="0,12,0,0">
+                    <DockPanel>
+                        <ProgressBar DockPanel.Dock="Right" IsIndeterminate="{Binding IsLoading}" Width="100" Height="4" Margin="12,0,0,0"
+                                     Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Center" />
+                    </DockPanel>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

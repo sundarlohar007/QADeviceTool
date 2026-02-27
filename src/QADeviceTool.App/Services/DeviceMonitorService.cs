@@ -37,7 +37,7 @@ public class DeviceMonitorService : IDisposable
     public void StartMonitoring(int intervalMs = 5000)
     {
         StopMonitoring();
-        _pollTimer = new Timer(async _ => await PollDevicesAsync(), null, 0, intervalMs);
+        _pollTimer = new Timer(async _ => await PollDevicesAsync(), null, 2000, intervalMs);
     }
 
     /// <summary>

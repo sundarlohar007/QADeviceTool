@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Text.RegularExpressions;
+using System.Threading;
 using QADeviceTool.Helpers;
 using QADeviceTool.Models;
 
@@ -29,8 +31,8 @@ public class SessionService
     {
         _adbService = adbService;
         _iosService = iosService;
-        SessionsRootDirectory = PathHelper.GetDefaultSessionsDirectory();
-        PathHelper.EnsureSessionsDirectory();
+        SessionsRootDirectory = PreferencesService.Current.SessionsRootDirectory;
+        if (!Directory.Exists(SessionsRootDirectory)) Directory.CreateDirectory(SessionsRootDirectory);
     }
 
     public LogSession CreateSession(DeviceInfo device)
@@ -69,19 +71,30 @@ public class SessionService
 
         if (process == null) return false;
 
+        string targetPackageName = PreferencesService.Current.TargetPackageName;
+
         StreamWriter? writer = null;
+        StreamWriter? appWriter = null;
         try
         {
             writer = new StreamWriter(session.LogFilePath, append: true) { AutoFlush = true };
+            if (session.Platform == DevicePlatform.Android && !string.IsNullOrWhiteSpace(targetPackageName))
+            {
+                session.AppLogFilePath = Path.Combine(session.SessionDirectory, $"{session.Platform}_{session.DeviceId}_app_log.txt");
+                appWriter = new StreamWriter(session.AppLogFilePath, append: true) { AutoFlush = true };
+            }
         }
         catch
         {
             process.Kill(true);
             process.Dispose();
+            writer?.Dispose();
+            appWriter?.Dispose();
             return false;
         }
 
-        var ctx = new CaptureContext(process, writer, session);
+        var cts = new CancellationTokenSource();
+        var ctx = new CaptureContext(process, writer, appWriter, session, cts);
         _activeCaptures[session.Id] = ctx;
 
         session.Status = SessionStatus.Capturing;
@@ -90,6 +103,30 @@ public class SessionService
         // Start batched flush timer (200ms interval) — prevents UI flooding
         _flushTimer?.Dispose();
         _flushTimer = new System.Threading.Timer(_ => FlushLogBuffer(), null, 200, 200);
+
+        string currentTargetPid = string.Empty;
+        if (appWriter != null && !string.IsNullOrWhiteSpace(targetPackageName))
+        {
+            Task.Run(async () =>
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var pid = await _adbService.GetPidFromPackageNameAsync(session.DeviceId, targetPackageName);
+                        if (!string.IsNullOrWhiteSpace(pid) && currentTargetPid != pid)
+                        {
+                            currentTargetPid = pid;
+                            var notice = $"[{DateTime.Now:HH:mm:ss.fff}] --- AUTO-RESOLVED PACKAGE '{targetPackageName}' TO PID {pid} ---";
+                            try { await appWriter.WriteLineAsync(notice); } catch { }
+                            _logBuffer.Enqueue(notice);
+                        }
+                    }
+                    catch { }
+                    await Task.Delay(3000, cts.Token);
+                }
+            }, cts.Token);
+        }
 
         // Read output asynchronously on a background thread
         Task.Run(async () =>
@@ -103,13 +140,24 @@ public class SessionService
                     {
                         var timestamped = $"[{DateTime.Now:HH:mm:ss.fff}] {line}";
                         try { await writer.WriteLineAsync(timestamped); } catch { }
+                        
+                        if (appWriter != null && !string.IsNullOrWhiteSpace(currentTargetPid))
+                        {
+                            // logcat -v threadtime format usually starts with date/time then PID TID
+                            // Use basic matching to check if the PID exists at the start of the line block
+                            if (Regex.IsMatch(line, $@"\b{currentTargetPid}\b"))
+                            {
+                                try { await appWriter.WriteLineAsync(timestamped); } catch { }
+                            }
+                        }
+
                         session.LogLineCount++;
                         _logBuffer.Enqueue(timestamped);
                     }
                 }
             }
             catch { }
-        });
+        }, cts.Token);
 
         return true;
     }
@@ -138,8 +186,10 @@ public class SessionService
 
         try
         {
+            ctx.Cts.Cancel();
             // Close the writer first so no more log lines are written
             ctx.Writer.Dispose();
+            ctx.AppWriter?.Dispose();
 
             // Gracefully terminate the logcat process without killing adb.exe server.
             // Closing StandardOutput causes the process to end on its own.
@@ -179,7 +229,9 @@ public class SessionService
         {
             try
             {
+                kvp.Value.Cts.Cancel();
                 kvp.Value.Writer.Dispose();
+                kvp.Value.AppWriter?.Dispose();
                 try { kvp.Value.Process.StandardOutput.Close(); } catch { }
                 try { kvp.Value.Process.StandardError.Close(); } catch { }
                 if (!kvp.Value.Process.HasExited)
@@ -305,5 +357,5 @@ public class SessionService
         return session;
     }
 
-    private record CaptureContext(Process Process, StreamWriter Writer, LogSession Session);
+    private record CaptureContext(Process Process, StreamWriter Writer, StreamWriter? AppWriter, LogSession Session, CancellationTokenSource Cts);
 }

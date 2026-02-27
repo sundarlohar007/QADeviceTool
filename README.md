@@ -8,11 +8,11 @@ A robust Windows desktop utility built for QA/QC game testers. It automatically 
 
 - **Auto Log Capture** — Instantly begins logging the moment a device is connected, and stops when disconnected.
 - **Session Management** — Organizes captured logs, traces, and screenshots into meticulously timestamped session folders for each device.
+- **Dynamic App-Specific Dual Logging** — Monitor full device logs alongside a fully isolated, automatically generated application-specific log file that tracks target PIDs intelligently (even through crashes) using partial keyword matching (e.g. `ubisoft`).
 - **Live Log Viewer** — View highly readable device logs in real-time natively in the app, with filtering and auto-scroll capabilities.
 - **Screen Mirroring (Android)** — Click-to-play Android device mirroring and remote control via bundled `scrcpy`.
 - **Instant Snapshots** — Grab and save device screenshots straight from the tool with one click.
-- **Multi-Platform Support** — Fully compatible with Android (via ADB) and iOS (via libimobiledevice).
-- **Dark Mode UI** — Clean, modern WPF interface perfectly suited for dark environments.
+- **Bug Reports** — Generates an automated `.zip` archiving active device memory dumps, the last 10,000 log lines, and an instantaneous screenshot.
 
 ## Installation
 
@@ -45,7 +45,7 @@ dotnet publish src/QADeviceTool.App/QADeviceTool.App.csproj -c Release --self-co
 
 To compile the MSI Installer setup package (requires WiX v4):
 ```bash
-wix build installer\Package.wxs -b publish=publish -b installer=installer -o installer\QAQCDeviceTool-v2.2.0-Setup.msi -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext
+wix build installer\Package.wxs -b publish=publish -b installer=installer -o installer\QAQCDeviceTool-v2.3.0-Setup.msi -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext
 ```
 Or simply run the provided `build_installer.bat` at the repository root.
 

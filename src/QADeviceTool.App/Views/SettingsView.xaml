@@ -90,6 +90,8 @@
                 </StackPanel>
             </Border>
 
+
+
             <!-- About -->
             <Border Style="{StaticResource GlassCard}">
                 <StackPanel>

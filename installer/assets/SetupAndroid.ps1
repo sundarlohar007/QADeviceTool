@@ -9,8 +9,16 @@ try {
     $adbDest = Join-Path $installDir "platform-tools"
     $driverDest = Join-Path $installDir "usb_driver"
     
-    # 1. Extract and install Google USB Driver silently
-    if (Test-Path $driverZip) {
+    # 1. Check if driver is already installed before extracting/installing
+    $isDriverInstalled = $false
+    try {
+        if (pnputil /enum-drivers | Select-String "android_winusb.inf" -Quiet) {
+            $isDriverInstalled = $true
+        }
+    }
+    catch { }
+
+    if (-not $isDriverInstalled -and (Test-Path $driverZip)) {
         if (-not (Test-Path $driverDest)) {
             New-Item -ItemType Directory -Force -Path $driverDest | Out-Null
         }
@@ -22,8 +30,9 @@ try {
         }
     }
     
-    # 2. Extract ADB platform-tools to a fixed directory
-    if (Test-Path $adbZip) {
+    # 2. Extract ADB platform-tools if not already present
+    $adbExePath = Join-Path $adbDest "adb.exe"
+    if ((Test-Path $adbZip) -and (-not (Test-Path $adbExePath))) {
         # Expand-Archive extracts exactly what's in the zip. 
         # platform-tools-latest-windows.zip contains a 'platform-tools' folder.
         # So we extract it directly to INSTALLFOLDER, which will extract the platform-tools folder.
@@ -38,7 +47,8 @@ try {
             [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
         }
     }
-} catch {
+}
+catch {
     # Fail silently to not break installer
     exit 0
 }

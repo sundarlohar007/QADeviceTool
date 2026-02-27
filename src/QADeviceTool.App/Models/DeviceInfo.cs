@@ -16,7 +16,13 @@ public class DeviceInfo
 
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Model : Name;
     public string PlatformIcon => Platform == DevicePlatform.Android ? "Android" : "iOS";
-    public string StatusText => ConnectionState == DeviceConnectionState.Online ? "Connected" : "Offline";
+    public string StatusText => ConnectionState switch
+    {
+        DeviceConnectionState.Online => "Connected",
+        DeviceConnectionState.Unauthorized => "Unauthorized (Accept RSA)",
+        DeviceConnectionState.PendingTrust => "Trust Dialog Pending",
+        _ => "Offline"
+    };
 }
 
 public enum DevicePlatform
@@ -29,5 +35,6 @@ public enum DeviceConnectionState
 {
     Online,
     Offline,
-    Unauthorized
+    Unauthorized,
+    PendingTrust
 }

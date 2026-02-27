@@ -41,6 +41,7 @@
     <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource AccentBlue}" />
     <SolidColorBrush x:Key="BrushSuccess" Color="{StaticResource AccentGreen}" />
     <SolidColorBrush x:Key="BrushDanger" Color="{StaticResource AccentRed}" />
+    <SolidColorBrush x:Key="BrushError" Color="{StaticResource AccentRed}" />
     <SolidColorBrush x:Key="BrushWarning" Color="{StaticResource AccentYellow}" />
     <SolidColorBrush x:Key="BrushInfo" Color="{StaticResource AccentPurple}" />
     
@@ -361,6 +362,7 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="False" />
     </Style>
 
     <Style x:Key="DarkListBoxItem" TargetType="ListBoxItem">
@@ -470,6 +472,122 @@
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Alias for BrushAccent (used for "Connected" status text) -->
+    <SolidColorBrush x:Key="BrushPrimary" Color="{StaticResource AccentBlue}" />
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!--                TERMINAL TEXTBOX                              -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+
+    <Style x:Key="TerminalTextBox" TargetType="TextBox">
+        <Setter Property="Background" Value="{StaticResource BrushBackgroundDarkest}" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="8" />
+        <Setter Property="IsReadOnly" Value="True" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+        <Setter Property="AcceptsReturn" Value="True" />
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="4">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="0" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!--                   DARK DATAGRID                              -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+
+    <Style x:Key="DarkDataGrid" TargetType="DataGrid">
+        <Setter Property="Background" Value="{StaticResource BrushBackgroundDarkest}" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="RowBackground" Value="{StaticResource BrushBackgroundDarkest}" />
+        <Setter Property="AlternatingRowBackground" Value="{StaticResource BrushBackgroundDark}" />
+        <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BrushBorderMuted}" />
+        <Setter Property="VerticalGridLinesBrush" Value="Transparent" />
+        <Setter Property="SelectionUnit" Value="FullRow" />
+        <Setter Property="CanUserResizeRows" Value="False" />
+        <Setter Property="HeadersVisibility" Value="Column" />
+        <Setter Property="GridLinesVisibility" Value="Horizontal" />
+        <Setter Property="FontFamily" Value="{StaticResource FontPrimary}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="RowHeight" Value="36" />
+        <Setter Property="ColumnHeaderStyle">
+            <Setter.Value>
+                <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="{StaticResource BrushBackgroundMedium}" />
+                    <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                    <Setter Property="FontSize" Value="12" />
+                    <Setter Property="Padding" Value="12,8" />
+                    <Setter Property="BorderBrush" Value="{StaticResource BrushBorderMuted}" />
+                    <Setter Property="BorderThickness" Value="0,0,0,1" />
+                </Style>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="CellStyle">
+            <Setter.Value>
+                <Style TargetType="DataGridCell">
+                    <Setter Property="Padding" Value="12,6" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="DataGridCell">
+                                <Border Background="{TemplateBinding Background}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter VerticalAlignment="Center" />
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background">
+                                <Setter.Value>
+                                    <SolidColorBrush Color="{StaticResource AccentBlue}" Opacity="0.15" />
+                                </Setter.Value>
+                            </Setter>
+                            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="RowStyle">
+            <Setter.Value>
+                <Style TargetType="DataGridRow">
+                    <Setter Property="Background" Value="Transparent" />
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="{StaticResource BrushBackgroundHover}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background">
+                                <Setter.Value>
+                                    <SolidColorBrush Color="{StaticResource AccentBlue}" Opacity="0.1" />
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
             </Setter.Value>
         </Setter>
     </Style>

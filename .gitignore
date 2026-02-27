@@ -21,6 +21,11 @@ publish/
 # Packaging
 *.zip
 *.msi
+*.exe
+
+# Exclude giant unbuilt source directories and root tools
+/tools/
+src/QADeviceTool.App/tools/libimobiledevice-*/
 
 # Visual Studio Code
 .vscode/

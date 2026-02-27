@@ -38,6 +38,11 @@
                          SelectedItem="{Binding SelectedDevice}"
                          Style="{StaticResource DarkListBox}"
                          ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource DarkListBoxItem}" />
                     </ListBox.ItemContainerStyle>
@@ -51,6 +56,22 @@
                                                Foreground="{StaticResource BrushTextPrimary}"
                                                FontSize="14" FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding Serial}" Style="{StaticResource TextCaption}" />
+                                    
+                                    <TextBlock Text="{Binding StatusText}" FontSize="11" Margin="0,2,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource BrushWarning}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding StatusText}" Value="Connected">
+                                                        <Setter Property="Foreground" Value="{StaticResource BrushPrimary}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding StatusText}" Value="Offline">
+                                                        <Setter Property="Foreground" Value="{StaticResource BrushError}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </StackPanel>
                             </StackPanel>
                         </DataTemplate>
@@ -90,8 +111,6 @@
                                     Margin="0,0,12,12" />
                             <Button Style="{StaticResource LargeActionButton}" Content="Take Snapshot"
                                     Command="{Binding TakeSnapshotCommand}" Margin="0,0,12,12" />
-                            <Button Style="{StaticResource LargeActionButton}" Content="Install App"
-                                    Command="{Binding InstallAppCommand}" Margin="0,0,12,12" />
                         </WrapPanel>
 
                         <!-- Status message -->

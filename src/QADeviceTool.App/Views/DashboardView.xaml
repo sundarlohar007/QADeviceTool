@@ -28,6 +28,19 @@
                 </StackPanel>
             </Border>
 
+            <!-- App-Specific Logging -->
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel>
+                    <TextBlock Text="Targeted App Logging (Android)" Style="{StaticResource TextHeading2}" Margin="0,0,0,12" />
+                    <TextBlock Text="Enter a partial app keyword (e.g. ubisoft). Starting a session will dynamically capture and isolate logs matching this specific running process ID automatically."
+                               Style="{StaticResource TextBody}" TextWrapping="Wrap" Margin="0,0,0,12" />
+
+                    <TextBlock Text="Target App Keyword:" Style="{StaticResource TextCaption}" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding TargetPackageName, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource DarkTextBox}" />
+                </StackPanel>
+            </Border>
+
             <!-- Connected Devices -->
             <Border Style="{StaticResource GlassCard}">
                 <StackPanel>

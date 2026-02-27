@@ -15,6 +15,7 @@ public partial class LogSession : ObservableObject
     public string DeviceName { get; set; } = string.Empty;
     public DevicePlatform Platform { get; set; }
     public string LogFilePath { get; set; } = string.Empty;
+    public string AppLogFilePath { get; set; } = string.Empty;
     public string SessionDirectory { get; set; } = string.Empty;
     
     [ObservableProperty]

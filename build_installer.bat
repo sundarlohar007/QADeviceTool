@@ -1,12 +1,12 @@
 @echo off
 echo ============================================
-echo  QA/QC Device Tool - MSI Installer Builder
+echo  QA/QC Device Tool - Bootstrapper Builder
 echo ============================================
 echo.
 
 REM Step 1: Publish the app
 echo [1/3] Publishing application...
-dotnet publish src\QADeviceTool.App\QADeviceTool.App.csproj -c Release --self-contained -r win-x64 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\publish
+dotnet publish src\QADeviceTool.App\QADeviceTool.App.csproj -c Release --self-contained -r win-x64 -p:PublishSingleFile=true -o .\publish
 if %ERRORLEVEL% NEQ 0 (
     echo ERROR: Publish failed!
     exit /b 1
@@ -17,7 +17,7 @@ echo.
 
 REM Step 2: Build MSI using WiX
 echo [2/3] Building MSI installer...
-wix build installer\Package.wxs -b publish=publish -b installer=installer -o installer\QAQCDeviceTool-v2.2.0-Setup.msi -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext
+wix build installer\Package.wxs -b publish=publish -b installer=installer -o publish\QAQCDeviceTool.msi -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext
 if %ERRORLEVEL% NEQ 0 (
     echo ERROR: MSI build failed!
     exit /b 1
@@ -25,14 +25,20 @@ if %ERRORLEVEL% NEQ 0 (
 echo     Done.
 echo.
 
-REM Step 3: Create ZIP as well
-echo [3/3] Creating ZIP package...
-powershell -Command "Compress-Archive -Path '.\publish\*' -DestinationPath '.\QAQCDeviceTool-v2.2.0-win-x64.zip' -Force"
+REM Step 3: Build setup.exe using WiX Burn (MSBuild v5 SDK)
+echo [3/3] Building Setup Bootstrapper...
+dotnet build installer\Bootstrapper\Bootstrapper.wixproj -c Release /p:Platform=x64
+if %ERRORLEVEL% NEQ 0 (
+    echo ERROR: Bootstrapper build failed!
+    exit /b 1
+)
+
+REM Move the setup.exe to the root output folder
+copy /Y "installer\Bootstrapper\bin\x64\Release\QAQCDeviceTool-v2.3.0-Setup.exe" ".\QAQCDeviceTool-v2.3.0-Setup.exe"
 echo     Done.
 echo.
 
 echo ============================================
 echo  Build complete!
-echo  MSI: installer\QAQCDeviceTool-v2.2.0-Setup.msi
-echo  ZIP: QAQCDeviceTool-v2.2.0-win-x64.zip
+echo  Installer: QAQCDeviceTool-v2.3.0-Setup.exe
 echo ============================================

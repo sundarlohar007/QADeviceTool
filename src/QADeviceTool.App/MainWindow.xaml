@@ -43,6 +43,21 @@
         <DataTemplate DataType="{x:Type vm:DeviceViewModel}">
             <views:DeviceView />
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AppManagementViewModel}">
+            <views:AppManagementView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ShellViewModel}">
+            <views:ShellView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DeepLinkViewModel}">
+            <views:DeepLinkView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:VitalsViewModel}">
+            <views:VitalsView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:FileExplorerViewModel}">
+            <views:FileExplorerView />
+        </DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
             <views:SettingsView />
         </DataTemplate>
@@ -72,7 +87,7 @@
                                    Foreground="{StaticResource BrushTextPrimary}"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center" />
-                        <TextBlock Text=" v2.2.0" 
+                        <TextBlock Text=" v2.3.0" 
                                    Style="{StaticResource TextCaption}"
                                    VerticalAlignment="Center" Margin="4,0,0,0" />
                     </StackPanel>
@@ -126,6 +141,31 @@
                                          Tag="" Content="Devices"
                                          Command="{Binding NavigateCommand}"
                                          CommandParameter="Devices" />
+
+                            <RadioButton Style="{StaticResource NavButton}" 
+                                         Tag="" Content="Apps"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Apps" />
+
+                            <RadioButton Style="{StaticResource NavButton}" 
+                                         Tag="" Content="Shell"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Shell" />
+
+                            <RadioButton Style="{StaticResource NavButton}" 
+                                         Tag="" Content="Deep Link"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="DeepLink" />
+
+                            <RadioButton Style="{StaticResource NavButton}" 
+                                         Tag="" Content="Vitals"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Vitals" />
+
+                            <RadioButton Style="{StaticResource NavButton}" 
+                                         Tag="" Content="Files"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Files" />
 
                             <RadioButton Style="{StaticResource NavButton}" 
                                          Tag="" Content="Settings"
@@ -183,7 +223,7 @@
                                VerticalAlignment="Center"
                                HorizontalAlignment="Right">
                         <Run Text="Please reach out to Sundar Lohar if any bugs/issues encountered | " />
-                        <Run Text="QA/QC Device Tool v2.2.0" />
+                        <Run Text="QA/QC Device Tool v2.3.0" />
                     </TextBlock>
                 </DockPanel>
             </Border>

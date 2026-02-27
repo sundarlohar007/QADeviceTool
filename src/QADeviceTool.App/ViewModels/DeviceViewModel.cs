@@ -137,8 +137,8 @@ public partial class DeviceViewModel : ObservableObject
     {
         if (SelectedDevice == null) return;
 
-        var outputDir = Helpers.PathHelper.GetDefaultSessionsDirectory();
-        Helpers.PathHelper.EnsureSessionsDirectory();
+        var outputDir = PreferencesService.Current.SessionsRootDirectory;
+        if (!System.IO.Directory.Exists(outputDir)) System.IO.Directory.CreateDirectory(outputDir);
 
         var fileName = $"snapshot_{SelectedDevice.Serial}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
         var outputPath = System.IO.Path.Combine(outputDir, fileName);
@@ -154,79 +154,6 @@ public partial class DeviceViewModel : ObservableObject
             : "Failed to capture snapshot.";
     }
 
-    // ─── Install App (APK / IPA) ─────────────────────────────────
-    [RelayCommand]
-    private async Task InstallAppAsync()
-    {
-        if (SelectedDevice == null)
-        {
-            StatusMessage = "[!] No device selected.";
-            return;
-        }
-
-        var dialog = new Microsoft.Win32.OpenFileDialog();
-
-        if (SelectedDevice.Platform == DevicePlatform.Android)
-        {
-            dialog.Filter = "Android Package (*.apk)|*.apk";
-            dialog.Title = "Select APK to install";
-        }
-        else
-        {
-            dialog.Filter = "iOS App (*.ipa)|*.ipa";
-            dialog.Title = "Select IPA to install";
-        }
-
-        if (dialog.ShowDialog() != true) return;
-
-        StatusMessage = $"Installing {System.IO.Path.GetFileName(dialog.FileName)}...";
-
-        try
-        {
-            (bool success, string message) result;
-
-            Action<string> updateProgress = (line) => 
-            {
-                if (!string.IsNullOrWhiteSpace(line))
-                {
-                    _dispatcher.Invoke(() => StatusMessage = $"[Installing] {line.Trim()}");
-                }
-            };
-
-            if (SelectedDevice.Platform == DevicePlatform.Android)
-            {
-                result = await _adbService.InstallApkAsync(SelectedDevice.Serial, dialog.FileName, updateProgress);
-            }
-            else
-            {
-                // Pause logging if active; idevicesyslog locks the lockdown connection
-                var activeSession = _sessionService.GetActiveSessionForDevice(SelectedDevice.Serial);
-                if (activeSession != null)
-                {
-                    StatusMessage = "Pausing logs for install...";
-                    _sessionService.StopCapture(activeSession);
-                    await Task.Delay(1500); // Give the port time to free up
-                }
-
-                StatusMessage = $"Installing {System.IO.Path.GetFileName(dialog.FileName)}...";
-                result = await _iosService.InstallIpaAsync(SelectedDevice.Serial, dialog.FileName, updateProgress);
-
-                if (activeSession != null)
-                {
-                    StatusMessage = "Resuming logs...";
-                    _sessionService.StartCapture(activeSession);
-                }
-            }
-
-            StatusMessage = result.success
-                ? result.message
-                : $"[!] Install failed: {result.message}";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"[!] Install error: {ex.Message}";
-        }
-    }
 
     // ─── Wireless ADB ────────────────────────────────────────────
     [ObservableProperty]

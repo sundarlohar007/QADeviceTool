@@ -39,6 +39,9 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private int _activeSessionCount;
 
+    [ObservableProperty]
+    private string _targetPackageName = string.Empty;
+
     public DashboardViewModel(
         AdbService adbService,
         IosService iosService,
@@ -57,8 +60,31 @@ public partial class DashboardViewModel : ObservableObject
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
 
-        // Load initial data
-        _ = LoadToolStatusesAsync();
+        // Load initial data exclusively on a background thread so we don't block the UI rendering during startup
+        Task.Run(async () =>
+        {
+            try
+            {
+                var keyword = PreferencesService.Current.TargetPackageName;
+                if (!string.IsNullOrWhiteSpace(keyword))
+                {
+                    _dispatcher.Invoke(() => TargetPackageName = keyword);
+                }
+            }
+            catch { }
+
+            await LoadToolStatusesAsync();
+        });
+    }
+
+    partial void OnTargetPackageNameChanged(string value)
+    {
+        try
+        {
+            PreferencesService.Current.TargetPackageName = value.Trim();
+            PreferencesService.Save();
+        }
+        catch { }
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
@@ -151,7 +177,8 @@ public partial class DashboardViewModel : ObservableObject
             return;
         }
 
-        var outputDir = Helpers.PathHelper.GetDefaultSessionsDirectory();
+        var outputDir = PreferencesService.Current.SessionsRootDirectory;
+        if (!System.IO.Directory.Exists(outputDir)) System.IO.Directory.CreateDirectory(outputDir);
         var fileName = $"snapshot_{SelectedDevice.Serial}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
         var outputPath = System.IO.Path.Combine(outputDir, fileName);
 

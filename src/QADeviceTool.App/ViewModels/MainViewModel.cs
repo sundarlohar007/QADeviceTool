@@ -37,6 +37,11 @@ public partial class MainViewModel : ObservableObject
     public DashboardViewModel DashboardVM { get; }
     public SessionViewModel SessionVM { get; }
     public DeviceViewModel DeviceVM { get; }
+    public AppManagementViewModel AppManagementVM { get; }
+    public ShellViewModel ShellVM { get; }
+    public DeepLinkViewModel DeepLinkVM { get; }
+    public VitalsViewModel VitalsVM { get; }
+    public FileExplorerViewModel FileExplorerVM { get; }
     public SettingsViewModel SettingsVM { get; }
 
     public MainViewModel()
@@ -55,6 +60,11 @@ public partial class MainViewModel : ObservableObject
         DashboardVM = new DashboardViewModel(_adbService, _iosService, _scrcpyService, _sessionService, _deviceMonitor, _dependencyChecker);
         SessionVM = new SessionViewModel(_sessionService, _adbService, _iosService, _deviceMonitor);
         DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor, _sessionService);
+        AppManagementVM = new AppManagementViewModel(_adbService, _iosService, _deviceMonitor, _sessionService);
+        ShellVM = new ShellViewModel(_deviceMonitor);
+        DeepLinkVM = new DeepLinkViewModel(_adbService, _deviceMonitor);
+        VitalsVM = new VitalsViewModel(_adbService, _deviceMonitor);
+        FileExplorerVM = new FileExplorerViewModel(_adbService, _iosService, _deviceMonitor);
         SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService);
 
         // Wire up device monitor events
@@ -85,6 +95,11 @@ public partial class MainViewModel : ObservableObject
             "Dashboard" => DashboardVM,
             "Sessions" => SessionVM,
             "Devices" => DeviceVM,
+            "Apps" => AppManagementVM,
+            "Shell" => ShellVM,
+            "DeepLink" => DeepLinkVM,
+            "Vitals" => VitalsVM,
+            "Files" => FileExplorerVM,
             "Settings" => SettingsVM,
             _ => DashboardVM
         };

@@ -5,7 +5,7 @@
 
   <Package Name="QA/QC Device Tool"
            Manufacturer="Sundar Lohar"
-           Version="2.2.0.0"
+           Version="2.3.0.0"
            UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
            Scope="perMachine">
 
@@ -23,6 +23,7 @@
     <CustomAction Id="KillIinstaller" Directory="TARGETDIR" ExeCommand="&quot;[SystemFolder]taskkill.exe&quot; /F /IM ideviceinstaller.exe /T" Execute="immediate" Return="ignore" />
     <CustomAction Id="KillIinfo" Directory="TARGETDIR" ExeCommand="&quot;[SystemFolder]taskkill.exe&quot; /F /IM ideviceinfo.exe /T" Execute="immediate" Return="ignore" />
     <CustomAction Id="KillIid" Directory="TARGETDIR" ExeCommand="&quot;[SystemFolder]taskkill.exe&quot; /F /IM idevice_id.exe /T" Execute="immediate" Return="ignore" />
+    <CustomAction Id="KillAfc" Directory="TARGETDIR" ExeCommand="&quot;[SystemFolder]taskkill.exe&quot; /F /IM afcclient.exe /T" Execute="immediate" Return="ignore" />
 
     <InstallExecuteSequence>
         <Custom Action="KillApp" Before="InstallValidate" />
@@ -32,6 +33,7 @@
         <Custom Action="KillIinstaller" Before="InstallValidate" />
         <Custom Action="KillIinfo" Before="InstallValidate" />
         <Custom Action="KillIid" Before="InstallValidate" />
+        <Custom Action="KillAfc" Before="InstallValidate" />
     </InstallExecuteSequence>
 
     <!-- Directory structure -->
@@ -80,56 +82,9 @@
       <Component Id="s_vbs" Guid="*"><File Source="!(bindpath.publish)tools\scrcpy-win64-v3.3.4\scrcpy-noconsole.vbs" KeyPath="yes" /></Component>
     </ComponentGroup>
 
-    <!-- ═══════ iMobileDevice (47 files) ═══════ -->
+    <!-- ═══════ iMobileDevice (Dynamic Full Inclusion) ═══════ -->
     <ComponentGroup Id="IMobileTools" Directory="IMobileDir">
-      <Component Id="i_idevice_id" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevice_id.exe" KeyPath="yes" /></Component>
-      <Component Id="i_ideviceactivation" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\ideviceactivation.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicebackup" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicebackup.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicebackup2" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicebackup2.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicecrashreport" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicecrashreport.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicedate" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicedate.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicedebug" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicedebug.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicedebugserverproxy" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicedebugserverproxy.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicediagnostics" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicediagnostics.exe" KeyPath="yes" /></Component>
-      <Component Id="i_ideviceenterrecovery" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\ideviceenterrecovery.exe" KeyPath="yes" /></Component>
-      <Component Id="i_ideviceimagemounter" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\ideviceimagemounter.exe" KeyPath="yes" /></Component>
-      <Component Id="i_ideviceinfo" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\ideviceinfo.exe" KeyPath="yes" /></Component>
-      <Component Id="i_ideviceinstaller" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\ideviceinstaller.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicename" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicename.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicenotificationproxy" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicenotificationproxy.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicepair" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicepair.exe" KeyPath="yes" /></Component>
-      <Component Id="i_ideviceprovision" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\ideviceprovision.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicescreenshot" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicescreenshot.exe" KeyPath="yes" /></Component>
-      <Component Id="i_idevicesyslog" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\idevicesyslog.exe" KeyPath="yes" /></Component>
-      <Component Id="i_iproxy" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\iproxy.exe" KeyPath="yes" /></Component>
-      <Component Id="i_irecovery" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\irecovery.exe" KeyPath="yes" /></Component>
-      <Component Id="i_plistutil" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\plistutil.exe" KeyPath="yes" /></Component>
-      <Component Id="i_plist_cmp" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\plist_cmp.exe" KeyPath="yes" /></Component>
-      <Component Id="i_plist_test" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\plist_test.exe" KeyPath="yes" /></Component>
-      <Component Id="i_usbmuxd" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\usbmuxd.exe" KeyPath="yes" /></Component>
-      <!-- DLLs -->
-      <Component Id="i_getopt" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\getopt.dll" KeyPath="yes" /></Component>
-      <Component Id="i_ideviceactivation_dll" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\ideviceactivation.dll" KeyPath="yes" /></Component>
-      <Component Id="i_imobiledevice_net" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\imobiledevice-net-lighthouse.dll" KeyPath="yes" /></Component>
-      <Component Id="i_imobiledevice_dll" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\imobiledevice.dll" KeyPath="yes" /></Component>
-      <Component Id="i_irecovery_dll" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\irecovery.dll" KeyPath="yes" /></Component>
-      <Component Id="i_libcharset" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\libcharset.dll" KeyPath="yes" /></Component>
-      <Component Id="i_libcurl" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\libcurl.dll" KeyPath="yes" /></Component>
-      <Component Id="i_libeay32" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\libeay32.dll" KeyPath="yes" /></Component>
-      <Component Id="i_libiconv" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\libiconv.dll" KeyPath="yes" /></Component>
-      <Component Id="i_libusb_10" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\libusb-1.0.dll" KeyPath="yes" /></Component>
-      <Component Id="i_libusb_usbdk" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\libusb-usbdk-1.0.dll" KeyPath="yes" /></Component>
-      <Component Id="i_libusb0" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\libusb0.dll" KeyPath="yes" /></Component>
-      <Component Id="i_libxml2" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\libxml2.dll" KeyPath="yes" /></Component>
-      <Component Id="i_lzma" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\lzma.dll" KeyPath="yes" /></Component>
-      <Component Id="i_plist_dll" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\plist.dll" KeyPath="yes" /></Component>
-      <Component Id="i_pthreads" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\pthreadsVC2.dll" KeyPath="yes" /></Component>
-      <Component Id="i_readline" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\readline.dll" KeyPath="yes" /></Component>
-      <Component Id="i_ssleay32" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\ssleay32.dll" KeyPath="yes" /></Component>
-      <Component Id="i_usbmuxd_dll" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\usbmuxd.dll" KeyPath="yes" /></Component>
-      <Component Id="i_vcruntime" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\vcruntime140.dll" KeyPath="yes" /></Component>
-      <Component Id="i_zip" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\zip.dll" KeyPath="yes" /></Component>
-      <Component Id="i_zlib1" Guid="*"><File Source="!(bindpath.publish)tools\iMobileDevice\zlib1.dll" KeyPath="yes" /></Component>
+      <Files Include="!(bindpath.publish)\tools\iMobileDevice\**" />
     </ComponentGroup>
 
     <!-- ═══════ Shortcuts ═══════ -->
@@ -190,12 +145,7 @@
                   Directory="INSTALLFOLDER"
                   ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]assets\SetupAndroid.ps1&quot; &quot;[INSTALLFOLDER]&quot;" />
 
-    <CustomAction Id="CA_AppleCheck" Execute="immediate" Return="ignore"
-                  Directory="INSTALLFOLDER"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -Command &quot;if(!(Get-Service 'Apple Mobile Device Service' -ErrorAction Ignore)){ Add-Type -AssemblyName System.Windows.Forms; if([System.Windows.Forms.MessageBox]::Show('Apple Mobile Device Service (iTunes) is missing on this system. While iOS support is optional, it is required if you plan to connect Apple devices. Would you like to open your browser to download iTunes now?', 'Apple iOS Support Missing', 'YesNo', 'Information') -eq 'Yes') { Start-Process 'https://secure-appldnld.apple.com/itunes12/001-80053-20210422-E8A3B28C-A3B2-11EB-BE07-CE1B67FC6302/iTunes64Setup.exe'} }&quot;" />
-
     <InstallExecuteSequence>
-      <Custom Action="CA_AppleCheck" After="CostFinalize" Condition="NOT Installed AND UILevel &gt; 3" />
       <Custom Action="CA_AndroidSetup" Before="InstallFinalize" Condition="NOT Installed" />
     </InstallExecuteSequence>
 

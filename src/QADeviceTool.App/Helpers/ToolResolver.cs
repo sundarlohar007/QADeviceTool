@@ -102,4 +102,31 @@ public static class ToolResolver
         }
         catch { return false; }
     }
+
+    /// <summary>
+    /// Prepends all valid subdirectories in the tools/ directory to the current process's PATH environment variable.
+    /// This ensures that the Windows loader can locate native DLLs (e.g., libimobiledevice-1.0.dll) when spawning bundled executables.
+    /// </summary>
+    public static void InitializeNativePaths()
+    {
+        if (!Directory.Exists(_toolsDir)) return;
+
+        try
+        {
+            var currentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
+            var newPaths = new System.Collections.Generic.List<string>();
+
+            foreach (var subDir in Directory.GetDirectories(_toolsDir))
+            {
+                newPaths.Add(subDir);
+            }
+
+            if (newPaths.Count > 0)
+            {
+                var prefix = string.Join(";", newPaths) + ";";
+                Environment.SetEnvironmentVariable("PATH", prefix + currentPath);
+            }
+        }
+        catch { }
+    }
 }

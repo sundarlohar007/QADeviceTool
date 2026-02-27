@@ -30,7 +30,7 @@ public partial class SettingsViewModel : ObservableObject
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
-    private string _appVersion = "2.2.0";
+    private string _appVersion = "2.3.0";
 
     public SettingsViewModel(DependencyChecker dependencyChecker, SessionService sessionService)
     {
@@ -39,7 +39,12 @@ public partial class SettingsViewModel : ObservableObject
         _dispatcher = Application.Current.Dispatcher;
         _sessionsDirectory = sessionService.SessionsRootDirectory;
 
-        _ = CheckDependenciesAsync();
+            // Execute all heavy startup IO away from the main UI thread.
+            Task.Run(async () =>
+            {
+                // Start dependency checks
+                await CheckDependenciesAsync();
+            });
     }
 
     [RelayCommand]
@@ -85,6 +90,8 @@ public partial class SettingsViewModel : ObservableObject
         {
             SessionsDirectory = dialog.FolderName;
             _sessionService.SessionsRootDirectory = dialog.FolderName;
+            PreferencesService.Current.SessionsRootDirectory = dialog.FolderName;
+            PreferencesService.Save();
         }
     }
 }

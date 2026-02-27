@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Bundle Name="QA/QC Device Tool Bootstrapper"
+          Manufacturer="Sundar Lohar"
+          Version="2.3.0.0"
+          UpgradeCode="F7E6D5C4-B3A2-1098-7654-3210FEDCBA98">
+          
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication 
+          LicenseFile="..\License.rtf"
+          Theme="rtfLicense" />
+    </BootstrapperApplication>
+
+    <!-- Check if iTunes is installed -->
+    <util:RegistrySearch
+      Id="SearchITunes"
+      Variable="ITUNES_INSTALLED"
+      Root="HKLM"
+      Key="SOFTWARE\Apple Computer, Inc.\iTunes"
+      Result="exists" />
+      
+    <!-- Check if Apple Mobile Device Support is installed -->
+    <util:RegistrySearch
+      Id="SearchAMDS"
+      Variable="AMDS_INSTALLED"
+      Root="HKLM"
+      Key="SOFTWARE\Apple Inc.\Apple Mobile Device Support"
+      Result="exists" />
+
+    <!-- .NET 8.0 Desktop Runtime (x64) handled strictly by WiX Netfx Extension -->
+    <netfx:DotNetCoreSearch 
+        RuntimeType="desktop"
+        Platform="x64"
+        MajorVersion="8"
+        Variable="DOTNET8DESKTOP" />
+    <Chain>
+      <ExePackage 
+          Id="NetCore8Desktop" 
+          DisplayName="Microsoft .NET 8.0 Desktop Runtime"
+          Cache="remove" 
+          Compressed="no" 
+          PerMachine="yes" 
+          Permanent="yes" 
+          Vital="yes" 
+          SourceFile="..\..\tools\windowsdesktop-runtime-8.0.3-win-x64.exe"
+          DownloadUrl="https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe"
+          InstallArguments="/install /quiet /norestart"
+          DetectCondition="DOTNET8DESKTOP &gt;= v8.0.0" />
+
+      <!-- iTunes Installer -->
+      <ExePackage 
+          Id="iTunesSetup" 
+          SourceFile="..\..\tools\iTunes64Setup.exe" 
+          DisplayName="iTunes iOS Drivers" 
+          Cache="keep" 
+          Compressed="yes" 
+          PerMachine="yes" 
+          Permanent="yes" 
+          InstallArguments="SILENT_INSTALL=1" 
+          Vital="no"
+          DetectCondition="ITUNES_INSTALLED OR AMDS_INSTALLED" />
+
+      <!-- Main QA/QC Device Tool Application -->
+      <MsiPackage 
+          Id="MainApp" 
+          SourceFile="..\..\publish\QAQCDeviceTool.msi" 
+          Vital="yes" />
+    </Chain>
+  </Bundle>
+</Wix>

@@ -29,6 +29,15 @@ public static class PathHelper
     }
 
     /// <summary>
+    /// Gets the path to the application configuration file.
+    /// </summary>
+    public static string GetConfigFilePath()
+    {
+        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        return Path.Combine(documents, "QA_Device_Tool", "config.txt");
+    }
+
+    /// <summary>
     /// Creates a new session directory in the format: DeviceName_HH.MM.SStt_dd.MM.yyyy
     /// Uses the provided root directory or falls back to the default.
     /// </summary>

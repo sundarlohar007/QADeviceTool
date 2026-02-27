@@ -26,7 +26,7 @@ public class ScrcpyService
             Description = "Required for Android screen mirroring"
         };
 
-        var result = await ProcessRunner.RunAsync(_scrcpy, "--version");
+        var result = await ToolLauncher.RunAsync(_scrcpy, "--version");
         if (result.Success)
         {
             status.IsInstalled = true;
@@ -37,6 +37,7 @@ public class ScrcpyService
         }
         else
         {
+            AppLogger.Log.Warn($"[ScrcpyService] CheckAvailabilityAsync failed. Error: {result.Error}, Output: {result.Output}");
             status.IsInstalled = false;
             status.StatusMessage = "scrcpy not found. Place in the tools/ folder.";
         }
@@ -53,7 +54,7 @@ public class ScrcpyService
         var check = await CheckAvailabilityAsync();
         if (!check.IsInstalled) return false;
 
-        _mirrorProcess = ProcessRunner.StartLongRunning(_scrcpy, $"-s {serial} --window-title \"QA Mirror - {serial}\"");
+        _mirrorProcess = ToolLauncher.StartLongRunning(_scrcpy, $"-s {serial} --window-title \"QA Mirror - {serial}\"");
         
         await Task.Delay(500);
         
