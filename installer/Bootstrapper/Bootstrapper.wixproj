@@ -1,7 +1,7 @@
 <Project Sdk="WixToolset.Sdk/5.0.0">
   <PropertyGroup>
     <OutputType>Bundle</OutputType>
-    <OutputName>QAQCDeviceTool-v2.3.0-Setup</OutputName>
+    <OutputName>QAQCDeviceTool-v2.4.0-Setup</OutputName>
   </PropertyGroup>
 
   <ItemGroup>

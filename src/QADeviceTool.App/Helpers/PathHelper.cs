@@ -12,8 +12,8 @@ public static class PathHelper
     /// </summary>
     public static string GetDefaultSessionsDirectory()
     {
-        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        return Path.Combine(documents, "QA_Device_Tool", "Sessions");
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return Path.Combine(localAppData, "QAQCDeviceTool", "Sessions");
     }
 
     /// <summary>
@@ -33,8 +33,8 @@ public static class PathHelper
     /// </summary>
     public static string GetConfigFilePath()
     {
-        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        return Path.Combine(documents, "QA_Device_Tool", "config.txt");
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return Path.Combine(localAppData, "QAQCDeviceTool", "config.txt");
     }
 
     /// <summary>

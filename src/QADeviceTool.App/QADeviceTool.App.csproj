@@ -7,7 +7,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>QADeviceTool</AssemblyName>
     <RootNamespace>QADeviceTool</RootNamespace>
-    <Version>2.3.0</Version>
+    <Version>2.4.0</Version>
     <Company>QA/QC Device Tool</Company>
     <Product>QA/QC Device Tool</Product>
     <Description>Windows QA utility for manual game testers - device log capture, screen mirroring, and session management.</Description>

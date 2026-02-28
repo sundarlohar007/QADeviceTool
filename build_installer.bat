@@ -34,11 +34,11 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 REM Move the setup.exe to the root output folder
-copy /Y "installer\Bootstrapper\bin\x64\Release\QAQCDeviceTool-v2.3.0-Setup.exe" ".\QAQCDeviceTool-v2.3.0-Setup.exe"
+copy /Y "installer\Bootstrapper\bin\x64\Release\QAQCDeviceTool-v2.4.0-Setup.exe" ".\QAQCDeviceTool-v2.4.0-Setup.exe"
 echo     Done.
 echo.
 
 echo ============================================
 echo  Build complete!
-echo  Installer: QAQCDeviceTool-v2.3.0-Setup.exe
+echo  Installer: QAQCDeviceTool-v2.4.0-Setup.exe
 echo ============================================

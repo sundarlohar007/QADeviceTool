@@ -5,7 +5,7 @@
 
   <Package Name="QA/QC Device Tool"
            Manufacturer="Sundar Lohar"
-           Version="2.3.0.0"
+           Version="2.4.0.0"
            UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
            Scope="perMachine">
 
@@ -54,12 +54,33 @@
     <StandardDirectory Id="DesktopFolder" />
 
     <!-- ═══════ Main Application ═══════ -->
+    <!-- EXE kept explicit so shortcuts can reference MainExecutable by Id -->
     <ComponentGroup Id="MainApp" Directory="INSTALLFOLDER">
       <Component Id="c_exe" Guid="*">
         <File Id="MainExecutable" Source="!(bindpath.publish)\QADeviceTool.exe" KeyPath="yes" />
       </Component>
       <Component Id="c_pdb" Guid="*">
         <File Source="!(bindpath.publish)\QADeviceTool.pdb" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- ═══════ .NET Native WPF Runtime DLLs ═══════ -->
+    <!-- These are excluded from PublishSingleFile and MUST sit next to the EXE -->
+    <ComponentGroup Id="NativeRuntime" Directory="INSTALLFOLDER">
+      <Component Id="c_d3d" Guid="*">
+        <File Source="!(bindpath.publish)\D3DCompiler_47_cor3.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="c_penimc" Guid="*">
+        <File Source="!(bindpath.publish)\PenImc_cor3.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="c_wpfnative" Guid="*">
+        <File Source="!(bindpath.publish)\PresentationNative_cor3.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="c_vcruntime" Guid="*">
+        <File Source="!(bindpath.publish)\vcruntime140_cor3.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="c_wpfgfx" Guid="*">
+        <File Source="!(bindpath.publish)\wpfgfx_cor3.dll" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 
@@ -83,8 +104,9 @@
     </ComponentGroup>
 
     <!-- ═══════ iMobileDevice (Dynamic Full Inclusion) ═══════ -->
+    <!-- Uses relative path from .wxs file since <Files> doesn't resolve bindpath like <File Source> -->
     <ComponentGroup Id="IMobileTools" Directory="IMobileDir">
-      <Files Include="!(bindpath.publish)\tools\iMobileDevice\**" />
+      <Files Include="..\publish\tools\iMobileDevice\**" />
     </ComponentGroup>
 
     <!-- ═══════ Shortcuts ═══════ -->
@@ -132,6 +154,7 @@
     <!-- ═══════ Features ═══════ -->
     <Feature Id="ProductFeature" Title="QA/QC Device Tool" Level="1">
       <ComponentGroupRef Id="MainApp" />
+      <ComponentGroupRef Id="NativeRuntime" />
       <ComponentGroupRef Id="ScrcpyTools" />
       <ComponentGroupRef Id="IMobileTools" />
       <ComponentGroupRef Id="Shortcuts" />

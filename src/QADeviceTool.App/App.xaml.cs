@@ -6,7 +6,7 @@ namespace QADeviceTool;
 
 public partial class App : Application
 {
-    private static readonly string EarlyLogPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QAQCDeviceTool", "startup-debug.log");
+    private static readonly string EarlyLogPath = Path.Combine(AppContext.BaseDirectory, "startup-debug.log");
 
     private void EarlyLog(string message, Exception? ex = null)
     {
@@ -32,7 +32,12 @@ public partial class App : Application
     {
         EarlyLog("========================================");
         EarlyLog("APP STARTUP ENTERED");
+        EarlyLog($"Executable Path: {Environment.ProcessPath}");
         EarlyLog($"Base Directory: {AppContext.BaseDirectory}");
+        EarlyLog($"Current Directory: {Environment.CurrentDirectory}");
+        EarlyLog($"OS Architecture: {(Environment.Is64BitOperatingSystem ? "x64" : "x86")}");
+        EarlyLog($"Process Architecture: {(Environment.Is64BitProcess ? "x64" : "x86")}");
+        EarlyLog($"PATH Variable: {Environment.GetEnvironmentVariable("PATH")}");
 
         // Inject tools directory directly into PATH securely
         string toolsDir = Path.Combine(AppContext.BaseDirectory, "tools", "iMobileDevice");

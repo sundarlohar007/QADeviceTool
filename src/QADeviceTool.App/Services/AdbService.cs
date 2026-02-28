@@ -8,14 +8,46 @@ namespace QADeviceTool.Services;
 /// <summary>
 /// Wraps ADB commands for device detection, log capture, and screenshots.
 /// Uses ToolResolver to find bundled or system ADB.
+/// All commands are serialized via semaphore to prevent concurrent USB transport access.
 /// </summary>
 public class AdbService
 {
     private readonly string _adb;
+    private static readonly SemaphoreSlim _adbLock = new(1, 1);
 
     public AdbService()
     {
         _adb = ToolResolver.Resolve("adb");
+    }
+
+    // ─── Semaphore-guarded ADB execution ─────────────────────────
+    // All adb calls go through these to prevent concurrent USB transport access.
+
+    private async Task<ToolLauncherResult> RunAdbAsync(string arguments, int timeoutMs = 15000, Action<string>? outputCallback = null)
+    {
+        await _adbLock.WaitAsync();
+        try
+        {
+            return await ToolLauncher.RunAsync(_adb, arguments, timeoutMs, outputCallback);
+        }
+        finally
+        {
+            _adbLock.Release();
+        }
+    }
+
+    private System.Diagnostics.Process? StartAdbLongRunning(string arguments)
+    {
+        // Long-running processes (logcat, etc.) only hold the lock during start
+        _adbLock.Wait();
+        try
+        {
+            return ToolLauncher.StartLongRunning(_adb, arguments);
+        }
+        finally
+        {
+            _adbLock.Release();
+        }
     }
 
     public async Task<ToolStatus> CheckAvailabilityAsync()
@@ -26,7 +58,7 @@ public class AdbService
             Description = "Required for Android device communication"
         };
 
-        var result = await ToolLauncher.RunAsync(_adb, "version");
+        var result = await RunAdbAsync("version");
         if (result.Success)
         {
             status.IsInstalled = true;
@@ -48,7 +80,7 @@ public class AdbService
     public async Task<List<DeviceInfo>> GetConnectedDevicesAsync()
     {
         var devices = new List<DeviceInfo>();
-        var result = await ToolLauncher.RunAsync(_adb, "devices -l");
+        var result = await RunAdbAsync("devices -l");
 
         if (!result.Success) return devices;
 
@@ -96,13 +128,13 @@ public class AdbService
 
     public async Task<string?> GetDevicePropertyAsync(string serial, string property)
     {
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} shell getprop {property}", 5000);
+        var result = await RunAdbAsync($"-s {serial} shell getprop {property}", 5000);
         return result.Success ? result.Output.Trim() : null;
     }
 
     public async Task<string> ExecuteCommandAsync(string serial, string args)
     {
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} {args}", 15000);
+        var result = await RunAdbAsync($"-s {serial} {args}", 15000);
         return result.Output;
     }
 
@@ -111,7 +143,7 @@ public class AdbService
     {
         device.OsVersion = await GetDevicePropertyAsync(device.Serial, "ro.build.version.release") ?? "Unknown";
         
-        var batteryResult = await ToolLauncher.RunAsync(_adb, $"-s {device.Serial} shell dumpsys battery", 5000);
+        var batteryResult = await RunAdbAsync($"-s {device.Serial} shell dumpsys battery", 5000);
         if (batteryResult.Success)
         {
             var match = Regex.Match(batteryResult.Output, @"level:\s*(\d+)");
@@ -124,17 +156,17 @@ public class AdbService
 
     public System.Diagnostics.Process? StartLogCapture(string serial, string outputFilePath)
     {
-        return ToolLauncher.StartLongRunning(_adb, $"-s {serial} logcat -v threadtime");
+        return StartAdbLongRunning($"-s {serial} logcat -v threadtime");
     }
 
     public async Task<bool> CaptureScreenshotAsync(string serial, string outputPath)
     {
         var remotePath = "/sdcard/qa_screenshot.png";
-        var capResult = await ToolLauncher.RunAsync(_adb, $"-s {serial} shell screencap -p {remotePath}", 15000);
+        var capResult = await RunAdbAsync($"-s {serial} shell screencap -p {remotePath}", 15000);
         if (!capResult.Success) return false;
 
-        var pullResult = await ToolLauncher.RunAsync(_adb, $"-s {serial} pull {remotePath} \"{outputPath}\"", 15000);
-        await ToolLauncher.RunAsync(_adb, $"-s {serial} shell rm {remotePath}", 5000);
+        var pullResult = await RunAdbAsync($"-s {serial} pull {remotePath} \"{outputPath}\"", 15000);
+        await RunAdbAsync($"-s {serial} shell rm {remotePath}", 5000);
 
         return pullResult.Success;
     }
@@ -148,7 +180,7 @@ public class AdbService
         if (string.IsNullOrWhiteSpace(packageNameKeyword)) return null;
         
         // Fetch all processes: PID  NAME
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} shell ps -A -o PID,NAME", 10000);
+        var result = await RunAdbAsync($"-s {serial} shell ps -A -o PID,NAME", 10000);
         if (!result.Success) return null;
 
         var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -178,7 +210,7 @@ public class AdbService
     // ─── APK Installation ────────────────────────────────────────
     public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? outputCallback = null)
     {
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} install -r \"{apkPath}\"", 600000, outputCallback);
+        var result = await RunAdbAsync($"-s {serial} install -r \"{apkPath}\"", 600000, outputCallback);
         if (result.Success && result.Output.Contains("Success"))
             return (true, "APK installed successfully.");
         return (false, result.Output.Trim());
@@ -187,12 +219,12 @@ public class AdbService
     // ─── Wireless ADB ────────────────────────────────────────────
     public async Task<(bool Success, string Message)> EnableWirelessAsync(string serial, int port = 5555)
     {
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} tcpip {port}", 10000);
+        var result = await RunAdbAsync($"-s {serial} tcpip {port}", 10000);
         if (!result.Success)
             return (false, $"Failed to enable TCP mode: {result.Output.Trim()}");
 
         // Get device IP address
-        var ipResult = await ToolLauncher.RunAsync(_adb, $"-s {serial} shell ip -f inet addr show wlan0", 5000);
+        var ipResult = await RunAdbAsync($"-s {serial} shell ip -f inet addr show wlan0", 5000);
         if (ipResult.Success)
         {
             var match = Regex.Match(ipResult.Output, @"inet (\d+\.\d+\.\d+\.\d+)");
@@ -206,7 +238,7 @@ public class AdbService
     public async Task<(bool Success, string Message)> ConnectWirelessAsync(string ipAddress, int port = 5555)
     {
         var target = $"{ipAddress}:{port}";
-        var result = await ToolLauncher.RunAsync(_adb, $"connect {target}", 10000);
+        var result = await RunAdbAsync($"connect {target}", 10000);
         if (result.Success && result.Output.Contains("connected"))
             return (true, $"Connected to {target}");
         return (false, result.Output.Trim());
@@ -215,7 +247,7 @@ public class AdbService
     public async Task<(bool Success, string Message)> DisconnectWirelessAsync(string ipAddress, int port = 5555)
     {
         var target = $"{ipAddress}:{port}";
-        var result = await ToolLauncher.RunAsync(_adb, $"disconnect {target}", 5000);
+        var result = await RunAdbAsync($"disconnect {target}", 5000);
         return (result.Success, result.Output.Trim());
     }
 
@@ -229,7 +261,7 @@ public class AdbService
     {
         var files = new List<DeviceFile>();
         var command = $"-s {serial} shell \"ls -lAL '{path}'\"";
-        var result = await ToolLauncher.RunAsync(_adb, command);
+        var result = await RunAdbAsync(command);
 
         if (!result.Success) return files;
 
@@ -282,7 +314,7 @@ public class AdbService
     /// </summary>
     public async Task<bool> PullFileAsync(string serial, string remotePath, string localDestination)
     {
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} pull \"{remotePath}\" \"{localDestination}\"");
+        var result = await RunAdbAsync($"-s {serial} pull \"{remotePath}\" \"{localDestination}\"");
         return result.Success;
     }
 
@@ -291,7 +323,7 @@ public class AdbService
     /// </summary>
     public async Task<bool> PushFileAsync(string serial, string localPath, string remoteDestination)
     {
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} push \"{localPath}\" \"{remoteDestination}\"");
+        var result = await RunAdbAsync($"-s {serial} push \"{localPath}\" \"{remoteDestination}\"");
         return result.Success;
     }
 
@@ -300,7 +332,7 @@ public class AdbService
     /// </summary>
     public async Task<bool> DeleteFileAsync(string serial, string remotePath)
     {
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} shell \"rm -rf '{remotePath}'\"");
+        var result = await RunAdbAsync($"-s {serial} shell \"rm -rf '{remotePath}'\"");
         return result.Success;
     }
 
@@ -310,7 +342,7 @@ public class AdbService
     {
         var apps = new List<AppItem>();
         // -3 means list only third-party (user installed) apps
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} shell pm list packages -3", 10000);
+        var result = await RunAdbAsync($"-s {serial} shell pm list packages -3", 10000);
         if (!result.Success) return apps;
 
         var lines = result.Output.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
@@ -327,14 +359,14 @@ public class AdbService
 
     public async Task<bool> UninstallAppAsync(string serial, string packageId)
     {
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} uninstall {packageId}", 15000);
+        var result = await RunAdbAsync($"-s {serial} uninstall {packageId}", 15000);
         return result.Success && result.Output.Contains("Success");
     }
 
     public async Task<bool> BroadcastIntentAsync(string serial, string url)
     {
         // am start -a android.intent.action.VIEW -d "scheme://domain/path"
-        var result = await ToolLauncher.RunAsync(_adb, $"-s {serial} shell am start -a android.intent.action.VIEW -d \"{url}\"", 10000);
+        var result = await RunAdbAsync($"-s {serial} shell am start -a android.intent.action.VIEW -d \"{url}\"", 10000);
         return result.Success;
     }
 }

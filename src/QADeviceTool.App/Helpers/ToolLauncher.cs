@@ -39,15 +39,16 @@ public static class ToolLauncher
         try
         {
             var logger = Services.AppLogger.Log;
+            var workDir = Path.GetDirectoryName(fullExePath) ?? _toolsDir;
             logger.Info($"[ToolLauncher] Launching: {fullExePath} {arguments}");
-            logger.Debug($"[ToolLauncher] WorkingDirectory: {_toolsDir}");
+            logger.Debug($"[ToolLauncher] WorkingDirectory: {workDir}");
 
             using var process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
                 FileName = fullExePath,
                 Arguments = arguments,
-                WorkingDirectory = _toolsDir,
+                WorkingDirectory = workDir,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -132,15 +133,16 @@ public static class ToolLauncher
         try
         {
             var logger = Services.AppLogger.Log;
+            var workDir = Path.GetDirectoryName(fullExePath) ?? _toolsDir;
             logger.Info($"[ToolLauncher] StartLongRunning: {fullExePath} {arguments}");
-            logger.Debug($"[ToolLauncher] WorkingDirectory: {_toolsDir}");
+            logger.Debug($"[ToolLauncher] WorkingDirectory: {workDir}");
 
             var process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
                 FileName = fullExePath,
                 Arguments = arguments,
-                WorkingDirectory = _toolsDir,
+                WorkingDirectory = workDir,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
