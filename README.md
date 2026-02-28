@@ -8,7 +8,7 @@ A robust Windows desktop utility built for QA/QC game testers. It automatically 
 
 - **Auto Log Capture** — Instantly begins logging the moment a device is connected, and stops when disconnected.
 - **Session Management** — Organizes captured logs, traces, and screenshots into meticulously timestamped session folders for each device.
-- **Dynamic App-Specific Dual Logging** — Monitor full device logs alongside a fully isolated, automatically generated application-specific log file that tracks target PIDs intelligently (even through crashes) using partial keyword matching (e.g. `ubisoft`).
+- **Dynamic App-Specific Dual Logging** — Monitor full device logs alongside a fully isolated, automatically generated application-specific log file that tracks target PIDs intelligently (even through crashes) using partial keyword matching (e.g. `youtube`).
 - **Live Log Viewer** — View highly readable device logs in real-time natively in the app, with filtering and auto-scroll capabilities.
 - **Screen Mirroring (Android)** — Click-to-play Android device mirroring and remote control via bundled `scrcpy`.
 - **Instant Snapshots** — Grab and save device screenshots straight from the tool with one click.
