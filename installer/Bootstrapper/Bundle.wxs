@@ -7,7 +7,8 @@
   <Bundle Name="QA/QC Device Tool Bootstrapper"
           Manufacturer="Sundar Lohar"
           Version="2.4.0.0"
-          UpgradeCode="F7E6D5C4-B3A2-1098-7654-3210FEDCBA98">
+          UpgradeCode="F7E6D5C4-B3A2-1098-7654-3210FEDCBA98"
+          IconSourceFile="..\..\src\QADeviceTool.App\Assets\QAQCDeviceIcon.ico">
           
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication 

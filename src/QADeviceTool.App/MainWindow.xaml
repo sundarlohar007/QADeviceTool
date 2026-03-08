@@ -11,7 +11,8 @@
         Background="{x:Null}"
         WindowStyle="None"
         AllowsTransparency="True"
-        ResizeMode="CanResize">
+        ResizeMode="CanResize"
+        Icon="Assets/QAQCDeviceIcon.ico">
     
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="12" GlassFrameThickness="0" UseAeroCaptionButtons="False" />

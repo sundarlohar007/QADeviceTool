@@ -6,7 +6,7 @@ echo.
 
 REM Step 1: Publish the app
 echo [1/3] Publishing application...
-dotnet publish src\QADeviceTool.App\QADeviceTool.App.csproj -c Release --self-contained -r win-x64 -p:PublishSingleFile=true -o .\publish
+dotnet publish src\QADeviceTool.App\QADeviceTool.App.csproj -c Release --self-contained -r win-x64 -o .\publish
 if %ERRORLEVEL% NEQ 0 (
     echo ERROR: Publish failed!
     exit /b 1
@@ -38,7 +38,18 @@ copy /Y "installer\Bootstrapper\bin\x64\Release\QAQCDeviceTool-v2.4.0-Setup.exe"
 echo     Done.
 echo.
 
+REM Step 4: Zip the portable release
+echo [4/4] Zipping Portable Release...
+powershell.exe -nologo -noprofile -command "Compress-Archive -Path '.\publish\*' -DestinationPath '.\QAQCDeviceTool-v2.4.0-Portable.zip' -Force"
+if %ERRORLEVEL% NEQ 0 (
+    echo ERROR: Portable Zip failed!
+    exit /b 1
+)
+echo     Done.
+echo.
+
 echo ============================================
 echo  Build complete!
 echo  Installer: QAQCDeviceTool-v2.4.0-Setup.exe
+echo  Portable:  QAQCDeviceTool-v2.4.0-Portable.zip
 echo ============================================
