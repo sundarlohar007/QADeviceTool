@@ -15,6 +15,9 @@
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
     <WixVariable Id="WixUILicenseRtf" Value="!(bindpath.installer)License.rtf" />
 
+    <Icon Id="AppIcon.ico" SourceFile="src\QADeviceTool.App\Assets\QAQCDeviceIcon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
     <!-- Custom Actions to explicitly force-kill background utilities -->
     <CustomAction Id="KillApp" Directory="TARGETDIR" ExeCommand="&quot;[SystemFolder]taskkill.exe&quot; /F /IM QADeviceTool.exe /T" Execute="immediate" Return="ignore" />
     <CustomAction Id="KillAdb" Directory="TARGETDIR" ExeCommand="&quot;[SystemFolder]taskkill.exe&quot; /F /IM adb.exe /T" Execute="immediate" Return="ignore" />
@@ -62,27 +65,11 @@
       <Component Id="c_pdb" Guid="*">
         <File Source="!(bindpath.publish)\QADeviceTool.pdb" KeyPath="yes" />
       </Component>
+      <Files Include="..\publish\*.dll" />
+      <Files Include="..\publish\*.json" />
     </ComponentGroup>
 
-    <!-- ═══════ .NET Native WPF Runtime DLLs ═══════ -->
-    <!-- These are excluded from PublishSingleFile and MUST sit next to the EXE -->
-    <ComponentGroup Id="NativeRuntime" Directory="INSTALLFOLDER">
-      <Component Id="c_d3d" Guid="*">
-        <File Source="!(bindpath.publish)\D3DCompiler_47_cor3.dll" KeyPath="yes" />
-      </Component>
-      <Component Id="c_penimc" Guid="*">
-        <File Source="!(bindpath.publish)\PenImc_cor3.dll" KeyPath="yes" />
-      </Component>
-      <Component Id="c_wpfnative" Guid="*">
-        <File Source="!(bindpath.publish)\PresentationNative_cor3.dll" KeyPath="yes" />
-      </Component>
-      <Component Id="c_vcruntime" Guid="*">
-        <File Source="!(bindpath.publish)\vcruntime140_cor3.dll" KeyPath="yes" />
-      </Component>
-      <Component Id="c_wpfgfx" Guid="*">
-        <File Source="!(bindpath.publish)\wpfgfx_cor3.dll" KeyPath="yes" />
-      </Component>
-    </ComponentGroup>
+
 
     <!-- ═══════ Scrcpy + ADB (15 files) ═══════ -->
     <ComponentGroup Id="ScrcpyTools" Directory="ScrcpyDir">
@@ -113,7 +100,8 @@
     <ComponentGroup Id="Shortcuts" Directory="AppMenuFolder">
       <Component Id="StartMenuShortcut" Guid="22222222-2222-2222-2222-222222222222">
         <Shortcut Id="StartMenuSC" Name="QA QC Device Tool"
-                  Target="[#MainExecutable]" WorkingDirectory="INSTALLFOLDER" />
+                  Target="[#MainExecutable]" WorkingDirectory="INSTALLFOLDER"
+                  Icon="AppIcon.ico" />
         <RemoveFolder Id="CleanMenu" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\QAQCDeviceTool" Name="installed" Type="integer" Value="1" KeyPath="yes" />
       </Component>
@@ -122,7 +110,8 @@
     <ComponentGroup Id="DesktopSC" Directory="DesktopFolder">
       <Component Id="DesktopShortcut" Guid="33333333-3333-3333-3333-333333333333">
         <Shortcut Id="DesktopSC" Name="QA QC Device Tool"
-                  Target="[#MainExecutable]" WorkingDirectory="INSTALLFOLDER" />
+                  Target="[#MainExecutable]" WorkingDirectory="INSTALLFOLDER"
+                  Icon="AppIcon.ico" />
         <RegistryValue Root="HKCU" Key="Software\QAQCDeviceTool" Name="desktopsc" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </ComponentGroup>
@@ -154,7 +143,6 @@
     <!-- ═══════ Features ═══════ -->
     <Feature Id="ProductFeature" Title="QA/QC Device Tool" Level="1">
       <ComponentGroupRef Id="MainApp" />
-      <ComponentGroupRef Id="NativeRuntime" />
       <ComponentGroupRef Id="ScrcpyTools" />
       <ComponentGroupRef Id="IMobileTools" />
       <ComponentGroupRef Id="Shortcuts" />

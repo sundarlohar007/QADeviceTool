@@ -29,6 +29,9 @@ publish_test*/
 *.exe
 *.wixpdb
 
+# Un-ignore bundled tool executables
+!src/QADeviceTool.App/tools/**/*.exe
+
 # Extracted portable builds (user testing)
 QAQCDeviceTool-*/
 
