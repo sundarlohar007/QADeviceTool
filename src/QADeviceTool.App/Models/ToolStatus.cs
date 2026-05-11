@@ -1,4 +1,4 @@
-namespace QADeviceTool.Models;
+namespace LogPro.Models;
 
 /// <summary>
 /// Represents the availability status of an external tool dependency.

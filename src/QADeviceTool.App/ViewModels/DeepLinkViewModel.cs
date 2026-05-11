@@ -3,14 +3,15 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using QADeviceTool.Models;
-using QADeviceTool.Services;
+using LogPro.Models;
+using LogPro.Services;
 
-namespace QADeviceTool.ViewModels;
+namespace LogPro.ViewModels;
 
 public partial class DeepLinkViewModel : ObservableObject
 {
     private readonly AdbService _adbService;
+    private readonly IosService _iosService;
     private readonly DeviceMonitorService _deviceMonitor;
     private readonly Dispatcher _dispatcher;
 
@@ -29,9 +30,10 @@ public partial class DeepLinkViewModel : ObservableObject
     [ObservableProperty]
     private bool _isRouting;
 
-    public DeepLinkViewModel(AdbService adbService, DeviceMonitorService deviceMonitor)
+    public DeepLinkViewModel(AdbService adbService, IosService iosService, DeviceMonitorService deviceMonitor)
     {
         _adbService = adbService;
+        _iosService = iosService;
         _deviceMonitor = deviceMonitor;
         _dispatcher = Application.Current.Dispatcher;
 
@@ -47,12 +49,12 @@ public partial class DeepLinkViewModel : ObservableObject
             Devices.Clear();
             foreach (var d in devices)
             {
-                if (d.Platform == DevicePlatform.Android) // Intents via CLI are reliable mostly on Android
+                if (d.ConnectionState == DeviceConnectionState.Online)
                 {
                     Devices.Add(d);
                 }
             }
-                
+            
             if (!string.IsNullOrEmpty(currentSelected))
             {
                 SelectedDevice = Devices.FirstOrDefault(d => d.Serial == currentSelected);
@@ -62,6 +64,14 @@ public partial class DeepLinkViewModel : ObservableObject
                 SelectedDevice = Devices.First();
             }
         });
+    }
+
+    public void OnDeviceSelected(DeviceInfo device)
+    {
+        if (device.Platform == DevicePlatform.Android && device.ConnectionState == DeviceConnectionState.Online)
+        {
+            SelectedDevice = device;
+        }
     }
 
     partial void OnTargetUrlChanged(string value)
@@ -89,10 +99,22 @@ public partial class DeepLinkViewModel : ObservableObject
 
         try
         {
-            var success = await _adbService.BroadcastIntentAsync(SelectedDevice.Serial, TargetUrl.Trim());
-            StatusMessage = success 
-                ? $"Successfully launched: {TargetUrl}" 
-                : $"[!] Failed to route intent. Check device status.";
+            bool success;
+            if (SelectedDevice.Platform == DevicePlatform.iOS)
+            {
+                // pymobiledevice3 has no first-class openurl command. Inform user explicitly.
+                success = await _iosService.OpenUrlAsync(SelectedDevice.Serial, TargetUrl.Trim());
+                StatusMessage = success
+                    ? $"Successfully launched: {TargetUrl}"
+                    : "[!] iOS deep links not supported via pymobiledevice3. Use Safari or a configurator.";
+            }
+            else
+            {
+                success = await _adbService.BroadcastIntentAsync(SelectedDevice.Serial, TargetUrl.Trim());
+                StatusMessage = success
+                    ? $"Successfully launched: {TargetUrl}"
+                    : "[!] Failed to route intent. Check device status.";
+            }
         }
         catch (Exception ex)
         {

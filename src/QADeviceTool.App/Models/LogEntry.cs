@@ -1,16 +1,37 @@
 using System;
 
-namespace QADeviceTool.Models;
+namespace LogPro.Models;
 
 public enum LogLevel
 {
+    Unknown = 0,
     Verbose,
     Debug,
     Info,
     Warning,
     Error,
-    Fatal,
-    Unknown
+    Fatal
+}
+
+public enum LogcatBuffer
+{
+    Main,
+    System,
+    Events,
+    Crash,
+    Radio
+}
+
+public enum LogcatFormat
+{
+    Brief,
+    Process,
+    Tag,
+    Thread,
+    Time,
+    ThreadTime,
+    Long,
+    Raw
 }
 
 public class LogEntry
@@ -20,6 +41,7 @@ public class LogEntry
     public string Tag { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public string RawLine { get; set; } = string.Empty;
+    public bool IsBookmarked { get; set; }
 
     public override string ToString()
     {

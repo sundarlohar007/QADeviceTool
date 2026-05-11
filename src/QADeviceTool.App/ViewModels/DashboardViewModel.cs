@@ -3,10 +3,10 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using QADeviceTool.Models;
-using QADeviceTool.Services;
+using LogPro.Models;
+using LogPro.Services;
 
-namespace QADeviceTool.ViewModels;
+namespace LogPro.ViewModels;
 
 /// <summary>
 /// Dashboard — overview of devices, tool statuses, and quick actions.
@@ -42,6 +42,27 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private string _targetPackageName = string.Empty;
 
+    [ObservableProperty]
+    private string _scrcpyBitRate = "2M";
+
+    [ObservableProperty]
+    private string _scrcpyMaxFps = "60";
+
+    [ObservableProperty]
+    private string _scrcpyWindowPreset = "Default";
+
+    [ObservableProperty]
+    private string _pairingIpPort = string.Empty;
+
+    [ObservableProperty]
+    private string _pairingCode = string.Empty;
+
+    [ObservableProperty]
+    private string _discoveredPorts = string.Empty;
+
+    [ObservableProperty]
+    private string _wirelessStatus = string.Empty;
+
     public DashboardViewModel(
         AdbService adbService,
         IosService iosService,
@@ -73,7 +94,14 @@ public partial class DashboardViewModel : ObservableObject
             }
             catch { }
 
-            await LoadToolStatusesAsync();
+            try
+            {
+                await LoadToolStatusesAsync();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log.Debug(ex, "[Dashboard] LoadToolStatusesAsync failed on init");
+            }
         });
     }
 
@@ -81,7 +109,7 @@ public partial class DashboardViewModel : ObservableObject
     {
         try
         {
-            PreferencesService.Current.TargetPackageName = value.Trim();
+            PreferencesService.Current.TargetPackageName = value?.Trim() ?? string.Empty;
             PreferencesService.Save();
         }
         catch { }
@@ -101,6 +129,11 @@ public partial class DashboardViewModel : ObservableObject
             if (SelectedDevice == null && devices.Count > 0)
                 SelectedDevice = devices[0];
         });
+    }
+
+    public void OnDeviceSelected(DeviceInfo device)
+    {
+        SelectedDevice = device;
     }
 
     [RelayCommand]
@@ -141,7 +174,7 @@ public partial class DashboardViewModel : ObservableObject
         }
 
         var session = _sessionService.CreateSession(SelectedDevice);
-        var started = _sessionService.StartCapture(session);
+        var started = await _sessionService.StartCaptureAsync(session);
         if (started)
         {
             ActiveSessionCount++;
@@ -179,7 +212,8 @@ public partial class DashboardViewModel : ObservableObject
 
         var outputDir = PreferencesService.Current.SessionsRootDirectory;
         if (!System.IO.Directory.Exists(outputDir)) System.IO.Directory.CreateDirectory(outputDir);
-        var fileName = $"snapshot_{SelectedDevice.Serial}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+        var deviceHash = LogPro.Helpers.SecurityHelper.HashSerial(SelectedDevice.Serial);
+        var fileName = $"snapshot_{deviceHash}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
         var outputPath = System.IO.Path.Combine(outputDir, fileName);
 
         bool success = SelectedDevice.Platform == DevicePlatform.Android
@@ -189,5 +223,111 @@ public partial class DashboardViewModel : ObservableObject
         WelcomeMessage = success
             ? $"Snapshot saved: {fileName}"
             : "Failed to capture snapshot.";
+    }
+
+    [RelayCommand]
+    private async Task MirrorWithOptionsAsync()
+    {
+        if (SelectedDevice == null || SelectedDevice.Platform != DevicePlatform.Android)
+        {
+            WelcomeMessage = "Select an Android device for screen mirroring.";
+            return;
+        }
+
+        var options = new ScrcpyOptions
+        {
+            BitRate = ScrcpyBitRate,
+            MaxFps = int.TryParse(ScrcpyMaxFps, out var fps) ? fps : 60,
+            WindowPreset = ScrcpyWindowPreset
+        };
+
+        var success = await _scrcpyService.StartMirroringAsync(SelectedDevice.Serial, options);
+        WelcomeMessage = success
+            ? $"Mirroring {SelectedDevice.DisplayName} ({ScrcpyBitRate}, {ScrcpyMaxFps}fps, {ScrcpyWindowPreset})..."
+            : "Failed to start mirroring. Is scrcpy installed?";
+    }
+
+    [RelayCommand]
+    private async Task DiscoverPortsAsync()
+    {
+        IsLoading = true;
+        DiscoveredPorts = "Discovering...";
+        
+        var ports = await _adbService.DiscoverPairingPortsAsync();
+        
+        DiscoveredPorts = ports.Count > 0 
+            ? string.Join(", ", ports) 
+            : "No listening ports found. Ensure ADB is running.";
+        
+        IsLoading = false;
+    }
+
+    [RelayCommand]
+    private async Task PairDeviceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PairingIpPort) || string.IsNullOrWhiteSpace(PairingCode))
+        {
+            WirelessStatus = "Enter IP:Port and Pairing Code.";
+            return;
+        }
+
+        IsLoading = true;
+        WirelessStatus = "Pairing...";
+
+        var result = await _adbService.PairAsync(PairingIpPort, PairingCode);
+        
+        WirelessStatus = result.Success 
+            ? "Pairing successful! Device should connect." 
+            : $"Pairing failed: {result.Message}";
+
+        if (result.Success)
+        {
+            await _deviceMonitor.PollDevicesAsync();
+        }
+
+        IsLoading = false;
+    }
+
+    [RelayCommand]
+    private async Task ConnectWirelessDeviceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PairingIpPort))
+        {
+            WirelessStatus = "Enter IP:Port to connect.";
+            return;
+        }
+
+        IsLoading = true;
+        WirelessStatus = "Connecting...";
+
+        var result = await _adbService.ConnectAsync(PairingIpPort);
+        
+        WirelessStatus = result.Success 
+            ? $"Connected to {PairingIpPort}" 
+            : $"Connection failed: {result.Message}";
+
+        if (result.Success)
+        {
+            await _deviceMonitor.PollDevicesAsync();
+        }
+
+        IsLoading = false;
+    }
+
+    [RelayCommand]
+    private async Task DisconnectWirelessDeviceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PairingIpPort))
+        {
+            WirelessStatus = "Enter IP:Port to disconnect.";
+            return;
+        }
+
+        var result = await _adbService.DisconnectAsync(PairingIpPort);
+        WirelessStatus = result.Success 
+            ? $"Disconnected from {PairingIpPort}" 
+            : $"Disconnect failed: {result.Message}";
+
+        await _deviceMonitor.PollDevicesAsync();
     }
 }

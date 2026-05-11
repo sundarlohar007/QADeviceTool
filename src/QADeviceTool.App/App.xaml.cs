@@ -1,12 +1,14 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using LogPro.Helpers;
 
-namespace QADeviceTool;
+namespace LogPro;
 
 public partial class App : Application
 {
-    private static readonly string EarlyLogPath = Path.Combine(AppContext.BaseDirectory, "startup-debug.log");
+    private static readonly string EarlyLogPath = Path.Combine(Path.GetTempPath(), "LogPro_startup-debug.log");
+    private const long EarlyLogMaxBytes = 1024 * 1024; // 1 MiB cap; truncate-on-roll instead of unbounded growth.
 
     private void EarlyLog(string message, Exception? ex = null)
     {
@@ -17,6 +19,18 @@ public partial class App : Application
             {
                 Directory.CreateDirectory(dir);
             }
+
+            try
+            {
+                var fi = new FileInfo(EarlyLogPath);
+                if (fi.Exists && fi.Length > EarlyLogMaxBytes)
+                {
+                    var rolled = EarlyLogPath + ".old";
+                    if (File.Exists(rolled)) File.Delete(rolled);
+                    File.Move(EarlyLogPath, rolled);
+                }
+            }
+            catch { /* rotation best-effort */ }
 
             var logLine = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}\n";
             if (ex != null)
@@ -32,6 +46,12 @@ public partial class App : Application
     {
         EarlyLog("========================================");
         EarlyLog("APP STARTUP ENTERED");
+
+        // Register global exception handlers BEFORE any window/ViewModel creation
+        DispatcherUnhandledException += App_DispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
+
         EarlyLog($"Executable Path: {Environment.ProcessPath}");
         EarlyLog($"Base Directory: {AppContext.BaseDirectory}");
         EarlyLog($"Current Directory: {Environment.CurrentDirectory}");
@@ -39,14 +59,8 @@ public partial class App : Application
         EarlyLog($"Process Architecture: {(Environment.Is64BitProcess ? "x64" : "x86")}");
         EarlyLog($"PATH Variable: {Environment.GetEnvironmentVariable("PATH")}");
 
-        // Inject tools directory directly into PATH securely
-        string toolsDir = Path.Combine(AppContext.BaseDirectory, "tools", "iMobileDevice");
-        Environment.SetEnvironmentVariable(
-            "PATH",
-            toolsDir + ";" + Environment.GetEnvironmentVariable("PATH"),
-            EnvironmentVariableTarget.Process);
-            
-        EarlyLog($"Tools Directory: {toolsDir} injected into PATH");
+        // Ensure native DLL paths are initialized for iOS tools
+        ToolResolver.InitializeNativePaths();
 
         base.OnStartup(e);
 
@@ -58,14 +72,13 @@ public partial class App : Application
             var prefs = Services.PreferencesService.Current;
             EarlyLog("PreferencesService initialized.");
 
-            Services.AppLogger.Log.Info("========================================");
-            Services.AppLogger.Log.Info("QA/QC Device Tool - Application Starting");
-            Services.AppLogger.Log.Info("========================================");
+            // Cleanup old logs based on retention settings
+            Services.PreferencesService.CleanupOldLogs();
+            EarlyLog("Old logs cleaned up.");
 
-            // Global exception handlers to prevent crashes and ensure they are captured in early logs
-            DispatcherUnhandledException += App_DispatcherUnhandledException;
-            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
-            TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
+            Services.AppLogger.Log.Info("========================================");
+            Services.AppLogger.Log.Info("LogPro - Application Starting");
+            Services.AppLogger.Log.Info("========================================");
 
             // Ensure sessions directory exists
             Helpers.PathHelper.EnsureSessionsDirectory();
@@ -84,11 +97,11 @@ public partial class App : Application
         
         MessageBox.Show(
             $"An error occurred:\n\n{e.Exception.Message}\n\nCheck startup log at:\n{EarlyLogPath}",
-            "QA/QC Device Tool - Error",
+            "LogPro - Error",
             MessageBoxButton.OK,
             MessageBoxImage.Warning);
             
-        e.Handled = true; // Prevent crash — keep app running
+        e.Handled = true; // Prevent crash � keep app running
     }
 
     private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)

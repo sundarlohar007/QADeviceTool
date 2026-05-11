@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 
-namespace QADeviceTool.Helpers;
+namespace LogPro.Helpers;
 
 public class ToolLauncherResult
 {
@@ -17,20 +17,35 @@ public static class ToolLauncher
 
     static ToolLauncher()
     {
-        _toolsDir = Path.Combine(AppContext.BaseDirectory, "tools", "iMobileDevice");
+        _toolsDir = Path.Combine(AppContext.BaseDirectory, "tools", "pymobiledevice3");
     }
 
     public static string ToolsDirectory => _toolsDir;
+
+    /// <summary>
+    /// Picks a stable working directory. For rooted tool paths inside our bundled tools/ tree
+    /// (e.g. tools/pymobiledevice3/.../pymobiledevice3.exe) we use the exe's own directory.
+    /// For external tools (system python, system adb), we anchor to ToolsDirectory if it exists,
+    /// else AppContext.BaseDirectory — never the exe's install dir, which avoids leaking pymd3
+    /// pairing files into the user's Python install.
+    /// </summary>
+    private static string ResolveWorkDir(string fullExePath)
+    {
+        var appBase = AppContext.BaseDirectory;
+        var exeDir = Path.GetDirectoryName(fullExePath);
+        if (!string.IsNullOrEmpty(exeDir) &&
+            exeDir.StartsWith(appBase, System.StringComparison.OrdinalIgnoreCase))
+        {
+            return exeDir;
+        }
+        return Directory.Exists(_toolsDir) ? _toolsDir : appBase;
+    }
 
     public static async Task<ToolLauncherResult> RunAsync(string exeName, string arguments, int timeoutMs = 15000, Action<string>? outputCallback = null)
     {
         var result = new ToolLauncherResult();
         var fullExePath = Path.Combine(_toolsDir, exeName);
 
-        // Allow execution of scrcpy/adb via fallback or update them later.
-        // Wait, the user specifically requested ALL native executions to go through this,
-        // but ADB/Scrcpy are in a different folder. For iOS tools, they are strictly in iMobileDevice.
-        // If exeName is an absolute path (from older code), just use it. Otherwise, assume iMobileDevice.
         if (Path.IsPathRooted(exeName))
         {
             fullExePath = exeName;
@@ -39,7 +54,7 @@ public static class ToolLauncher
         try
         {
             var logger = Services.AppLogger.Log;
-            var workDir = Path.GetDirectoryName(fullExePath) ?? _toolsDir;
+            var workDir = ResolveWorkDir(fullExePath);
             logger.Info($"[ToolLauncher] Launching: {fullExePath} {arguments}");
             logger.Debug($"[ToolLauncher] WorkingDirectory: {workDir}");
 
@@ -105,10 +120,10 @@ public static class ToolLauncher
             result.Success = process.ExitCode == 0;
 
             logger.Info($"[ToolLauncher] ExitCode: {result.ExitCode} | Success: {result.Success}");
-            
+
             if (!string.IsNullOrWhiteSpace(result.Output))
                 logger.Debug($"[ToolLauncher] STDOUT:\n{result.Output}");
-            
+
             if (!string.IsNullOrWhiteSpace(result.Error))
                 logger.Error($"[ToolLauncher] STDERR:\n{result.Error}");
         }
@@ -133,7 +148,7 @@ public static class ToolLauncher
         try
         {
             var logger = Services.AppLogger.Log;
-            var workDir = Path.GetDirectoryName(fullExePath) ?? _toolsDir;
+            var workDir = ResolveWorkDir(fullExePath);
             logger.Info($"[ToolLauncher] StartLongRunning: {fullExePath} {arguments}");
             logger.Debug($"[ToolLauncher] WorkingDirectory: {workDir}");
 
@@ -151,7 +166,15 @@ public static class ToolLauncher
 
             process.Start();
             Services.ProcessManagerService.TrackProcess(process);
-            logger.Info($"[ToolLauncher] Started LongRunning PID: {process.Id}");
+
+            // Drain stderr in background to prevent buffer deadlock
+            _ = Task.Run(async () =>
+            {
+                try { while (await process.StandardError.ReadLineAsync() is { } line) { /* discard */ } }
+                catch { /* stream ended */ }
+            });
+
+            logger.Info($"[ToolLauncher] Started LongRunning PID: {process.Id} (stderr draining)");
             return process;
         }
         catch (Exception ex)

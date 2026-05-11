@@ -1,6 +1,6 @@
 using System.Windows.Controls;
 
-namespace QADeviceTool.Views;
+namespace LogPro.Views;
 
 public partial class AppManagementView : UserControl
 {

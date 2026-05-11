@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace QADeviceTool.Helpers;
+namespace LogPro.Helpers;
 
 /// <summary>
 /// Utilities for PATH and directory management.
@@ -95,7 +95,6 @@ public static class PathHelper
 
     private static string SanitizeFileName(string name)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        return string.Join("_", name.Split(invalid, StringSplitOptions.RemoveEmptyEntries)).Trim();
+        return SecurityHelper.SanitizeFileName(name);
     }
 }

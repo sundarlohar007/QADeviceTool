@@ -1,10 +1,11 @@
-﻿<Window x:Class="QADeviceTool.MainWindow"
+<Window x:Class="LogPro.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:QADeviceTool"
-        xmlns:vm="clr-namespace:QADeviceTool.ViewModels"
-        xmlns:views="clr-namespace:QADeviceTool.Views"
-        Title="QA/QC Device Tool" 
+        xmlns:local="clr-namespace:LogPro"
+        xmlns:vm="clr-namespace:LogPro.ViewModels"
+        xmlns:views="clr-namespace:LogPro.Views"
+        xmlns:conv="clr-namespace:LogPro.Converters"
+        Title="LogPro"
         Width="1280" Height="800"
         MinWidth="960" MinHeight="600"
         WindowStartupLocation="CenterScreen"
@@ -12,10 +13,10 @@
         WindowStyle="None"
         AllowsTransparency="True"
         ResizeMode="CanResize"
-        Icon="Assets/QAQCDeviceIcon.ico">
-    
+        Icon="Assets/LogProIcon.ico">
+
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="12" GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="4" CornerRadius="0" GlassFrameThickness="0" UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
 
     <Window.DataContext>
@@ -25,16 +26,14 @@
     <Window.Style>
         <Style TargetType="Window">
             <Style.Triggers>
-                <!-- Fix for WindowChrome maximizing exceeding screen bounds -->
                 <Trigger Property="WindowState" Value="Maximized">
-                    <Setter Property="Padding" Value="7" />
+                    <Setter Property="Padding" Value="0" />
                 </Trigger>
             </Style.Triggers>
         </Style>
     </Window.Style>
 
     <Window.Resources>
-        <!-- View-ViewModel mappings -->
         <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
             <views:DashboardView />
         </DataTemplate>
@@ -59,172 +58,217 @@
         <DataTemplate DataType="{x:Type vm:FileExplorerViewModel}">
             <views:FileExplorerView />
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:MacroViewModel}">
+            <views:MacroView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:StressTestViewModel}">
+            <views:StressTestView />
+        </DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
             <views:SettingsView />
         </DataTemplate>
     </Window.Resources>
 
-    <Border CornerRadius="12" 
-            Background="{StaticResource BrushBackgroundDarkest}"
+    <Border Background="{StaticResource BrushVoid}"
             BorderBrush="{StaticResource BrushBorder}"
             BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="44" />    <!-- Title bar -->
-                <RowDefinition Height="*" />      <!-- Content -->
-                <RowDefinition Height="32" />     <!-- Status bar -->
+                <RowDefinition Height="36" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="24" />
             </Grid.RowDefinitions>
 
-            <!-- ═══════════════════ CUSTOM TITLE BAR ═══════════════════ -->
-            <Border Grid.Row="0" CornerRadius="12,12,0,0"
+            <!-- TITLE BAR -->
+            <Border Grid.Row="0" Background="{StaticResource BrushBase}"
+                    BorderBrush="{StaticResource BrushBorder}"
+                    BorderThickness="0,0,0,1"
                     MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-                <Border.Background>
-                    <SolidColorBrush Color="#161B22" Opacity="0.85" />
-                </Border.Background>
                 <Grid>
-                    <StackPanel Orientation="Horizontal" Margin="16,0" VerticalAlignment="Center">
-                        <TextBlock Text="QA/QC Device Tool" 
-                                   Style="{StaticResource TextBody}"
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                        <TextBlock Text="LOGPRO"
+                                   FontFamily="{StaticResource FontMono}"
+                                   FontSize="12" FontWeight="SemiBold"
                                    Foreground="{StaticResource BrushTextPrimary}"
-                                   FontWeight="SemiBold"
                                    VerticalAlignment="Center" />
-                        <TextBlock Text=" v2.3.0" 
-                                   Style="{StaticResource TextCaption}"
-                                   VerticalAlignment="Center" Margin="4,0,0,0" />
+                        <TextBlock Text=" v3.0.0"
+                                   FontFamily="{StaticResource FontMono}"
+                                   FontSize="10"
+                                   Foreground="{StaticResource BrushCyan}"
+                                   VerticalAlignment="Center" Margin="6,0,0,0" />
                     </StackPanel>
 
-                    <!-- Window controls -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,8,0">
-                        <Button Content="—" Click="Minimize_Click" Width="36" Height="28"
-                                Background="Transparent" Foreground="{StaticResource BrushTextSecondary}"
-                                BorderThickness="0" Cursor="Hand" FontSize="14" />
-                        <Button Content="☐" Click="Maximize_Click" Width="36" Height="28"
-                                Background="Transparent" Foreground="{StaticResource BrushTextSecondary}"
-                                BorderThickness="0" Cursor="Hand" FontSize="14" />
-                        <Button x:Name="CloseBtn" Content="✕" Click="Close_Click" Width="36" Height="28"
-                                Background="Transparent" Foreground="{StaticResource BrushTextSecondary}"
-                                BorderThickness="0" Cursor="Hand" FontSize="14" />
+                    <!-- Device Selector -->
+                    <Border Grid.Column="1" VerticalAlignment="Center">
+                        <ComboBox ItemsSource="{Binding Devices}"
+                                  SelectedItem="{Binding SelectedDevice}"
+                                  DisplayMemberPath="DisplayName"
+                                  Width="160" Height="24"
+                                  VerticalAlignment="Center"
+                                  Background="{StaticResource BrushElevated}"
+                                  Foreground="{StaticResource BrushTextPrimary}"
+                                  BorderBrush="{StaticResource BrushBorder}"
+                                  BorderThickness="1"
+                                  FontSize="11">
+                            <ComboBox.Style>
+                                <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Devices.Count}" Value="0">
+                                            <Setter Property="IsEnabled" Value="False" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ComboBox.Style>
+                        </ComboBox>
+                    </Border>
+
+                    <!-- Window Controls -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button Content="&#x2014;" Click="Minimize_Click" Width="40" Height="28"
+                                Style="{StaticResource WindowControlButton}" FontSize="10" />
+                        <Button Content="&#x25A1;" Click="Maximize_Click" Width="40" Height="28"
+                                Style="{StaticResource WindowControlButton}" FontSize="10" />
+                        <Button Content="&#x2715;" Click="Close_Click" Width="40" Height="28"
+                                Style="{StaticResource CloseButton}" FontSize="10" />
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- ═══════════════════ MAIN CONTENT ═══════════════════ -->
+            <!-- MAIN CONTENT -->
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" />  <!-- Sidebar -->
-                    <ColumnDefinition Width="*" />     <!-- Content -->
+                    <ColumnDefinition Width="200" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Sidebar -->
-                <Border Grid.Column="0" 
-                        Background="{StaticResource BrushBackgroundDark}"
-                        BorderBrush="{StaticResource BrushBorderMuted}"
+                <!-- SIDEBAR -->
+                <Border Grid.Column="0" Background="{StaticResource BrushBase}"
+                        BorderBrush="{StaticResource BrushBorder}"
                         BorderThickness="0,0,1,0">
                     <DockPanel>
-                        <!-- Navigation -->
-                        <StackPanel DockPanel.Dock="Top" Margin="8,16">
-                            <TextBlock Text="NAVIGATION" 
-                                       Style="{StaticResource TextCaption}"
-                                       Margin="16,0,0,8" FontWeight="SemiBold" FontSize="11" />
-
-                            <RadioButton Style="{StaticResource NavButton}" 
-                                         Tag="" Content="Dashboard"
+                        <!-- Primary Navigation -->
+                        <StackPanel DockPanel.Dock="Top" Margin="0,8">
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Sessions"
                                          IsChecked="True"
                                          Command="{Binding NavigateCommand}"
-                                         CommandParameter="Dashboard" />
-
-                            <RadioButton Style="{StaticResource NavButton}" 
-                                         Tag="" Content="Sessions"
-                                         Command="{Binding NavigateCommand}"
                                          CommandParameter="Sessions" />
-
-                            <RadioButton Style="{StaticResource NavButton}" 
-                                         Tag="" Content="Devices"
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Device"
                                          Command="{Binding NavigateCommand}"
-                                         CommandParameter="Devices" />
-
-                            <RadioButton Style="{StaticResource NavButton}" 
-                                         Tag="" Content="Apps"
+                                         CommandParameter="Device" />
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Files"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Files" />
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Apps"
                                          Command="{Binding NavigateCommand}"
                                          CommandParameter="Apps" />
 
-                            <RadioButton Style="{StaticResource NavButton}" 
-                                         Tag="" Content="Shell"
+                            <!-- Divider -->
+                            <Border Height="1" Background="{StaticResource BrushBorder}"
+                                    Margin="12,8,12,6" />
+
+                            <TextBlock Text="TOOLS"
+                                       Style="{StaticResource TextCaption}"
+                                       Margin="16,0,0,4" />
+
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Shell"
                                          Command="{Binding NavigateCommand}"
                                          CommandParameter="Shell" />
-
-                            <RadioButton Style="{StaticResource NavButton}" 
-                                         Tag="" Content="Deep Link"
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Deep Link"
                                          Command="{Binding NavigateCommand}"
                                          CommandParameter="DeepLink" />
-
-                            <RadioButton Style="{StaticResource NavButton}" 
-                                         Tag="" Content="Vitals"
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Vitals"
                                          Command="{Binding NavigateCommand}"
                                          CommandParameter="Vitals" />
-
-                            <RadioButton Style="{StaticResource NavButton}" 
-                                         Tag="" Content="Files"
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Macros"
                                          Command="{Binding NavigateCommand}"
-                                         CommandParameter="Files" />
-
-                            <RadioButton Style="{StaticResource NavButton}" 
-                                         Tag="" Content="Settings"
+                                         CommandParameter="Macros" />
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Stress Test"
                                          Command="{Binding NavigateCommand}"
-                                         CommandParameter="Settings" />
+                                         CommandParameter="StressTest" />
                         </StackPanel>
 
-                        <!-- Device count indicator -->
-                        <Border DockPanel.Dock="Bottom" Margin="8,0,8,16"
-                                Style="{StaticResource GlassCard}" Padding="14">
-                            <StackPanel>
-                                <TextBlock Text="CONNECTED" Style="{StaticResource TextCaption}" FontSize="10" FontWeight="SemiBold" />
-                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                    <Ellipse Width="8" Height="8" Margin="0,0,8,0">
-                                        <Ellipse.Style>
-                                            <Style TargetType="Ellipse">
-                                                <Setter Property="Fill" Value="{StaticResource BrushDanger}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ConnectedDeviceCount, Converter={x:Static local:IntToBoolConverter.Instance}}" Value="True">
-                                                        <Setter Property="Fill" Value="{StaticResource BrushSuccess}" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Ellipse.Style>
-                                    </Ellipse>
-                                    <TextBlock Style="{StaticResource TextBody}">
-                                        <TextBlock.Text>
-                                            <Binding Path="ConnectedDeviceCount" StringFormat="{}{0} device(s)" />
-                                        </TextBlock.Text>
-                                    </TextBlock>
+                        <!-- Bottom: Settings + Connected -->
+                        <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,4">
+                            <Border Height="1" Background="{StaticResource BrushBorder}"
+                                    Margin="12,4,12,8" />
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Dashboard"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Dashboard" />
+                            <RadioButton Style="{StaticResource NavButton}"
+                                         Content="Settings"
+                                         Command="{Binding NavigateCommand}"
+                                         CommandParameter="Settings" />
+
+                            <!-- Connected Count -->
+                            <Border Margin="8,8,8,4"
+                                    Background="{StaticResource BrushElevated}"
+                                    BorderBrush="{StaticResource BrushBorder}"
+                                    BorderThickness="1"
+                                    Padding="10,8">
+                                <StackPanel>
+                                    <TextBlock Text="CONNECTED" Style="{StaticResource TextCaption}" FontSize="9" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Ellipse Width="5" Height="5" Margin="0,0,6,0" VerticalAlignment="Center">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Setter Property="Fill" Value="{StaticResource BrushRed}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ConnectedDeviceCount, Converter={x:Static conv:IntToBoolConverter.Instance}}" Value="True">
+                                                            <Setter Property="Fill" Value="{StaticResource BrushGreen}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                        </Ellipse>
+                                        <TextBlock Style="{StaticResource TextBody}">
+                                            <TextBlock.Text>
+                                                <Binding Path="ConnectedDeviceCount" StringFormat="{}{0} device(s)" />
+                                            </TextBlock.Text>
+                                        </TextBlock>
+                                    </StackPanel>
                                 </StackPanel>
-                            </StackPanel>
-                        </Border>
+                            </Border>
+                        </StackPanel>
                     </DockPanel>
                 </Border>
 
-                <!-- Content area -->
-                <Border Grid.Column="1" Margin="0">
+                <!-- CONTENT AREA -->
+                <Border Grid.Column="1" Background="{StaticResource BrushBase}">
                     <ContentPresenter Content="{Binding CurrentView}" />
                 </Border>
             </Grid>
 
-            <!-- ═══════════════════ STATUS BAR ═══════════════════ -->
-            <Border Grid.Row="2" Background="{StaticResource BrushBackgroundDark}"
-                    CornerRadius="0,0,12,12"
-                    BorderBrush="{StaticResource BrushBorderMuted}"
+            <!-- STATUS BAR -->
+            <Border Grid.Row="2" Background="{StaticResource BrushBase}"
+                    BorderBrush="{StaticResource BrushCyanDim}"
                     BorderThickness="0,1,0,0">
-                <DockPanel Margin="16,0">
+                <DockPanel Margin="12,0">
                     <TextBlock DockPanel.Dock="Left"
                                Text="{Binding StatusBarText}"
                                Style="{StaticResource TextCaption}"
                                VerticalAlignment="Center" />
                     <TextBlock DockPanel.Dock="Right"
-                               Style="{StaticResource TextCaption}"
-                               VerticalAlignment="Center"
-                               HorizontalAlignment="Right">
-                        <Run Text="Please reach out to Sundar Lohar if any bugs/issues encountered | " />
-                        <Run Text="QA/QC Device Tool v2.3.0" />
+                               FontFamily="{StaticResource FontMono}"
+                               FontSize="9"
+                               Foreground="{StaticResource BrushTextMuted}"
+                               VerticalAlignment="Center">
+                        LOGPRO v3.0.0
                     </TextBlock>
                 </DockPanel>
             </Border>

@@ -3,19 +3,20 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using QADeviceTool.Models;
-using QADeviceTool.Services;
-using QADeviceTool.Helpers;
+using LogPro.Models;
+using LogPro.Services;
+using LogPro.Helpers;
 using System.Linq;
 
-namespace QADeviceTool.ViewModels;
+namespace LogPro.ViewModels;
 
 public partial class VitalsViewModel : ObservableObject
 {
     private readonly AdbService _adbService;
     private readonly DeviceMonitorService _deviceMonitor;
     private readonly Dispatcher _dispatcher;
-    private DispatcherTimer _pollTimer;
+    private DispatcherTimer? _pollTimer;
+    private CancellationTokenSource? _pollCts;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -42,7 +43,16 @@ public partial class VitalsViewModel : ObservableObject
         {
             Interval = TimeSpan.FromSeconds(3)
         };
-        _pollTimer.Tick += async (s, e) => await PollVitalsAsync();
+        _pollTimer.Tick += (s, e) =>
+        {
+            try
+            {
+                if (IsPolling) _ = PollVitalsAsync().ContinueWith(
+                    t => Services.AppLogger.Log.Debug(t.Exception, "[Vitals] Poll failed"),
+                    TaskContinuationOptions.OnlyOnFaulted);
+            }
+            catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[Vitals] Timer poll failed"); }
+        };
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
@@ -56,12 +66,12 @@ public partial class VitalsViewModel : ObservableObject
             Devices.Clear();
             foreach (var d in devices)
             {
-                if (d.Platform == DevicePlatform.Android) // Diagnostics heavily lean Android CLI
+                if (d.ConnectionState == DeviceConnectionState.Online)
                 {
                     Devices.Add(d);
                 }
             }
-                
+            
             if (!string.IsNullOrEmpty(currentSelected))
             {
                 SelectedDevice = Devices.FirstOrDefault(d => d.Serial == currentSelected);
@@ -71,6 +81,17 @@ public partial class VitalsViewModel : ObservableObject
                 SelectedDevice = Devices.First();
             }
         });
+    }
+
+    public void OnDeviceSelected(DeviceInfo device)
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        if (device.ConnectionState == DeviceConnectionState.Online)
+        {
+            SelectedDevice = device;
+            _pollCts = new CancellationTokenSource();
+        }
     }
 
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
@@ -109,41 +130,53 @@ public partial class VitalsViewModel : ObservableObject
         _pollTimer.Stop();
     }
 
+    private bool _isPollingNow;
+
     private async Task PollVitalsAsync()
     {
+        if (_isPollingNow) return;
         if (SelectedDevice == null || SelectedDevice.Platform != DevicePlatform.Android) return;
-
-        try
+        if (SelectedDevice.ConnectionState != DeviceConnectionState.Online)
         {
-            // 1. Get memory info (summary only)
-            var memResult = await ToolLauncher.RunAsync("adb", $"-s {SelectedDevice.Serial} shell dumpsys meminfo", 5000);
-            
-            // 2. Get top processes (one iteration, batch mode)
-            var topResult = await ToolLauncher.RunAsync("adb", $"-s {SelectedDevice.Serial} shell top -b -n 1", 5000);
-
             _dispatcher.Invoke(() =>
             {
-                if (memResult.Success)
+                MemInfoOutput = $"Device is {SelectedDevice.ConnectionState}. Cannot poll vitals.";
+                TopProcessesOutput = string.Empty;
+            });
+            return;
+        }
+
+        _isPollingNow = true;
+        try
+        {
+            var memResult = await _adbService.ExecuteCommandAsync(SelectedDevice.Serial, "shell dumpsys meminfo");
+            var topResult = await _adbService.ExecuteCommandAsync(SelectedDevice.Serial, "shell top -b -n 1");
+            
+            _dispatcher.Invoke(() =>
+            {
+                if (!string.IsNullOrWhiteSpace(memResult))
                 {
-                    // For UI compactness, we might just show the 'Total PSS by process' or bottom summary
-                    var lines = memResult.Output.Split('\n');
+                    var lines = memResult.Split('\n');
                     var summaryLines = lines.SkipWhile(l => !l.Contains("Total RAM")).ToList();
                     MemInfoOutput = summaryLines.Count > 0 
                         ? string.Join("\n", summaryLines).Trim() 
                         : "No memory summary available.";
                 }
 
-                if (topResult.Success)
+                if (!string.IsNullOrWhiteSpace(topResult))
                 {
-                    // Take the first 15 lines of top output
-                    var lines = topResult.Output.Split('\n').Take(15);
+                    var lines = topResult.Split('\n').Take(15);
                     TopProcessesOutput = string.Join("\n", lines).Trim();
                 }
             });
         }
-        catch 
+        catch (Exception ex)
         {
-            // Ignore temporary polling errors
+            Services.AppLogger.Log.Debug(ex, "[Vitals] PollVitalsAsync temporary error");
+        }
+        finally
+        {
+            _isPollingNow = false;
         }
     }
 }

@@ -4,7 +4,7 @@ using NLog.Targets;
 using System;
 using System.IO;
 
-namespace QADeviceTool.Services;
+namespace LogPro.Services;
 
 public static class AppLogger
 {
@@ -47,6 +47,6 @@ public static class AppLogger
 
     public static Logger GetLogger<T>()
     {
-        return LogManager.GetLogger(typeof(T).FullName);
+        return LogManager.GetLogger(typeof(T).FullName ?? typeof(T).Name);
     }
 }

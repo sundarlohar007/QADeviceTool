@@ -1,241 +1,597 @@
-using System.Text.RegularExpressions;
-using QADeviceTool.Helpers;
-using QADeviceTool.Models;
+using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
+using LogPro.Helpers;
+using LogPro.Models;
 
-namespace QADeviceTool.Services;
+namespace LogPro.Services;
 
 /// <summary>
-/// Wraps libimobiledevice commands for iOS device detection, log capture, and screenshots.
-/// Uses ToolResolver to find bundled or system tools.
+/// Wraps pymobiledevice3 for all iOS operations — device detection, log capture,
+/// screenshots, app management, and file access.
+///
+/// Resolution order for the pymobiledevice3 invoker:
+///   1) bundled tools/pymobiledevice3/pymobiledevice3/pymobiledevice3.exe (PyInstaller standalone)
+///   2) system python.exe with `-m pymobiledevice3`
+/// CheckAvailabilityAsync probes both and reports which one is active.
 /// </summary>
-public class IosService
+public class IosService : IIosService
 {
-    private readonly string _ideviceId;
-    private readonly string _ideviceInfo;
-    private readonly string _ideviceSyslog;
-    private readonly string _ideviceScreenshot;
-    private readonly string _ideviceInstaller;
-    private readonly string _afcClient;
+    private readonly string _exe;
+    private readonly bool _isModuleInvocation;
+    private readonly string _toolKind;
+    private static readonly SemaphoreSlim _ipcLock = new(1, 1);
+
+    private const int DefaultTimeoutMs = 15000;
+    private const int InfoTimeoutMs = 10000;
+    private const int InstallTimeoutMs = 600000;
 
     public IosService()
     {
-        _ideviceId = "idevice_id.exe";
-        _ideviceInfo = "ideviceinfo.exe";
-        _ideviceSyslog = "idevicesyslog.exe";
-        _ideviceScreenshot = "idevicescreenshot.exe";
-        _ideviceInstaller = "ideviceinstaller.exe";
-        _afcClient = "afcclient.exe";
-    }
-
-    public async Task<ToolStatus> CheckAvailabilityAsync()
-    {
-        var status = new ToolStatus
+        var bundled = ResolveBundledExe();
+        if (bundled != null && ProbeBundledExe(bundled))
         {
-            Name = "libimobiledevice (iOS Tools)",
-            Description = "Required for iOS device communication"
-        };
-
-        var result = await ToolLauncher.RunAsync(_ideviceId, "-l");
-        if (result.Success || result.ExitCode == 0)
-        {
-            status.IsInstalled = true;
-            status.Version = "Installed";
-            status.Path = ToolLauncher.ToolsDirectory;
-            status.StatusMessage = "iOS tools are ready";
+            _exe = bundled;
+            _isModuleInvocation = false;
+            _toolKind = $"bundled ({bundled})";
         }
         else
         {
-            // idevice_id -l fails when Apple Mobile Device Service is not running.
-            // Check if the executable file actually exists on disk (bundled or in PATH).
-            bool fileExists = System.IO.File.Exists(System.IO.Path.Combine(ToolLauncher.ToolsDirectory, _ideviceId));
-            if (fileExists)
-            {
-                status.IsInstalled = true;
-                status.Version = "Installed (driver not active)";
-                status.Path = ToolLauncher.ToolsDirectory;
-                status.StatusMessage = "iOS tools found, but Apple Mobile Device Service is not running. Install or launch iTunes to enable iOS device support.";
-            }
-            else
-            {
-                status.IsInstalled = false;
-                status.StatusMessage = "libimobiledevice not found. Place tools in the tools/ folder.";
-            }
+            _exe = ResolveSystemPython() ?? "python";
+            _isModuleInvocation = true;
+            _toolKind = $"python -m pymobiledevice3 ({_exe})";
         }
+        AppLogger.Log.Info($"[IosService] Using {_toolKind}");
+    }
 
-        return status;
+    private static string? ResolveBundledExe()
+    {
+        var path = Path.Combine(ToolLauncher.ToolsDirectory, "pymobiledevice3", "pymobiledevice3.exe");
+        return File.Exists(path) ? path : null;
+    }
+
+    private static bool ProbeBundledExe(string path)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                Arguments = "version",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(path) ?? Environment.CurrentDirectory
+            };
+            using var p = System.Diagnostics.Process.Start(psi);
+            if (p == null) return false;
+            if (!p.WaitForExit(5000)) { try { p.Kill(true); } catch { } return false; }
+            return p.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Warn(ex, "[IosService] Bundled pymobiledevice3.exe probe failed");
+            return false;
+        }
+    }
+
+    private static string? ResolveSystemPython()
+    {
+        var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
+        return pathVar.Split(';')
+            .Select(p => p.Trim())
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Select(p => Path.Combine(p, "python.exe"))
+            .FirstOrDefault(File.Exists);
+    }
+
+    /// <summary>Builds full argument string with optional UDID flag.</summary>
+    private string BuildArgs(string? udid, string subcommand)
+    {
+        var udidFlag = string.IsNullOrEmpty(udid) ? "" : $" --udid {Quote(udid)}";
+        var prefix = _isModuleInvocation ? "-m pymobiledevice3 " : "";
+        return $"{prefix}--no-color {subcommand}{udidFlag}";
+    }
+
+    private static string Quote(string s) => $"\"{s.Replace("\"", "\\\"")}\"";
+
+    private async Task<ToolLauncherResult> RunAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs, Action<string>? outputCallback = null)
+    {
+        await _ipcLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            return await ToolLauncher.RunAsync(_exe, BuildArgs(udid, subcommand), timeoutMs, outputCallback).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ipcLock.Release();
+        }
+    }
+
+    private System.Diagnostics.Process? StartLong(string? udid, string subcommand)
+        => ToolLauncher.StartLongRunning(_exe, BuildArgs(udid, subcommand));
+
+    public async Task<ToolStatus> CheckAvailabilityAsync()
+    {
+        try
+        {
+            var result = await RunAsync(null, "version", InfoTimeoutMs).ConfigureAwait(false);
+            var statusMsg = result.Success
+                ? $"Ready — {_toolKind}"
+                : $"Failed (exit={result.ExitCode}): {result.Error?.Trim() ?? result.Output?.Trim() ?? "unknown"}";
+            return new ToolStatus
+            {
+                Name = "pymobiledevice3 (iOS Tools)",
+                Description = "Required for iOS device communication",
+                IsInstalled = result.Success,
+                Version = result.Success ? (result.Output?.Trim() ?? "unknown") : "n/a",
+                Path = _exe,
+                StatusMessage = statusMsg
+            };
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[IosService] CheckAvailabilityAsync failed");
+            return new ToolStatus { Name = "pymobiledevice3 (iOS Tools)", IsInstalled = false, StatusMessage = ex.Message };
+        }
     }
 
     public async Task<List<DeviceInfo>> GetConnectedDevicesAsync()
     {
         var devices = new List<DeviceInfo>();
-        var result = await ToolLauncher.RunAsync(_ideviceId, "-l");
-
-        if (!result.Success) return devices;
-
-        var lines = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var line in lines)
+        try
         {
-            var udid = line.Trim();
-            if (string.IsNullOrEmpty(udid)) continue;
+            var result = await RunAsync(null, "usbmux list", InfoTimeoutMs).ConfigureAwait(false);
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return devices;
 
-            var device = new DeviceInfo
+            var output = result.Output.TrimStart();
+            if (!output.StartsWith("[")) return devices;
+
+            using var json = JsonDocument.Parse(output);
+            foreach (var item in json.RootElement.EnumerateArray())
             {
-                Serial = udid,
-                Id = udid,
-                Platform = DevicePlatform.iOS,
-                ConnectionState = DeviceConnectionState.Online
-            };
+                var udid = item.TryGetProperty("UniqueDeviceID", out var u) ? u.GetString() ?? "" : "";
+                if (string.IsNullOrEmpty(udid)) continue;
+                var name = item.TryGetProperty("DeviceName", out var dn) ? dn.GetString() ?? "iOS Device" : "iOS Device";
+                var model = item.TryGetProperty("ProductType", out var pt) ? pt.GetString() ?? "" : "";
+                var osVer = item.TryGetProperty("ProductVersion", out var pv) ? pv.GetString() ?? "" : "";
+                var connType = item.TryGetProperty("ConnectionType", out var ct) ? ct.GetString() ?? "USB" : "USB";
 
-            device = await GetDeviceDetailsAsync(device);
-            devices.Add(device);
+                devices.Add(new DeviceInfo
+                {
+                    Serial = udid, Id = udid,
+                    Name = name, Model = model, OsVersion = osVer,
+                    Platform = DevicePlatform.iOS,
+                    ConnectionState = connType.Equals("Unavailable", StringComparison.OrdinalIgnoreCase)
+                        ? DeviceConnectionState.Offline
+                        : DeviceConnectionState.Online
+                });
+            }
         }
-
+        catch (JsonException ex)
+        {
+            AppLogger.Log.Warn(ex, "[IosService] Failed to parse usbmux JSON output");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[IosService] GetConnectedDevicesAsync failed");
+        }
         return devices;
     }
 
     public async Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device)
     {
-        var result = await ToolLauncher.RunAsync(_ideviceInfo, $"-u {device.Serial}", 10000);
-        if (!result.Success)
+        try
         {
-            // If ideviceinfo fails, it's often because the device hasn't trusted the PC yet
-            var errorOut = result.Error + result.Output;
-            if (errorOut.Contains("ERROR", StringComparison.OrdinalIgnoreCase) || 
-                errorOut.Contains("Lockdown", StringComparison.OrdinalIgnoreCase) ||
-                errorOut.Contains("Could not connect", StringComparison.OrdinalIgnoreCase))
+            var result = await RunAsync(device.Serial, "lockdown info", InfoTimeoutMs).ConfigureAwait(false);
+            if (!result.Success)
             {
-                device.ConnectionState = DeviceConnectionState.PendingTrust;
+                if ((result.Error ?? "").Contains("trust", StringComparison.OrdinalIgnoreCase) ||
+                    (result.Error ?? "").Contains("paired", StringComparison.OrdinalIgnoreCase))
+                    device.ConnectionState = DeviceConnectionState.PendingTrust;
+                return device;
             }
-            return device;
+
+            ParseLockdownInfo(result.Output ?? "", device);
+            if (string.IsNullOrEmpty(device.Name)) device.Name = device.Model ?? "iOS Device";
         }
-
-        var lines = result.Output.Split('\n');
-        foreach (var line in lines)
-        {
-            var trimmed = line.Trim();
-            if (trimmed.StartsWith("DeviceName:"))
-                device.Name = trimmed["DeviceName:".Length..].Trim();
-            else if (trimmed.StartsWith("ProductType:"))
-                device.Model = trimmed["ProductType:".Length..].Trim();
-            else if (trimmed.StartsWith("ProductVersion:"))
-                device.OsVersion = trimmed["ProductVersion:".Length..].Trim();
-            else if (trimmed.StartsWith("BatteryCurrentCapacity:"))
-                device.BatteryLevel = trimmed["BatteryCurrentCapacity:".Length..].Trim() + "%";
-        }
-
-        if (string.IsNullOrEmpty(device.Model))
-            device.Model = "iOS Device";
-
+        catch (Exception ex) { AppLogger.Log.Error(ex, $"[IosService] GetDeviceDetailsAsync failed for {device.Serial}"); }
         return device;
+    }
+
+    /// <summary>
+    /// Parses lockdown info output. pymobiledevice3 emits a Python-dict-like structure:
+    ///   {'DeviceName': 'iPhone', 'ProductType': 'iPhone14,2', ...}
+    /// or JSON with --no-color. Supports both via regex extraction.
+    /// </summary>
+    internal static void ParseLockdownInfo(string output, DeviceInfo device)
+    {
+        if (string.IsNullOrWhiteSpace(output)) return;
+
+        var trimmed = output.TrimStart();
+        if (trimmed.StartsWith("{"))
+        {
+            // Try strict JSON first
+            try
+            {
+                using var json = JsonDocument.Parse(trimmed);
+                var root = json.RootElement;
+                if (root.TryGetProperty("DeviceName", out var dn)) device.Name = dn.GetString() ?? device.Name;
+                if (root.TryGetProperty("ProductType", out var pt)) device.Model = pt.GetString() ?? device.Model;
+                if (root.TryGetProperty("ProductVersion", out var pv)) device.OsVersion = pv.GetString() ?? device.OsVersion;
+                if (root.TryGetProperty("BatteryCurrentCapacity", out var bc)) device.BatteryLevel = bc.ToString() + "%";
+                return;
+            }
+            catch { /* fall through to regex */ }
+        }
+
+        // Fallback: regex scan. Values can be single/double-quoted (any char) or bare
+        // (no comma/brace/newline). Quoted form preserves embedded commas like 'iPhone15,3'.
+        var rx = new System.Text.RegularExpressions.Regex(
+            @"['""]?(?<key>[A-Za-z][A-Za-z0-9]+)['""]?\s*[:=]\s*(?:'(?<v1>[^']*)'|""(?<v2>[^""]*)""|(?<v3>[^,\r\n}]+))");
+        foreach (System.Text.RegularExpressions.Match m in rx.Matches(output))
+        {
+            var key = m.Groups["key"].Value;
+            var val = (m.Groups["v1"].Success ? m.Groups["v1"].Value
+                     : m.Groups["v2"].Success ? m.Groups["v2"].Value
+                     : m.Groups["v3"].Value).Trim();
+            switch (key)
+            {
+                case "DeviceName": device.Name = val; break;
+                case "ProductType": device.Model = val; break;
+                case "ProductVersion": device.OsVersion = val; break;
+                case "BatteryCurrentCapacity": device.BatteryLevel = val + "%"; break;
+            }
+        }
     }
 
     public System.Diagnostics.Process? StartLogCapture(string udid, string outputFilePath)
     {
-        return ToolLauncher.StartLongRunning(_ideviceSyslog, $"-u {udid}");
+        try
+        {
+            // pymd3 syslog live --out PATH writes to file AND stdout; we still consume stdout in SessionService.
+            var args = string.IsNullOrEmpty(outputFilePath)
+                ? "syslog live"
+                : $"syslog live --out {Quote(outputFilePath)}";
+            return StartLong(udid, args);
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] StartLogCapture failed"); return null; }
     }
 
     public async Task<bool> CaptureScreenshotAsync(string udid, string outputPath)
     {
-        var result = await ToolLauncher.RunAsync(_ideviceScreenshot, $"-u {udid} \"{outputPath}\"", 15000);
-        return result.Success;
+        try
+        {
+            // developer screenshot uses the deprecated lockdown screenshot service — works without DeveloperDiskImage.
+            var result = await RunAsync(udid, $"developer screenshot {Quote(outputPath)}", DefaultTimeoutMs).ConfigureAwait(false);
+            return result.Success && File.Exists(outputPath);
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] CaptureScreenshotAsync failed"); return false; }
     }
 
-    // ─── IPA Installation ────────────────────────────────────────
     public async Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath, Action<string>? outputCallback = null)
     {
-        // Sanitize path for MSYS environment (which ideviceinstaller uses under the hood on Windows)
-        string sanitizedPath = ipaPath.Replace("\\", "/");
-        var result = await ToolLauncher.RunAsync(_ideviceInstaller, $"-u {udid} -i \"{sanitizedPath}\"", 600000, outputCallback);
-
-        if (result.Success)
-            return (true, "IPA installed successfully.");
-
-        // ideviceinstaller sometimes outputs errors to stdout instead of stderr
-        string error = !string.IsNullOrWhiteSpace(result.Error) ? result.Error : result.Output;
-        return (false, $"Failed to install IPA. Error: {error.Trim()}");
+        try
+        {
+            outputCallback?.Invoke($"Installing: {ipaPath}");
+            var result = await RunAsync(udid, $"apps install {Quote(ipaPath)}", InstallTimeoutMs, outputCallback).ConfigureAwait(false);
+            if (result.Success) return (true, "IPA installed successfully.");
+            var error = result.Error ?? result.Output ?? $"Exit code: {result.ExitCode}";
+            return (false, $"Install failed: {error.Trim()}");
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] InstallIpaAsync failed"); return (false, ex.Message); }
     }
 
     public async Task<List<AppItem>> ListInstalledAppsAsync(string udid)
     {
         var apps = new List<AppItem>();
-        var result = await ToolLauncher.RunAsync(_ideviceInstaller, $"-u {udid} -l", 15000);
-        if (!result.Success) return apps;
-
-        var lines = result.Output.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var line in lines.Skip(1)) // Skip header: CFBundleIdentifier, CFBundleVersion, ...
+        try
         {
-            var parts = line.Split(',', 3);
-            if (parts.Length > 0 && !line.StartsWith("CFBundleIdentifier"))
-            {
-                var pkg = parts[0].Trim();
-                var ver = parts.Length > 1 ? parts[1].Trim(' ', '"') : "";
-                var name = parts.Length > 2 ? parts[2].Trim(' ', '"') : pkg;
-                
-                apps.Add(new AppItem { PackageId = pkg, Name = name, Version = ver, Platform = DevicePlatform.iOS });
-            }
+            var result = await RunAsync(udid, "apps list", DefaultTimeoutMs).ConfigureAwait(false);
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return apps;
+            apps = ParseAppsList(result.Output);
         }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] ListInstalledAppsAsync failed"); }
         return apps.OrderBy(a => a.Name).ToList();
+    }
+
+    /// <summary>
+    /// Parses `apps list` output. pymobiledevice3 emits a top-level dict keyed by bundle id.
+    /// </summary>
+    internal static List<AppItem> ParseAppsList(string output)
+    {
+        var apps = new List<AppItem>();
+        var trimmed = output.TrimStart();
+
+        if (trimmed.StartsWith("{"))
+        {
+            try
+            {
+                using var json = JsonDocument.Parse(trimmed);
+                if (json.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var prop in json.RootElement.EnumerateObject())
+                    {
+                        var pkg = prop.Name;
+                        var info = prop.Value;
+                        var name = info.TryGetProperty("CFBundleDisplayName", out var dn) ? dn.GetString() ?? pkg
+                                 : info.TryGetProperty("CFBundleName", out var bn) ? bn.GetString() ?? pkg
+                                 : pkg;
+                        var ver = info.TryGetProperty("CFBundleShortVersionString", out var vs) ? vs.GetString() ?? ""
+                                : info.TryGetProperty("CFBundleVersion", out var bv) ? bv.GetString() ?? "" : "";
+                        apps.Add(new AppItem { PackageId = pkg, Name = name, Version = ver, Platform = DevicePlatform.iOS });
+                    }
+                    return apps;
+                }
+            }
+            catch { /* fall through to text parse */ }
+        }
+
+        // Text fallback: lines like "com.foo.bar:" with indented version/name beneath.
+        string? currentPkg = null;
+        string? currentName = null;
+        string? currentVer = null;
+        foreach (var raw in output.Split('\n'))
+        {
+            var line = raw.TrimEnd();
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            if (!char.IsWhiteSpace(line[0]) && line.Contains('.') && line.TrimEnd().EndsWith(":"))
+            {
+                if (currentPkg != null)
+                    apps.Add(new AppItem { PackageId = currentPkg, Name = currentName ?? currentPkg, Version = currentVer ?? "", Platform = DevicePlatform.iOS });
+                currentPkg = line.TrimEnd(':', ' ');
+                currentName = null;
+                currentVer = null;
+                continue;
+            }
+
+            var trimmedLine = line.Trim();
+            if (trimmedLine.StartsWith("CFBundleDisplayName", StringComparison.OrdinalIgnoreCase))
+                currentName = ExtractValue(trimmedLine);
+            else if (trimmedLine.StartsWith("CFBundleShortVersionString", StringComparison.OrdinalIgnoreCase))
+                currentVer = ExtractValue(trimmedLine);
+        }
+        if (currentPkg != null)
+            apps.Add(new AppItem { PackageId = currentPkg, Name = currentName ?? currentPkg, Version = currentVer ?? "", Platform = DevicePlatform.iOS });
+        return apps;
+    }
+
+    private static string ExtractValue(string keyValueLine)
+    {
+        var idx = keyValueLine.IndexOf(':');
+        if (idx < 0) return "";
+        return keyValueLine.Substring(idx + 1).Trim().Trim('\'', '"', ',');
     }
 
     public async Task<bool> UninstallAppAsync(string udid, string packageId)
     {
-        var result = await ToolLauncher.RunAsync(_ideviceInstaller, $"-u {udid} -U {packageId}", 20000);
-        return result.Success && result.Output.Contains("Complete");
+        try
+        {
+            var result = await RunAsync(udid, $"apps uninstall {Quote(packageId)}", DefaultTimeoutMs).ConfigureAwait(false);
+            return result.Success;
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] UninstallAppAsync failed"); return false; }
     }
 
-    // ─── File Explorer (AFC) ──────────────────────────────────────
     public async Task<List<DeviceFile>> ListDirectoryAsync(string udid, string path)
     {
         var files = new List<DeviceFile>();
-        var result = await ToolLauncher.RunAsync(_afcClient, $"-u {udid} ls -l \"{path}\"");
-
-        if (!result.Success) return files;
-
-        var lines = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        // Clean ANSI escape codes if any (cprintf fallback)
-        var ansiRegex = new Regex(@"\x1B\[[^a-zA-Z]*[a-zA-Z]");
-
-        foreach (var rline in lines)
+        try
         {
-            var line = ansiRegex.Replace(rline.TrimEnd('\r'), "");
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
-            var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length >= 10)
-            {
-                var mode = parts[0];
-                long.TryParse(parts[4], out var size);
-                var name = string.Join(" ", parts.Skip(9));
-
-                files.Add(new DeviceFile
-                {
-                    Name = name,
-                    Path = path == "/" ? $"/{name}" : $"{path}/{name}",
-                    IsDirectory = mode.StartsWith("d"),
-                    Size = size
-                });
-            }
+            var result = await RunAsync(udid, $"afc ls {Quote(path)}", DefaultTimeoutMs).ConfigureAwait(false);
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return files;
+            files = ParseAfcLs(result.Output, path);
         }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] ListDirectoryAsync failed"); }
+        return files;
+    }
 
-        return files.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.Name).ToList();
+    /// <summary>
+    /// Parses `afc ls` output. pymobiledevice3 emits one entry per line (just names),
+    /// optionally with a trailing slash for directories.
+    /// </summary>
+    internal static List<DeviceFile> ParseAfcLs(string output, string parentPath)
+    {
+        var files = new List<DeviceFile>();
+        var basePath = parentPath.TrimEnd('/');
+        foreach (var line in output.Split('\n', '\r'))
+        {
+            var name = line.Trim();
+            if (string.IsNullOrEmpty(name)) continue;
+            // Skip noise (dot entries, total lines)
+            if (name == "." || name == "..") continue;
+
+            var isDir = name.EndsWith("/");
+            if (isDir) name = name.TrimEnd('/');
+
+            files.Add(new DeviceFile
+            {
+                Name = name,
+                Path = string.IsNullOrEmpty(basePath) ? $"/{name}" : $"{basePath}/{name}",
+                IsDirectory = isDir,
+                Size = 0,
+                ModifiedDate = DateTime.MinValue
+            });
+        }
+        return files;
     }
 
     public async Task<bool> PullFileAsync(string udid, string remotePath, string localPath)
     {
-        var result = await ToolLauncher.RunAsync(_afcClient, $"-u {udid} get \"{remotePath}\" \"{localPath}\"", 60000);
-        return result.Success && File.Exists(localPath);
+        try
+        {
+            var result = await RunAsync(udid, $"afc pull {Quote(remotePath)} {Quote(localPath)}", 60000).ConfigureAwait(false);
+            return result.Success;
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PullFileAsync failed"); return false; }
     }
 
     public async Task<bool> PushFileAsync(string udid, string localPath, string remotePath)
     {
-        var result = await ToolLauncher.RunAsync(_afcClient, $"-u {udid} put \"{localPath}\" \"{remotePath}\"", 60000);
-        return result.Success;
+        try
+        {
+            var result = await RunAsync(udid, $"afc push {Quote(localPath)} {Quote(remotePath)}", 60000).ConfigureAwait(false);
+            return result.Success;
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PushFileAsync failed"); return false; }
     }
 
     public async Task<bool> DeleteFileAsync(string udid, string path)
     {
-        var result = await ToolLauncher.RunAsync(_afcClient, $"-u {udid} rm -rf \"{path}\"", 10000);
-        return result.Success;
+        try
+        {
+            var result = await RunAsync(udid, $"afc rm {Quote(path)}", InfoTimeoutMs).ConfigureAwait(false);
+            return result.Success;
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] DeleteFileAsync failed"); return false; }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  P1 — pymobiledevice3-exclusive features
+    // ═══════════════════════════════════════════════════════════════
+
+    public async Task<List<string>> ListCrashLogsAsync(string udid)
+    {
+        var logs = new List<string>();
+        try
+        {
+            var result = await RunAsync(udid, "crash ls", DefaultTimeoutMs).ConfigureAwait(false);
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return logs;
+            foreach (var raw in result.Output.Split('\n', '\r'))
+            {
+                var line = raw.Trim();
+                if (string.IsNullOrEmpty(line) || line == "." || line == "..") continue;
+                logs.Add(line);
+            }
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] ListCrashLogsAsync failed"); }
+        return logs;
+    }
+
+    public async Task<bool> PullCrashLogAsync(string udid, string crashName, string outputPath)
+    {
+        try
+        {
+            // crash pull has signature: pull [--remote-file PATH] [OUT]; we use defaults and let it pull all,
+            // then move the named file. Simpler: use afc-style targeted pull via crash pull subcommand if exposed.
+            var dir = Path.GetDirectoryName(outputPath) ?? Environment.CurrentDirectory;
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            var result = await RunAsync(udid, $"crash pull {Quote(dir)} --remote-file {Quote(crashName)}", 30000).ConfigureAwait(false);
+            return result.Success;
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PullCrashLogAsync failed"); return false; }
+    }
+
+    public async Task<string> GetDiagnosticsAsync(string udid)
+    {
+        try
+        {
+            var result = await RunAsync(udid, "diagnostics info", 30000).ConfigureAwait(false);
+            return result.Success ? (result.Output ?? "") : (result.Error ?? "Diagnostics failed");
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] GetDiagnosticsAsync failed"); return ex.Message; }
+    }
+
+    /// <summary>
+    /// Posts a Darwin notification name. pymobiledevice3 only supports posting the
+    /// notification name (notify_post); the title/body params are not honored by pymd3.
+    /// We pass `body` as the notification name when present, else `title`.
+    /// </summary>
+    public async Task<bool> SendNotificationAsync(string udid, string title, string body)
+    {
+        try
+        {
+            var name = !string.IsNullOrWhiteSpace(body) ? body : title;
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            var result = await RunAsync(udid, $"notification post --insecure {Quote(name)}", InfoTimeoutMs).ConfigureAwait(false);
+            return result.Success;
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] SendNotificationAsync failed"); return false; }
+    }
+
+    public async Task<List<DeviceInfo>> DiscoverNetworkDevicesAsync()
+    {
+        var devices = new List<DeviceInfo>();
+        try
+        {
+            var result = await RunAsync(null, "usbmux list --network", InfoTimeoutMs).ConfigureAwait(false);
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return devices;
+            var output = result.Output.TrimStart();
+            if (!output.StartsWith("[")) return devices;
+
+            using var json = JsonDocument.Parse(output);
+            foreach (var item in json.RootElement.EnumerateArray())
+            {
+                var udid = item.TryGetProperty("UniqueDeviceID", out var id) ? id.GetString() ?? "" : "";
+                if (string.IsNullOrEmpty(udid)) continue;
+                devices.Add(new DeviceInfo
+                {
+                    Serial = udid, Id = udid, Platform = DevicePlatform.iOS,
+                    Name = item.TryGetProperty("DeviceName", out var dn) ? dn.GetString() ?? "" : "",
+                    ConnectionState = DeviceConnectionState.Online
+                });
+            }
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] DiscoverNetworkDevicesAsync failed"); }
+        return devices;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  P2 — Developer-mode features (require Developer Mode + DDI)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// pymobiledevice3 `developer shell` opens an interactive IPython REPL — not pipeable.
+    /// Returns the long-running process; callers must drive stdin themselves.
+    /// </summary>
+    public System.Diagnostics.Process? StartDeveloperShell(string udid)
+    {
+        try { return StartLong(udid, "developer shell"); }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] StartDeveloperShell failed"); return null; }
+    }
+
+    /// <summary>
+    /// Screen recording via pymobiledevice3 is not supported (no equivalent CLI subcommand).
+    /// Returns null and logs a warning so callers can surface a clear "not supported" message.
+    /// </summary>
+    public System.Diagnostics.Process? StartScreenRecording(string udid, string outputPath)
+    {
+        AppLogger.Log.Warn("[IosService] StartScreenRecording not supported by pymobiledevice3");
+        return null;
+    }
+
+    /// <summary>
+    /// pymobiledevice3 has no direct openurl command. Always returns false.
+    /// Use the Springboard launch path (DVT) on devices with Developer Mode enabled
+    /// if URL launching is needed.
+    /// </summary>
+    public Task<bool> OpenUrlAsync(string udid, string url)
+    {
+        AppLogger.Log.Warn($"[IosService] OpenUrlAsync not supported by pymobiledevice3 (url={url})");
+        return Task.FromResult(false);
+    }
+
+    /// <summary>
+    /// Resolves an app's container directory via `apps query`.
+    /// Returns Container path string or "" on failure.
+    /// </summary>
+    public async Task<string> GetAppContainerPathAsync(string udid, string bundleId)
+    {
+        try
+        {
+            var result = await RunAsync(udid, $"apps query {Quote(bundleId)}", InfoTimeoutMs).ConfigureAwait(false);
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return "";
+            // Look for "Container" key in the dict-like output
+            var match = System.Text.RegularExpressions.Regex.Match(
+                result.Output,
+                @"['""]?Container['""]?\s*[:=]\s*['""]?([^'""\r\n,}]+)['""]?");
+            return match.Success ? match.Groups[1].Value.Trim() : "";
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] GetAppContainerPathAsync failed"); return ""; }
     }
 }

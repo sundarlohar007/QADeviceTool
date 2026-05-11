@@ -1,10 +1,10 @@
-using System.ServiceProcess;
-using QADeviceTool.Models;
+using LogPro.Models;
 
-namespace QADeviceTool.Services;
+namespace LogPro.Services;
 
 /// <summary>
 /// Checks availability of all required external tools and prerequisites at runtime.
+/// pymobiledevice3 is the iOS backend — no iTunes / Apple Mobile Device Service required.
 /// </summary>
 public class DependencyChecker
 {
@@ -19,9 +19,6 @@ public class DependencyChecker
         _scrcpyService = scrcpyService;
     }
 
-    /// <summary>
-    /// Checks all dependencies and returns their statuses.
-    /// </summary>
     public async Task<List<ToolStatus>> CheckAllAsync()
     {
         var tasks = new[]
@@ -32,57 +29,16 @@ public class DependencyChecker
         };
 
         var results = (await Task.WhenAll(tasks)).ToList();
-
-        // Add prerequisite checks (synchronous)
-        results.Add(CheckiTunes());
         results.Add(CheckAndroidDriver());
-
         return results;
     }
 
-    /// <summary>
-    /// Quick check: are the minimum tools available?
-    /// </summary>
     public async Task<bool> AreMinimumToolsAvailableAsync()
     {
         var adb = await _adbService.CheckAvailabilityAsync();
         return adb.IsInstalled;
     }
 
-    /// <summary>
-    /// Checks if Apple Mobile Device Service (iTunes) is installed and running.
-    /// Required for iOS device USB communication on Windows.
-    /// </summary>
-    private ToolStatus CheckiTunes()
-    {
-        var status = new ToolStatus
-        {
-            Name = "iTunes / Apple Mobile Device",
-            Description = "Required for iOS USB communication on Windows"
-        };
-
-        try
-        {
-            using var sc = new ServiceController("Apple Mobile Device Service");
-            status.IsInstalled = true;
-            status.Version = sc.Status == ServiceControllerStatus.Running ? "Running" : "Installed (not running)";
-            status.StatusMessage = sc.Status == ServiceControllerStatus.Running
-                ? "iTunes driver is active"
-                : "Service installed but not running. Start iTunes to activate.";
-            status.Path = "Windows Service";
-        }
-        catch
-        {
-            status.IsInstalled = false;
-            status.StatusMessage = "iTunes not installed. Required for iOS devices. Download from apple.com/itunes or Microsoft Store.";
-        }
-
-        return status;
-    }
-
-    /// <summary>
-    /// Checks if Android USB drivers are likely installed by testing if ADB can list USB devices.
-    /// </summary>
     private ToolStatus CheckAndroidDriver()
     {
         var status = new ToolStatus
@@ -93,7 +49,6 @@ public class DependencyChecker
 
         try
         {
-            // Check if Google USB Driver or OEM driver is present via registry
             var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
                 @"SYSTEM\CurrentControlSet\Services\WinUSB");
 
@@ -107,7 +62,6 @@ public class DependencyChecker
             }
             else
             {
-                // WinUSB not found, check for generic ADB interface
                 var adbKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
                     @"SYSTEM\CurrentControlSet\Services\usb_device");
                 if (adbKey != null)
@@ -127,7 +81,6 @@ public class DependencyChecker
         }
         catch
         {
-            // Can't check registry, assume OK if ADB is found
             status.IsInstalled = true;
             status.Version = "Unknown";
             status.StatusMessage = "Could not verify driver status. If devices connect, drivers are fine.";

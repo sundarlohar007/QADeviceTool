@@ -1,4 +1,4 @@
-namespace QADeviceTool.Models;
+namespace LogPro.Models;
 
 public class AppItem
 {

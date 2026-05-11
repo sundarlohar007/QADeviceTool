@@ -3,10 +3,10 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using QADeviceTool.Models;
-using QADeviceTool.Services;
+using LogPro.Models;
+using LogPro.Services;
 
-namespace QADeviceTool.ViewModels;
+namespace LogPro.ViewModels;
 
 /// <summary>
 /// Device details and per-device actions.
@@ -34,6 +34,12 @@ public partial class DeviceViewModel : ObservableObject
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
+
+    [ObservableProperty]
+    private string _deviceNotes = string.Empty;
+
+    [ObservableProperty]
+    private string _deviceTag = string.Empty;
 
     public DeviceViewModel(
         AdbService adbService,
@@ -67,7 +73,27 @@ public partial class DeviceViewModel : ObservableObject
         if (value != null)
         {
             _ = LoadDeviceDetailsAsync(value);
+            LoadDevicePreferences(value.Serial);
         }
+    }
+
+    private void LoadDevicePreferences(string serial)
+    {
+        var pref = PreferencesService.GetDevicePreference(serial);
+        DeviceNotes = pref.Notes;
+        DeviceTag = pref.Tag;
+    }
+
+    [RelayCommand]
+    private void SaveDeviceNotes()
+    {
+        if (SelectedDevice == null) return;
+        
+        var pref = PreferencesService.GetDevicePreference(SelectedDevice.Serial);
+        pref.Notes = DeviceNotes;
+        pref.Tag = DeviceTag;
+        PreferencesService.SaveDevicePreference(SelectedDevice.Serial, pref);
+        StatusMessage = "Device notes saved.";
     }
 
     private async Task LoadDeviceDetailsAsync(DeviceInfo device)

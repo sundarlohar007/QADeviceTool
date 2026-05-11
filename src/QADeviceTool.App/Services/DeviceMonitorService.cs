@@ -1,18 +1,19 @@
-using QADeviceTool.Models;
+using LogPro.Models;
+using System.Threading;
 
-namespace QADeviceTool.Services;
+namespace LogPro.Services;
 
 /// <summary>
 /// Background service that polls for connected devices on a timer.
 /// </summary>
-public class DeviceMonitorService : IDisposable
+public class DeviceMonitorService : IDeviceMonitorService
 {
     private readonly AdbService _adbService;
     private readonly IosService _iosService;
     private Timer? _pollTimer;
     private readonly List<DeviceInfo> _devices = new();
     private readonly object _lock = new();
-    private bool _isPolling;
+    private int _isPolling;
 
     public event Action<List<DeviceInfo>>? DevicesChanged;
     public event Action<DeviceInfo>? DeviceConnected;
@@ -37,7 +38,11 @@ public class DeviceMonitorService : IDisposable
     public void StartMonitoring(int intervalMs = 10000)
     {
         StopMonitoring();
-        _pollTimer = new Timer(async _ => await PollDevicesAsync(), null, 2000, intervalMs);
+        _pollTimer = new Timer(async _ =>
+        {
+            try { await PollDevicesAsync(); }
+            catch (Exception ex) { AppLogger.Log.Error(ex, "[DeviceMonitor] Poll timer crashed"); }
+        }, null, 2000, intervalMs);
     }
 
     /// <summary>
@@ -54,8 +59,7 @@ public class DeviceMonitorService : IDisposable
     /// </summary>
     public async Task PollDevicesAsync()
     {
-        if (_isPolling) return;
-        _isPolling = true;
+        if (Interlocked.Exchange(ref _isPolling, 1) != 0) return;
 
         try
         {
@@ -64,18 +68,24 @@ public class DeviceMonitorService : IDisposable
             // Get Android devices
             try
             {
-                var androidDevices = await _adbService.GetConnectedDevicesAsync();
+                var androidDevices = await _adbService.GetConnectedDevicesAsync().ConfigureAwait(false);
                 newDevices.AddRange(androidDevices);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                AppLogger.Log.Debug(ex, "Failed to get Android devices");
+            }
 
             // Get iOS devices
             try
             {
-                var iosDevices = await _iosService.GetConnectedDevicesAsync();
+                var iosDevices = await _iosService.GetConnectedDevicesAsync().ConfigureAwait(false);
                 newDevices.AddRange(iosDevices);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get iOS devices");
+            }
 
             // Detect changes
             List<DeviceInfo> oldDevices;
@@ -104,7 +114,7 @@ public class DeviceMonitorService : IDisposable
         }
         finally
         {
-            _isPolling = false;
+            Interlocked.Exchange(ref _isPolling, 0);
         }
     }
 

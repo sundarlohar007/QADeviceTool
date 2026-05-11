@@ -1,14 +1,14 @@
 using System.Text.RegularExpressions;
-using QADeviceTool.Helpers;
-using QADeviceTool.Models;
+using LogPro.Helpers;
+using LogPro.Models;
 
-namespace QADeviceTool.Services;
+namespace LogPro.Services;
 
 /// <summary>
 /// Controls scrcpy for Android screen mirroring.
 /// Uses ToolResolver to find bundled or system scrcpy.
 /// </summary>
-public class ScrcpyService
+public class ScrcpyService : IScrcpyService
 {
     private readonly string _scrcpy;
     private System.Diagnostics.Process? _mirrorProcess;
@@ -26,7 +26,7 @@ public class ScrcpyService
             Description = "Required for Android screen mirroring"
         };
 
-        var result = await ToolLauncher.RunAsync(_scrcpy, "--version");
+        var result = await ToolLauncher.RunAsync(_scrcpy, "--version").ConfigureAwait(false);
         if (result.Success)
         {
             status.IsInstalled = true;
@@ -47,18 +47,80 @@ public class ScrcpyService
 
     public bool IsRunning => _mirrorProcess != null && !_mirrorProcess.HasExited;
 
-    public async Task<bool> StartMirroringAsync(string serial)
+    public string? MirroredDeviceSerial { get; private set; }
+
+    public async Task<bool> StartMirroringAsync(string serial, ScrcpyOptions? options = null)
     {
-        if (IsRunning) return true;
+        // Stop any existing mirroring before starting a new one
+        if (_mirrorProcess != null)
+        {
+            StopMirroring();
+        }
 
         var check = await CheckAvailabilityAsync();
         if (!check.IsInstalled) return false;
 
-        _mirrorProcess = ToolLauncher.StartLongRunning(_scrcpy, $"-s {serial} --window-title \"QA Mirror - {serial}\"");
-        
+        var args = BuildScrcpyArguments(serial, options);
+        _mirrorProcess = ToolLauncher.StartLongRunning(_scrcpy, args);
+
+        if (_mirrorProcess == null) return false;
+
+        MirroredDeviceSerial = serial;
+
+        // Wait briefly to see if process starts and stays running
         await Task.Delay(500);
-        
-        return _mirrorProcess != null && !_mirrorProcess.HasExited;
+
+        if (_mirrorProcess.HasExited)
+        {
+            MirroredDeviceSerial = null;
+            _mirrorProcess.Dispose();
+            _mirrorProcess = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    private string BuildScrcpyArguments(string serial, ScrcpyOptions? options)
+    {
+        var args = $"-s {serial}";
+
+        if (options != null)
+        {
+            if (!string.IsNullOrEmpty(options.BitRate) && options.BitRate != "2M"
+                && System.Text.RegularExpressions.Regex.IsMatch(options.BitRate, @"^\d+(\.\d+)?[KMG]?$"))
+                args += $" --bit-rate={options.BitRate}";
+
+            if (options.MaxFps > 0 && options.MaxFps <= 120)
+                args += $" --max-fps={options.MaxFps}";
+
+            if (options.Fullscreen)
+            {
+                args += " --fullscreen";
+            }
+            else
+            {
+                switch (options.WindowPreset)
+                {
+                    case "Top-Left":
+                        args += " --window-x=0 --window-y=0 --window-width=1080 --window-height=1920";
+                        break;
+                    case "Bottom-Right":
+                        args += " --window-x=960 --window-y=540 --window-width=960 --window-height=1080";
+                        break;
+                    default:
+                        if (options.WindowW > 0 && options.WindowH > 0)
+                        {
+                            args += $" --window-x={options.WindowX} --window-y={options.WindowY} --window-width={options.WindowW} --window-height={options.WindowH}";
+                        }
+                        break;
+                }
+            }
+        }
+
+        args += $" --window-title \"QA Mirror - {serial}\"";
+
+        return args;
     }
 
     public void StopMirroring()
@@ -77,6 +139,7 @@ public class ScrcpyService
         {
             _mirrorProcess?.Dispose();
             _mirrorProcess = null;
+            MirroredDeviceSerial = null;
         }
     }
 }
