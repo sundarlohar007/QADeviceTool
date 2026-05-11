@@ -1,0 +1,244 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
+using LogPro.Models;
+
+namespace LogPro.Services;
+
+/// <summary>
+/// Records and replays touch input macros on Android devices.
+/// Uses getevent for recording and sendevent/input for replay.
+/// </summary>
+public class MacroService
+{
+    private readonly AdbService _adbService;
+
+    public MacroService(AdbService adbService)
+    {
+        _adbService = adbService;
+    }
+
+    /// <summary>
+    /// Starts recording touch events on the device.
+    /// Returns a process that captures getevent output.
+    /// </summary>
+    // NOTE: getevent is a continuous streaming process, not a serialized command.
+    // It intentionally bypasses AdbService's command semaphore (ADB server
+    // handles concurrent streams natively). Commands during recording work fine.
+    public async Task<System.Diagnostics.Process?> StartRecordingAsync(string serial, string outputFilePath)
+    {
+        var process = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Helpers.ToolResolver.Resolve("adb"),
+                Arguments = $"-s {serial} shell getevent -t",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        try
+        {
+            process.Start();
+            ProcessManagerService.TrackProcess(process);
+
+            // Drain stdout to file asynchronously to prevent buffer deadlock
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var writer = new StreamWriter(outputFilePath, append: false);
+                    while (!process.StandardOutput.EndOfStream)
+                    {
+                        var line = await process.StandardOutput.ReadLineAsync();
+                        if (line != null)
+                            await writer.WriteLineAsync(line);
+                    }
+                }
+                catch (ObjectDisposedException) { /* process ended */ }
+                catch (IOException) { /* file write error */ }
+            });
+
+            return process;
+        }
+        catch (Exception ex)
+        {
+            Services.AppLogger.Log.Error(ex, "[MacroService] StartRecording failed");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Parses raw getevent output into a macro structure.
+    /// </summary>
+    public static MacroFile ParseMacro(string rawEventOutput, string macroName, int screenWidth = 1080, int screenHeight = 2400)
+    {
+        var events = new List<MacroEvent>();
+        long lastTimestamp = -1;
+
+        foreach (var line in rawEventOutput.Split('\n', '\r'))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            // Format: [  12345.678901] /dev/input/event2: 0003 0039 00000123
+            try
+            {
+                var bracketEnd = line.IndexOf(']');
+                if (bracketEnd < 2) continue;
+
+                var tsStr = line[1..bracketEnd].Trim();
+                if (!double.TryParse(tsStr, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var seconds))
+                    continue;
+
+                var rest = line[(bracketEnd + 1)..].Trim();
+                var parts = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 3) continue;
+
+                var type = ushort.Parse(parts[0], System.Globalization.NumberStyles.HexNumber);
+                var code = ushort.Parse(parts[1], System.Globalization.NumberStyles.HexNumber);
+                var value = int.Parse(parts[2], System.Globalization.NumberStyles.HexNumber);
+
+                long delayMs;
+                if (lastTimestamp < 0)
+                    delayMs = 0;
+                else
+                    delayMs = (long)((seconds - lastTimestamp / 1_000_000.0) * 1000);
+
+                lastTimestamp = (long)(seconds * 1_000_000);
+
+                events.Add(new MacroEvent
+                {
+                    Type = type,
+                    Code = code,
+                    Value = value,
+                    DelayMs = (int)Math.Max(0, delayMs)
+                });
+            }
+            catch { /* skip unparseable lines */ }
+        }
+
+        return new MacroFile
+        {
+            Name = macroName,
+            ScreenWidth = screenWidth,
+            ScreenHeight = screenHeight,
+            Events = events
+        };
+    }
+
+    /// <summary>
+    /// Replays a macro via sendevent (raw evdev replay).
+    /// </summary>
+    public async Task ReplayMacroAsync(string serial, MacroFile macro, string? inputDevice = null,
+        float speedMultiplier = 1.0f, CancellationToken token = default)
+    {
+        if (macro.Events.Count == 0) return;
+
+        // Auto-detect touch input device if not specified
+        var device = inputDevice ?? "/dev/input/event2"; // default touchscreen on many devices
+
+        foreach (var evt in macro.Events)
+        {
+            token.ThrowIfCancellationRequested();
+
+            var cmd = $"sendevent {device} {evt.Type} {evt.Code} {evt.Value}";
+            await _adbService.ExecuteCommandAsync(serial, $"shell {cmd}");
+
+            var delay = (int)(evt.DelayMs / speedMultiplier);
+            if (delay > 0)
+                await Task.Delay(delay, token);
+        }
+    }
+
+    /// <summary>
+    /// Replays high-level input commands (tap/swipe) for simpler macros.
+    /// </summary>
+    public async Task ReplaySimpleMacroAsync(string serial, List<SimpleMacroStep> steps,
+        float speedMultiplier = 1.0f, CancellationToken token = default)
+    {
+        foreach (var step in steps)
+        {
+            token.ThrowIfCancellationRequested();
+
+            string cmd = step.Action switch
+            {
+                "tap" => $"shell input tap {step.X} {step.Y}",
+                "swipe" => $"shell input swipe {step.X1} {step.Y1} {step.X2} {step.Y2} {step.DurationMs}",
+                "keyevent" => $"shell input keyevent {step.KeyCode}",
+                "text" => $"shell \"echo '{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(step.Text))}' | base64 -d | input text\"",
+                _ => null
+            };
+
+            if (cmd != null)
+                await _adbService.ExecuteCommandAsync(serial, cmd);
+
+            var delay = (int)(step.DelayMs / speedMultiplier);
+            if (delay > 0)
+                await Task.Delay(delay, token);
+        }
+    }
+
+    public static async Task<MacroFile?> LoadMacroAsync(string filePath)
+    {
+        try
+        {
+            var json = await File.ReadAllTextAsync(filePath);
+            return JsonSerializer.Deserialize<MacroFile>(json);
+        }
+        catch { return null; }
+    }
+
+    public static async Task SaveMacroAsync(MacroFile macro, string filePath)
+    {
+        var json = JsonSerializer.Serialize(macro, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(filePath, json);
+    }
+}
+
+/// <summary>
+/// A saved macro with touch event data.
+/// </summary>
+public class MacroFile
+{
+    public string Name { get; set; } = "Unnamed Macro";
+    public int ScreenWidth { get; set; } = 1080;
+    public int ScreenHeight { get; set; } = 2400;
+    public List<MacroEvent> Events { get; set; } = new();
+    public List<SimpleMacroStep> SimpleSteps { get; set; } = new();
+    public int LoopCount { get; set; } = 1;
+    public float SpeedMultiplier { get; set; } = 1.0f;
+}
+
+/// <summary>
+/// Raw evdev touch event.
+/// </summary>
+public class MacroEvent
+{
+    [JsonPropertyName("t")] public ushort Type { get; set; }
+    [JsonPropertyName("c")] public ushort Code { get; set; }
+    [JsonPropertyName("v")] public int Value { get; set; }
+    [JsonPropertyName("d")] public int DelayMs { get; set; }
+}
+
+/// <summary>
+/// High-level simple macro step (tap, swipe, key, text).
+/// </summary>
+public class SimpleMacroStep
+{
+    [JsonPropertyName("action")] public string Action { get; set; } = "tap"; // tap, swipe, keyevent, text
+    [JsonPropertyName("x")] public int X { get; set; }
+    [JsonPropertyName("y")] public int Y { get; set; }
+    [JsonPropertyName("x1")] public int X1 { get; set; }
+    [JsonPropertyName("y1")] public int Y1 { get; set; }
+    [JsonPropertyName("x2")] public int X2 { get; set; }
+    [JsonPropertyName("y2")] public int Y2 { get; set; }
+    [JsonPropertyName("dur")] public int DurationMs { get; set; } = 300;
+    [JsonPropertyName("key")] public int KeyCode { get; set; }
+    [JsonPropertyName("text")] public string Text { get; set; } = string.Empty;
+    [JsonPropertyName("delay")] public int DelayMs { get; set; } = 500;
+}
