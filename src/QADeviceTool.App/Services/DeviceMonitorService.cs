@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using LogPro.Models;
 using System.Threading;
 
@@ -5,6 +6,8 @@ namespace LogPro.Services;
 
 /// <summary>
 /// Background service that polls for connected devices on a timer.
+/// Uses a missed-poll threshold to prevent transient USB/daemon glitches
+/// from killing active log captures.
 /// </summary>
 public class DeviceMonitorService : IDeviceMonitorService
 {
@@ -14,6 +17,9 @@ public class DeviceMonitorService : IDeviceMonitorService
     private readonly List<DeviceInfo> _devices = new();
     private readonly object _lock = new();
     private int _isPolling;
+
+    private readonly ConcurrentDictionary<string, int> _missedPollCount = new(StringComparer.Ordinal);
+    private const int MissedPollThreshold = 3;
 
     public event Action<List<DeviceInfo>>? DevicesChanged;
     public event Action<DeviceInfo>? DeviceConnected;
@@ -32,9 +38,6 @@ public class DeviceMonitorService : IDeviceMonitorService
         _iosService = iosService;
     }
 
-    /// <summary>
-    /// Starts polling for devices at the specified interval.
-    /// </summary>
     public void StartMonitoring(int intervalMs = 10000)
     {
         StopMonitoring();
@@ -45,18 +48,12 @@ public class DeviceMonitorService : IDeviceMonitorService
         }, null, 2000, intervalMs);
     }
 
-    /// <summary>
-    /// Stops device polling.
-    /// </summary>
     public void StopMonitoring()
     {
         _pollTimer?.Dispose();
         _pollTimer = null;
     }
 
-    /// <summary>
-    /// Performs a single poll for all connected devices.
-    /// </summary>
     public async Task PollDevicesAsync()
     {
         if (Interlocked.Exchange(ref _isPolling, 1) != 0) return;
@@ -65,7 +62,6 @@ public class DeviceMonitorService : IDeviceMonitorService
         {
             var newDevices = new List<DeviceInfo>();
 
-            // Get Android devices
             try
             {
                 var androidDevices = await _adbService.GetConnectedDevicesAsync().ConfigureAwait(false);
@@ -76,7 +72,6 @@ public class DeviceMonitorService : IDeviceMonitorService
                 AppLogger.Log.Debug(ex, "Failed to get Android devices");
             }
 
-            // Get iOS devices
             try
             {
                 var iosDevices = await _iosService.GetConnectedDevicesAsync().ConfigureAwait(false);
@@ -87,15 +82,44 @@ public class DeviceMonitorService : IDeviceMonitorService
                 AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get iOS devices");
             }
 
-            // Detect changes
             List<DeviceInfo> oldDevices;
-            lock (_lock)
+            lock (_lock) { oldDevices = _devices.ToList(); }
+
+            var newSerials = new HashSet<string>(newDevices.Select(d => d.Serial), StringComparer.Ordinal);
+            var oldSerials = new HashSet<string>(oldDevices.Select(d => d.Serial), StringComparer.Ordinal);
+
+            var connected = new List<DeviceInfo>();
+            foreach (var d in newDevices)
             {
-                oldDevices = _devices.ToList();
+                if (!oldSerials.Contains(d.Serial))
+                {
+                    _missedPollCount.TryRemove(d.Serial, out _);
+                    connected.Add(d);
+                }
+                else
+                {
+                    _missedPollCount.TryRemove(d.Serial, out _);
+                }
             }
 
-            var connected = newDevices.Where(n => !oldDevices.Any(o => o.Serial == n.Serial)).ToList();
-            var disconnected = oldDevices.Where(o => !newDevices.Any(n => n.Serial == o.Serial)).ToList();
+            var disconnected = new List<DeviceInfo>();
+            foreach (var d in oldDevices)
+            {
+                if (!newSerials.Contains(d.Serial))
+                {
+                    var missed = _missedPollCount.AddOrUpdate(d.Serial, 1, (_, c) => c + 1);
+                    if (missed >= MissedPollThreshold)
+                    {
+                        _missedPollCount.TryRemove(d.Serial, out _);
+                        disconnected.Add(d);
+                        AppLogger.Log.Warn($"[DeviceMonitor] Device {d.Serial} disconnected after {missed} missed polls");
+                    }
+                    else
+                    {
+                        AppLogger.Log.Debug($"[DeviceMonitor] Device {d.Serial} missed poll {missed}/{MissedPollThreshold} - not yet disconnected");
+                    }
+                }
+            }
 
             lock (_lock)
             {
