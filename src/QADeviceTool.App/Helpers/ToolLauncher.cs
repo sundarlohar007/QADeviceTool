@@ -14,10 +14,12 @@ public class ToolLauncherResult
 public static class ToolLauncher
 {
     private static readonly string _toolsDir;
+    private static readonly string _pymobileDeviceDir;
 
     static ToolLauncher()
     {
-        _toolsDir = Path.Combine(AppContext.BaseDirectory, "tools", "pymobiledevice3");
+        _toolsDir = Path.Combine(AppContext.BaseDirectory, "tools");
+        _pymobileDeviceDir = Path.Combine(_toolsDir, "pymobiledevice3");
     }
 
     public static string ToolsDirectory => _toolsDir;
@@ -38,18 +40,24 @@ public static class ToolLauncher
         {
             return exeDir;
         }
+        if (Directory.Exists(_pymobileDeviceDir))
+            return _pymobileDeviceDir;
         return Directory.Exists(_toolsDir) ? _toolsDir : appBase;
+    }
+
+    private static string ResolveExecutablePath(string exeName)
+    {
+        if (Path.IsPathRooted(exeName))
+            return exeName;
+
+        var bundledPath = Path.Combine(_toolsDir, exeName);
+        return File.Exists(bundledPath) ? bundledPath : exeName;
     }
 
     public static async Task<ToolLauncherResult> RunAsync(string exeName, string arguments, int timeoutMs = 15000, Action<string>? outputCallback = null)
     {
         var result = new ToolLauncherResult();
-        var fullExePath = Path.Combine(_toolsDir, exeName);
-
-        if (Path.IsPathRooted(exeName))
-        {
-            fullExePath = exeName;
-        }
+        var fullExePath = ResolveExecutablePath(exeName);
 
         try
         {
@@ -137,13 +145,9 @@ public static class ToolLauncher
         return result;
     }
 
-    public static Process? StartLongRunning(string exeName, string arguments)
+    public static Process? StartLongRunning(string exeName, string arguments, Action<string>? errorCallback = null)
     {
-        var fullExePath = Path.Combine(_toolsDir, exeName);
-        if (Path.IsPathRooted(exeName))
-        {
-            fullExePath = exeName;
-        }
+        var fullExePath = ResolveExecutablePath(exeName);
 
         try
         {
@@ -167,10 +171,17 @@ public static class ToolLauncher
             process.Start();
             Services.ProcessManagerService.TrackProcess(process);
 
-            // Drain stderr in background to prevent buffer deadlock
+            // Drain stderr in background to prevent buffer deadlock.
             _ = Task.Run(async () =>
             {
-                try { while (await process.StandardError.ReadLineAsync() is { } line) { /* discard */ } }
+                try
+                {
+                    while (await process.StandardError.ReadLineAsync() is { } line)
+                    {
+                        errorCallback?.Invoke(line);
+                        logger.Warn($"[ToolLauncher] STDERR(long): {line}");
+                    }
+                }
                 catch { /* stream ended */ }
             });
 

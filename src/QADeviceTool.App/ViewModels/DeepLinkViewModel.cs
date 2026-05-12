@@ -68,7 +68,7 @@ public partial class DeepLinkViewModel : ObservableObject
 
     public void OnDeviceSelected(DeviceInfo device)
     {
-        if (device.Platform == DevicePlatform.Android && device.ConnectionState == DeviceConnectionState.Online)
+        if (device.ConnectionState == DeviceConnectionState.Online)
         {
             SelectedDevice = device;
         }
@@ -113,7 +113,7 @@ public partial class DeepLinkViewModel : ObservableObject
                 success = await _adbService.BroadcastIntentAsync(SelectedDevice.Serial, TargetUrl.Trim());
                 StatusMessage = success
                     ? $"Successfully launched: {TargetUrl}"
-                    : "[!] Failed to route intent. Check device status.";
+                    : "[!] Failed to route intent. Verify the URL scheme, target app install state, and that the device is unlocked.";
             }
         }
         catch (Exception ex)

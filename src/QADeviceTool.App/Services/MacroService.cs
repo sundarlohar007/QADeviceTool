@@ -37,6 +37,7 @@ public class MacroService
                 FileName = Helpers.ToolResolver.Resolve("adb"),
                 Arguments = $"-s {serial} shell getevent -t",
                 RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             }
@@ -52,7 +53,8 @@ public class MacroService
             {
                 try
                 {
-                    using var writer = new StreamWriter(outputFilePath, append: false);
+                    await using var stream = new FileStream(outputFilePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+                    using var writer = new StreamWriter(stream);
                     while (!process.StandardOutput.EndOfStream)
                     {
                         var line = await process.StandardOutput.ReadLineAsync();
@@ -63,6 +65,23 @@ public class MacroService
                 catch (ObjectDisposedException) { /* process ended */ }
                 catch (IOException) { /* file write error */ }
             });
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (await process.StandardError.ReadLineAsync() is { } line)
+                        Services.AppLogger.Log.Warn($"[MacroService] getevent stderr: {line}");
+                }
+                catch { /* stream ended */ }
+            });
+
+            await Task.Delay(250).ConfigureAwait(false);
+            if (process.HasExited)
+            {
+                process.Dispose();
+                return null;
+            }
 
             return process;
         }
@@ -80,6 +99,7 @@ public class MacroService
     {
         var events = new List<MacroEvent>();
         long lastTimestamp = -1;
+        string? inputDevice = null;
 
         foreach (var line in rawEventOutput.Split('\n', '\r'))
         {
@@ -96,6 +116,17 @@ public class MacroService
                     continue;
 
                 var rest = line[(bracketEnd + 1)..].Trim();
+                var colon = rest.IndexOf(':');
+                if (colon >= 0)
+                {
+                    var candidateDevice = rest[..colon].Trim();
+                    if (candidateDevice.StartsWith("/dev/input/", StringComparison.Ordinal))
+                    {
+                        inputDevice ??= candidateDevice;
+                        rest = rest[(colon + 1)..].Trim();
+                    }
+                }
+
                 var parts = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length < 3) continue;
 
@@ -107,7 +138,7 @@ public class MacroService
                 if (lastTimestamp < 0)
                     delayMs = 0;
                 else
-                    delayMs = (long)((seconds - lastTimestamp / 1_000_000.0) * 1000);
+                    delayMs = (long)Math.Round((seconds - lastTimestamp / 1_000_000.0) * 1000);
 
                 lastTimestamp = (long)(seconds * 1_000_000);
 
@@ -127,6 +158,7 @@ public class MacroService
             Name = macroName,
             ScreenWidth = screenWidth,
             ScreenHeight = screenHeight,
+            InputDevice = inputDevice,
             Events = events
         };
     }
@@ -140,7 +172,7 @@ public class MacroService
         if (macro.Events.Count == 0) return;
 
         // Auto-detect touch input device if not specified
-        var device = inputDevice ?? "/dev/input/event2"; // default touchscreen on many devices
+        var device = inputDevice ?? macro.InputDevice ?? "/dev/input/event2"; // fallback only
 
         foreach (var evt in macro.Events)
         {
@@ -165,7 +197,7 @@ public class MacroService
         {
             token.ThrowIfCancellationRequested();
 
-            string cmd = step.Action switch
+            string? cmd = step.Action switch
             {
                 "tap" => $"shell input tap {step.X} {step.Y}",
                 "swipe" => $"shell input swipe {step.X1} {step.Y1} {step.X2} {step.Y2} {step.DurationMs}",
@@ -208,6 +240,7 @@ public class MacroFile
     public string Name { get; set; } = "Unnamed Macro";
     public int ScreenWidth { get; set; } = 1080;
     public int ScreenHeight { get; set; } = 2400;
+    public string? InputDevice { get; set; }
     public List<MacroEvent> Events { get; set; } = new();
     public List<SimpleMacroStep> SimpleSteps { get; set; } = new();
     public int LoopCount { get; set; } = 1;

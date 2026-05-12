@@ -465,56 +465,123 @@ public class AdbService : IAdbService
 
     public async Task<List<DeviceFile>> ListDirectoryAsync(string serial, string path)
     {
-        var files = new List<DeviceFile>();
-
         try
         {
-            if (!IsSafePath(path)) return files;
+            if (!IsSafePath(path)) return new List<DeviceFile>();
             var safePath = path.Replace("'", "'\\''");
             var command = $"-s {serial} shell \"ls -lAL '{safePath}'\"";
             var result = await RunAdbAsync(command, DefaultTimeoutMs);
-            if (!result.Success) return files;
-
-            var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
+            if (result.Success)
             {
-                if (line.StartsWith("total ")) continue;
-
-                var match = Regex.Match(line, @"^([bcdlps-][rwx-]{9})\s+\d+\s+\w+\s+\w+\s+(\d+)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s+(.+)$");
-                
-                if (match.Success)
-                {
-                    var permissions = match.Groups[1].Value;
-                    var sizeStr = match.Groups[2].Value;
-                    var dateStr = match.Groups[3].Value;
-                    var name = match.Groups[4].Value;
-
-                    if (permissions.StartsWith("l") && name.Contains(" -> "))
-                        name = name[..name.IndexOf(" -> ")];
-
-                    if (name == "." || name == "..") continue;
-
-                    var isDir = permissions.StartsWith("d") || permissions.StartsWith("l");
-                    long.TryParse(sizeStr, out long size);
-                    DateTime.TryParseExact(dateStr, "yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime date);
-
-                    files.Add(new DeviceFile
-                    {
-                        Name = name,
-                        Path = path.TrimEnd('/') + "/" + name,
-                        IsDirectory = isDir,
-                        Size = isDir ? 0 : size,
-                        ModifiedDate = date
-                    });
-                }
+                var parsed = ParseAndroidLsListing(result.Output, path);
+                if (parsed.Count > 0)
+                    return parsed;
             }
+
+            var fallback = await RunAdbAsync($"-s {serial} shell \"ls -1Ap '{safePath}'\"", DefaultTimeoutMs);
+            return fallback.Success
+                ? ParseSimpleDirectoryListing(fallback.Output, path)
+                : new List<DeviceFile>();
         }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, $"[AdbService] ListDirectoryAsync failed for {path}");
         }
 
-        return files.OrderBy(f => !f.IsDirectory).ThenBy(f => f.Name).ToList();
+        return new List<DeviceFile>();
+    }
+
+    internal static List<DeviceFile> ParseAndroidLsListing(string output, string parentPath)
+    {
+        var files = new List<DeviceFile>();
+        var basePath = NormalizeDevicePath(parentPath);
+        var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("total ")) continue;
+
+            var match = Regex.Match(line,
+                @"^(?<perm>[bcdlps-][rwx-]{9})\s+\d+\s+\S+\s+\S+\s+(?<size>\d+)\s+(?<date>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)\s+(?<name>.+)$");
+
+            if (!match.Success) continue;
+
+            var permissions = match.Groups["perm"].Value;
+            var sizeStr = match.Groups["size"].Value;
+            var dateStr = match.Groups["date"].Value;
+            var name = match.Groups["name"].Value;
+
+            if (permissions.StartsWith("l") && name.Contains(" -> "))
+                name = name[..name.IndexOf(" -> ", StringComparison.Ordinal)];
+
+            if (name == "." || name == "..") continue;
+
+            var isDir = permissions.StartsWith("d") || permissions.StartsWith("l");
+            long.TryParse(sizeStr, out var size);
+            var date = ParseAndroidLsDate(dateStr);
+
+            files.Add(new DeviceFile
+            {
+                Name = name,
+                Path = CombineDevicePath(basePath, name),
+                IsDirectory = isDir,
+                Size = isDir ? 0 : size,
+                ModifiedDate = date
+            });
+        }
+
+        return SortDeviceFiles(files);
+    }
+
+    internal static List<DeviceFile> ParseSimpleDirectoryListing(string output, string parentPath)
+    {
+        var files = new List<DeviceFile>();
+        var basePath = NormalizeDevicePath(parentPath);
+        foreach (var raw in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var name = raw.Trim();
+            if (string.IsNullOrWhiteSpace(name) || name == "." || name == "..") continue;
+
+            var isDir = name.EndsWith("/");
+            name = name.TrimEnd('/');
+            if (string.IsNullOrWhiteSpace(name)) continue;
+
+            files.Add(new DeviceFile
+            {
+                Name = name,
+                Path = CombineDevicePath(basePath, name),
+                IsDirectory = isDir,
+                Size = 0,
+                ModifiedDate = DateTime.MinValue
+            });
+        }
+
+        return SortDeviceFiles(files);
+    }
+
+    private static DateTime ParseAndroidLsDate(string dateStr)
+    {
+        var formats = new[] { "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm" };
+        return DateTime.TryParseExact(dateStr, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date
+            : DateTime.MinValue;
+    }
+
+    private static List<DeviceFile> SortDeviceFiles(IEnumerable<DeviceFile> files)
+        => files.OrderBy(f => !f.IsDirectory).ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+    private static string NormalizeDevicePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "/";
+        var normalized = path.Replace('\\', '/').Trim();
+        if (!normalized.StartsWith('/')) normalized = "/" + normalized;
+        normalized = normalized.TrimEnd('/');
+        return string.IsNullOrEmpty(normalized) ? "/" : normalized;
+    }
+
+    private static string CombineDevicePath(string parentPath, string name)
+    {
+        var basePath = NormalizeDevicePath(parentPath);
+        return basePath == "/" ? $"/{name}" : $"{basePath}/{name}";
     }
 
     public async Task<bool> PullFileAsync(string serial, string remotePath, string localDestination)
@@ -641,14 +708,44 @@ public class AdbService : IAdbService
 
     public async Task<bool> BroadcastIntentAsync(string serial, string url)
     {
-        // Only allow valid URLs to prevent shell injection
-        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out _))
+        if (!TryBuildDeepLinkIntentArgs(serial, url, out var args))
             return false;
-        if (url.Contains(';') || url.Contains('`') || url.Contains("$("))
+
+        var result = await RunAdbAsync(args, 10000);
+        var combined = $"{result.Output}\n{result.Error}";
+        return result.Success
+            && !combined.Contains("Error:", StringComparison.OrdinalIgnoreCase)
+            && !combined.Contains("Exception", StringComparison.OrdinalIgnoreCase)
+            && !combined.Contains("unable to resolve Intent", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool TryBuildDeepLinkIntentArgs(string serial, string url, out string args)
+    {
+        args = string.Empty;
+        if (!Regex.IsMatch(serial, @"^[a-zA-Z0-9._:\-]+$"))
             return false;
-        var safeUrl = url.Replace("'", "'\\''");
-        var result = await RunAdbAsync($"-s {serial} shell am start -a android.intent.action.VIEW -d '{safeUrl}'", 10000);
-        return result.Success;
+
+        if (string.IsNullOrWhiteSpace(url))
+            return false;
+
+        var trimmed = url.Trim();
+        if (trimmed.Contains('\r') || trimmed.Contains('\n') || trimmed.Contains('`') || trimmed.Contains("$("))
+            return false;
+
+        var isIntentUri = trimmed.StartsWith("intent:", StringComparison.OrdinalIgnoreCase);
+        if (!isIntentUri && !Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+            return false;
+
+        var safeUrl = EscapeSingleQuotedShell(trimmed);
+        args = isIntentUri
+            ? $"-s {serial} shell am start -W '{safeUrl}'"
+            : $"-s {serial} shell am start -W -a android.intent.action.VIEW -d '{safeUrl}'";
+        return true;
+    }
+
+    private static string EscapeSingleQuotedShell(string value)
+    {
+        return value.Replace("'", "'\\''");
     }
 
     public async Task<(bool Success, string Message)> PairAsync(string ipPort, string code)

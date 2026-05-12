@@ -14,7 +14,7 @@ namespace LogPro.Services;
 /// screenshots, app management, and file access.
 ///
 /// Resolution order for the pymobiledevice3 invoker:
-///   1) bundled tools/pymobiledevice3/pymobiledevice3/pymobiledevice3.exe (PyInstaller standalone)
+///   1) bundled tools/pymobiledevice3/pymobiledevice3.exe (PyInstaller standalone)
 ///   2) system python.exe with `-m pymobiledevice3`
 /// CheckAvailabilityAsync probes both and reports which one is active.
 /// </summary>
@@ -91,9 +91,12 @@ public class IosService : IIosService
 
     /// <summary>Builds full argument string with optional UDID flag.</summary>
     private string BuildArgs(string? udid, string subcommand)
+        => BuildCommandArgs(_isModuleInvocation, udid, subcommand);
+
+    internal static string BuildCommandArgs(bool isModuleInvocation, string? udid, string subcommand)
     {
         var udidFlag = string.IsNullOrEmpty(udid) ? "" : $" --udid {Quote(udid)}";
-        var prefix = _isModuleInvocation ? "-m pymobiledevice3 " : "";
+        var prefix = isModuleInvocation ? "-m pymobiledevice3 " : "";
         return $"{prefix}--no-color {subcommand}{udidFlag}";
     }
 
@@ -114,6 +117,9 @@ public class IosService : IIosService
 
     private System.Diagnostics.Process? StartLong(string? udid, string subcommand)
         => ToolLauncher.StartLongRunning(_exe, BuildArgs(udid, subcommand));
+
+    public Task<ToolLauncherResult> ExecuteCommandAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs, Action<string>? outputCallback = null)
+        => RunAsync(udid, subcommand, timeoutMs, outputCallback);
 
     public async Task<ToolStatus> CheckAvailabilityAsync()
     {
@@ -396,27 +402,49 @@ public class IosService : IIosService
     internal static List<DeviceFile> ParseAfcLs(string output, string parentPath)
     {
         var files = new List<DeviceFile>();
-        var basePath = parentPath.TrimEnd('/');
+        var basePath = NormalizeDevicePath(parentPath);
         foreach (var line in output.Split('\n', '\r'))
         {
-            var name = line.Trim();
-            if (string.IsNullOrEmpty(name)) continue;
+            var rawName = line.Trim();
+            if (string.IsNullOrEmpty(rawName)) continue;
             // Skip noise (dot entries, total lines)
-            if (name == "." || name == "..") continue;
+            if (rawName == "." || rawName == "..") continue;
 
-            var isDir = name.EndsWith("/");
-            if (isDir) name = name.TrimEnd('/');
+            var hadTrailingSlash = rawName.EndsWith("/");
+            var normalized = rawName.Trim('/');
+            var name = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? normalized;
+            if (string.IsNullOrWhiteSpace(name)) continue;
+
+            // AFC listings often omit trailing slash markers for directories.
+            // Prefer navigability for dotless entries; opening a false-positive
+            // file simply returns an empty/error listing instead of blocking browse.
+            var isDir = hadTrailingSlash || !name.Contains('.');
 
             files.Add(new DeviceFile
             {
                 Name = name,
-                Path = string.IsNullOrEmpty(basePath) ? $"/{name}" : $"{basePath}/{name}",
+                Path = CombineDevicePath(basePath, name),
                 IsDirectory = isDir,
                 Size = 0,
                 ModifiedDate = DateTime.MinValue
             });
         }
         return files;
+    }
+
+    private static string NormalizeDevicePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "/";
+        var normalized = path.Replace('\\', '/').Trim();
+        if (!normalized.StartsWith('/')) normalized = "/" + normalized;
+        normalized = normalized.TrimEnd('/');
+        return string.IsNullOrEmpty(normalized) ? "/" : normalized;
+    }
+
+    private static string CombineDevicePath(string parentPath, string name)
+    {
+        var basePath = NormalizeDevicePath(parentPath);
+        return basePath == "/" ? $"/{name}" : $"{basePath}/{name}";
     }
 
     public async Task<bool> PullFileAsync(string udid, string remotePath, string localPath)

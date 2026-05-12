@@ -97,7 +97,7 @@ public class IosServiceParserTests
         files.Should().HaveCount(4);
         files.Should().Contain(f => f.Name == "DCIM" && f.IsDirectory && f.Path == "/var/mobile/Media/DCIM");
         files.Should().Contain(f => f.Name == "Photos" && f.IsDirectory);
-        files.Should().Contain(f => f.Name == "Library" && !f.IsDirectory);
+        files.Should().Contain(f => f.Name == "Library" && f.IsDirectory);
         files.Should().Contain(f => f.Name == "file.txt" && !f.IsDirectory);
     }
 
@@ -117,6 +117,17 @@ public class IosServiceParserTests
         var output = "Photos/\n";
         var files = IosService.ParseAfcLs(output, "/");
         files[0].Path.Should().Be("/Photos");
+    }
+
+    [Fact]
+    public void ParseAfcLs_RootAbsoluteEntries_NormalizesPathAndTreatsAsDirectories()
+    {
+        var output = "/Airlock\n/DCIM\n";
+        var files = IosService.ParseAfcLs(output, "/");
+
+        files.Should().HaveCount(2);
+        files.Should().Contain(f => f.Name == "Airlock" && f.Path == "/Airlock" && f.IsDirectory);
+        files.Should().Contain(f => f.Name == "DCIM" && f.Path == "/DCIM" && f.IsDirectory);
     }
 
     [Fact]

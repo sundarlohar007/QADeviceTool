@@ -25,6 +25,7 @@ public partial class StressTestViewModel : ObservableObject
     private CancellationTokenSource? _runCts;
     private Process? _adbProcess;
     private string? _runningOnSerial;
+    private DateTime _runStartedAt;
     private List<AppItem> _allApps = new();
 
     [ObservableProperty] private ObservableCollection<DeviceInfo> _devices = new();
@@ -106,7 +107,7 @@ public partial class StressTestViewModel : ObservableObject
     {
         IsPlatformSupported = value?.Platform == DevicePlatform.Android;
         PlatformBadge = value == null ? "" :
-            value.Platform == DevicePlatform.Android ? "Android" : $"{value.Platform} (monkey not supported)";
+            value.Platform == DevicePlatform.Android ? "Android monkey + performance snapshot" : $"{value.Platform}: stress/monkey not supported";
         _allApps.Clear();
         FilteredApps.Clear();
         SelectedApp = null;
@@ -206,6 +207,7 @@ public partial class StressTestViewModel : ObservableObject
         ProgressPercent = 0;
         Output = string.Empty;
         _runningOnSerial = SelectedDevice.Serial;
+        _runStartedAt = DateTime.Now;
 
         var args = $"-s {SelectedDevice.Serial} shell monkey -p {TargetPackage} " +
                    $"-v -v --throttle {ThrottleMs} -s {Seed} --pct-touch {PctTouch} " +
@@ -237,6 +239,22 @@ public partial class StressTestViewModel : ObservableObject
             process.BeginErrorReadLine();
 
             await process.WaitForExitAsync(_runCts.Token).ConfigureAwait(false);
+
+            var duration = DateTime.Now - _runStartedAt;
+            var metrics = await CollectPerformanceMetricsAsync(SelectedDevice.Serial, TargetPackage).ConfigureAwait(false);
+            var report = StressReportBuilder.BuildReport(new StressRunSummary
+            {
+                PackageName = TargetPackage,
+                DeviceName = SelectedDevice.DisplayName,
+                EventCount = EventCount,
+                EventsInjected = EventsInjected,
+                CrashCount = CrashCount,
+                AnrCount = AnrCount,
+                Duration = duration,
+                Metrics = metrics
+            });
+            AppendOutput("");
+            AppendOutput(report.TrimEnd());
 
             await _dispatcher.BeginInvoke(() =>
             {
@@ -304,6 +322,24 @@ public partial class StressTestViewModel : ObservableObject
         catch (Exception ex)
         {
             AppLogger.Log.Warn(ex, "[StressTest] On-device kill error");
+        }
+    }
+
+    private async Task<StressPerformanceMetrics> CollectPerformanceMetricsAsync(string serial, string packageName)
+    {
+        try
+        {
+            var meminfoTask = _adbService.ExecuteCommandAsync(serial, $"shell dumpsys meminfo {packageName}");
+            var cpuinfoTask = _adbService.ExecuteCommandAsync(serial, "shell dumpsys cpuinfo");
+            var gfxinfoTask = _adbService.ExecuteCommandAsync(serial, $"shell dumpsys gfxinfo {packageName}");
+
+            await Task.WhenAll(meminfoTask, cpuinfoTask, gfxinfoTask).ConfigureAwait(false);
+            return StressReportBuilder.ParseMetrics(packageName, meminfoTask.Result, cpuinfoTask.Result, gfxinfoTask.Result);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Warn(ex, "[StressTest] Failed to collect performance metrics");
+            return new StressPerformanceMetrics();
         }
     }
 

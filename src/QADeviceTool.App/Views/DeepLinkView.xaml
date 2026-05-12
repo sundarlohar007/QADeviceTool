@@ -14,13 +14,13 @@
         <Border Grid.Column="0" Style="{StaticResource GlassCard}" Margin="0,0,8,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-                    <TextBlock Text="Android Devices" Style="{StaticResource TextHeading2}" Margin="0,0,0,8" />
-                    <TextBlock Text="Intent broadcast is available for Android targets." 
+                    <TextBlock Text="Devices" Style="{StaticResource TextHeading2}" Margin="0,0,0,8" />
+                    <TextBlock Text="Android routes URLs through adb. iOS deep-link launch is reported as unsupported."
                                Style="{StaticResource TextCaption}" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <TextBlock DockPanel.Dock="Top"
-                           Text="No Android devices detected."
+                           Text="No online devices detected."
                            Margin="0,8,0,0">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
@@ -103,9 +103,10 @@
                 <!-- Helpful examples -->
                 <TextBlock Text="Examples:" Style="{StaticResource TextCaption}" FontWeight="SemiBold" Margin="0,24,0,8" />
                 <StackPanel Margin="0,0,0,0">
-                    <TextBlock Text="• https://www.google.com" Style="{StaticResource TextMono}" FontSize="12" Foreground="{StaticResource BrushTextMuted}" Margin="0,2" />
-                    <TextBlock Text="• myapp://path/to/activity" Style="{StaticResource TextMono}" FontSize="12" Foreground="{StaticResource BrushTextMuted}" Margin="0,2" />
-                    <TextBlock Text="• geo:37.7749,-122.4194" Style="{StaticResource TextMono}" FontSize="12" Foreground="{StaticResource BrushTextMuted}" Margin="0,2" />
+                    <TextBlock Text="• https://www.google.com" Style="{StaticResource TextMono}" FontSize="12" Foreground="{StaticResource BrushTextMuted}" Margin="0,2" TextWrapping="Wrap" />
+                    <TextBlock Text="• myapp://path/to/activity" Style="{StaticResource TextMono}" FontSize="12" Foreground="{StaticResource BrushTextMuted}" Margin="0,2" TextWrapping="Wrap" />
+                    <TextBlock Text="• geo:37.7749,-122.4194" Style="{StaticResource TextMono}" FontSize="12" Foreground="{StaticResource BrushTextMuted}" Margin="0,2" TextWrapping="Wrap" />
+                    <TextBlock Text="• intent://scan/#Intent;scheme=zxing;package=com.google.zxing.client.android;end" Style="{StaticResource TextMono}" FontSize="12" Foreground="{StaticResource BrushTextMuted}" Margin="0,2" TextWrapping="Wrap" />
                 </StackPanel>
             </StackPanel>
         </Border>

@@ -77,8 +77,11 @@ public partial class ShellViewModel : ObservableObject
     {
         if (value != null)
         {
-            AppendOutput($"--- Selected Device: {value.DisplayName} ({value.Serial}) ---\n" +
-                         $"Type a command (e.g. 'shell ls' or 'logcat -d'). 'adb -s {value.Serial}' is automatically prepended.\n");
+            var help = value.Platform == DevicePlatform.iOS
+                ? "Type a pymobiledevice3 command (e.g. 'lockdown info', 'apps list', 'afc ls /', 'crash ls', 'diagnostics info'). iOS does not expose an interactive shell here."
+                : $"Type an adb command (e.g. 'shell ls' or 'logcat -d'). 'adb -s {value.Serial}' is automatically prepended.";
+
+            AppendOutput($"--- Selected Device: {value.DisplayName} ({value.Serial}) ---\n{help}\n");
         }
         else
         {
@@ -111,16 +114,18 @@ public partial class ShellViewModel : ObservableObject
                 // pymobiledevice3 has no non-interactive shell pipe (`developer shell` is an
                 // IPython REPL). Map a small set of useful subcommands to RunAsync so the user
                 // can still inspect lockdown/diagnostics/apps/crash without an interactive shell.
-                var passthrough = MapIosShellCommand(SelectedDevice.Serial, cmd);
+                var passthrough = MapIosShellCommand(cmd);
                 if (passthrough == null)
                 {
                     AppendOutput("[iOS] Interactive shell not supported by pymobiledevice3.\n" +
-                                 "Try: lockdown info | apps list | crash ls | diagnostics info | usbmux list");
+                                 "Try: lockdown info | apps list | afc ls / | crash ls | diagnostics info | usbmux list");
                 }
                 else
                 {
-                    var pyExe = ResolveSystemPython() ?? "python";
-                    var result = await ToolLauncher.RunAsync(pyExe, $"-m pymobiledevice3 --no-color {passthrough}", 30000);
+                    var udid = passthrough.StartsWith("usbmux", StringComparison.OrdinalIgnoreCase) || passthrough.StartsWith("version", StringComparison.OrdinalIgnoreCase)
+                        ? null
+                        : SelectedDevice.Serial;
+                    var result = await _iosService.ExecuteCommandAsync(udid, passthrough, 30000);
                     AppendOutput(string.IsNullOrWhiteSpace(result.Output) ? result.Error ?? "(no output)" : result.Output);
                 }
             }
@@ -164,13 +169,14 @@ public partial class ShellViewModel : ObservableObject
         }
     }
 
-    private static string? MapIosShellCommand(string udid, string cmd)
+    private static string? MapIosShellCommand(string cmd)
     {
         var trimmed = cmd.Trim();
         var allowedPrefixes = new[]
         {
             "lockdown info", "lockdown get",
             "apps list", "apps query", "apps uninstall",
+            "afc ls", "afc pull", "afc push",
             "crash ls", "crash pull",
             "diagnostics info", "diagnostics mg",
             "usbmux list", "usbmux forward",
@@ -181,23 +187,10 @@ public partial class ShellViewModel : ObservableObject
         {
             if (trimmed.StartsWith(p, StringComparison.OrdinalIgnoreCase))
             {
-                var udidFlag = string.IsNullOrEmpty(udid) || trimmed.StartsWith("usbmux", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("version", StringComparison.OrdinalIgnoreCase)
-                    ? ""
-                    : $" --udid \"{udid}\"";
-                return $"{trimmed}{udidFlag}";
+                return trimmed;
             }
         }
         return null;
-    }
-
-    private static string? ResolveSystemPython()
-    {
-        var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
-        return pathVar.Split(';')
-            .Select(p => p.Trim())
-            .Where(p => !string.IsNullOrEmpty(p))
-            .Select(p => System.IO.Path.Combine(p, "python.exe"))
-            .FirstOrDefault(System.IO.File.Exists);
     }
 
     private void AppendOutput(string text)

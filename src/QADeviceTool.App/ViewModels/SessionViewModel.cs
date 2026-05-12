@@ -303,7 +303,7 @@ public partial class SessionViewModel : ObservableObject
                 NewSessionName = string.Empty;
             }
 
-            var started = await _sessionService.StartCaptureAsync(SelectedSession!);
+            var started = await _sessionService.StartCaptureAsync(SelectedSession!, SelectedLogBuffer, SelectedLogFormat);
             if (started)
             {
                 IsCapturing = true;

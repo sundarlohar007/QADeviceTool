@@ -75,7 +75,7 @@ public partial class MacroViewModel : ObservableObject
             foreach (var d in devices)
                 Devices.Add(d);
             if (SelectedDevice == null && devices.Count > 0)
-                SelectedDevice = devices[0];
+                SelectedDevice = devices.FirstOrDefault(d => d.Platform == DevicePlatform.Android) ?? devices[0];
         });
     }
 
@@ -83,6 +83,14 @@ public partial class MacroViewModel : ObservableObject
     {
         if (device.Platform == DevicePlatform.Android)
             SelectedDevice = device;
+        else
+            StatusMessage = "[!] Macro recording and playback are Android-only. iOS does not expose touch event capture through pymobiledevice3.";
+    }
+
+    partial void OnSelectedDeviceChanged(DeviceInfo? value)
+    {
+        if (value?.Platform == DevicePlatform.iOS)
+            StatusMessage = "[!] Macro recording and playback are Android-only. iOS does not expose touch event capture through pymobiledevice3.";
     }
 
     [RelayCommand]
@@ -96,9 +104,9 @@ public partial class MacroViewModel : ObservableObject
 
     private async Task StartRecordingAsync()
     {
-        if (SelectedDevice == null)
+        if (SelectedDevice == null || SelectedDevice.Platform != DevicePlatform.Android)
         {
-            StatusMessage = "[!] No Android device selected.";
+            StatusMessage = "[!] Select an Android device. iOS macro capture is not supported by pymobiledevice3.";
             return;
         }
 
@@ -122,14 +130,21 @@ public partial class MacroViewModel : ObservableObject
         IsRecording = false;
         if (_recordProcess != null)
         {
-            try { if (!_recordProcess.HasExited) _recordProcess.Kill(); } catch { }
+            try
+            {
+                if (!_recordProcess.HasExited)
+                    _recordProcess.Kill(entireProcessTree: true);
+                _recordProcess.WaitForExit(1500);
+            }
+            catch { }
             try { _recordProcess.Dispose(); } catch { }
             _recordProcess = null;
         }
 
         if (_recordOutputPath != null && File.Exists(_recordOutputPath))
         {
-            var raw = await File.ReadAllTextAsync(_recordOutputPath);
+            await Task.Delay(150);
+            var raw = await ReadSharedTextAsync(_recordOutputPath);
             var macro = MacroService.ParseMacro(raw, $"Macro_{DateTime.Now:HHmmss}");
 
             if (macro.Events.Count > 0)
@@ -144,7 +159,7 @@ public partial class MacroViewModel : ObservableObject
                 StatusMessage = "No touch events captured.";
             }
 
-            try { File.Delete(_recordOutputPath); } catch { }
+            await TryDeleteAsync(_recordOutputPath);
         }
     }
 
@@ -152,6 +167,13 @@ public partial class MacroViewModel : ObservableObject
     private async Task PlayMacroAsync()
     {
         if (SelectedMacro?.Macro == null || SelectedDevice == null) return;
+        if (SelectedDevice.Platform != DevicePlatform.Android)
+        {
+            StatusMessage = "[!] Macro playback is Android-only.";
+            return;
+        }
+        if (PlaybackSpeed <= 0) PlaybackSpeed = 1.0f;
+        if (LoopCount <= 0) LoopCount = 1;
 
         _playCts?.Cancel();
         _playCts = new CancellationTokenSource();
@@ -227,6 +249,33 @@ public partial class MacroViewModel : ObservableObject
                 }
             }
             catch { /* skip invalid files */ }
+        }
+    }
+
+    private static async Task<string> ReadSharedTextAsync(string path)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
+    }
+
+    private static async Task TryDeleteAsync(string path)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                File.Delete(path);
+                return;
+            }
+            catch (IOException)
+            {
+                await Task.Delay(100);
+            }
+            catch
+            {
+                return;
+            }
         }
     }
 }

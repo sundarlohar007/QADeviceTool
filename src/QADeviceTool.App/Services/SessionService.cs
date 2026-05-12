@@ -72,6 +72,12 @@ public class SessionService : ISessionService
         };
 
         if (process == null) return false;
+        await Task.Delay(250).ConfigureAwait(false);
+        if (process.HasExited)
+        {
+            try { process.Dispose(); } catch { }
+            return false;
+        }
 
         string targetPackageName = PreferencesService.Current.TargetPackageName;
 
@@ -205,24 +211,28 @@ public class SessionService : ISessionService
     {
         foreach (var kvp in _activeCaptures)
         {
-            var ctx = kvp.Value;
-            if (ctx == null || ctx.Buffer.IsEmpty) continue;
+            FlushCaptureBuffer(kvp.Key, kvp.Value);
+        }
+    }
 
-            // Drain everything, fire in 2000-line chunks to keep UI batches manageable
-            while (!ctx.Buffer.IsEmpty)
+    private void FlushCaptureBuffer(string sessionId, CaptureContext ctx)
+    {
+        if (ctx.Buffer.IsEmpty) return;
+
+        // Drain everything, fire in 2000-line chunks to keep UI batches manageable
+        while (!ctx.Buffer.IsEmpty)
+        {
+            var batch = new System.Text.StringBuilder();
+            int count = 0;
+            while (ctx.Buffer.TryDequeue(out var line) && count < 2000)
             {
-                var batch = new System.Text.StringBuilder();
-                int count = 0;
-                while (ctx.Buffer.TryDequeue(out var line) && count < 2000)
-                {
-                    batch.AppendLine(line);
-                    count++;
-                }
+                batch.AppendLine(line);
+                count++;
+            }
 
-                if (batch.Length > 0)
-                {
-                    LogBatchReceived?.Invoke(kvp.Key, batch.ToString());
-                }
+            if (batch.Length > 0)
+            {
+                LogBatchReceived?.Invoke(sessionId, batch.ToString());
             }
         }
     }
@@ -234,16 +244,20 @@ public class SessionService : ISessionService
         try
         {
             ctx.Cts.Cancel();
-            ctx.Writer.Dispose();
-            ctx.AppWriter?.Dispose();
-
-            try { ctx.Process.CancelOutputRead(); } catch { }
 
             if (!ctx.Process.HasExited)
             {
                 bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
                 try { ctx.Process.Kill(killTree); } catch { }
+                try { ctx.Process.WaitForExit(1000); } catch { }
             }
+
+            try { ctx.Process.CancelOutputRead(); } catch { }
+            try { ctx.Writer.Flush(); } catch { }
+            try { ctx.AppWriter?.Flush(); } catch { }
+            FlushCaptureBuffer(session.Id, ctx);
+            ctx.Writer.Dispose();
+            ctx.AppWriter?.Dispose();
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] StopCapture cleanup error"); }
         finally
@@ -254,9 +268,6 @@ public class SessionService : ISessionService
 
         session.Status = SessionStatus.Stopped;
         session.EndTime = DateTime.Now;
-
-        // Flush remaining lines from this session's buffer
-        FlushAllBuffers();
 
         if (_activeCaptures.Count == 0)
         {
@@ -276,14 +287,18 @@ public class SessionService : ISessionService
             try
             {
                 ctx.Cts.Cancel();
-                ctx.Writer.Dispose();
-                ctx.AppWriter?.Dispose();
-                try { ctx.Process.CancelOutputRead(); } catch { }
                 if (!ctx.Process.HasExited)
                 {
                     bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
                     try { ctx.Process.Kill(killTree); } catch { }
+                    try { ctx.Process.WaitForExit(1000); } catch { }
                 }
+                try { ctx.Process.CancelOutputRead(); } catch { }
+                try { ctx.Writer.Flush(); } catch { }
+                try { ctx.AppWriter?.Flush(); } catch { }
+                FlushCaptureBuffer(kvp.Key, ctx);
+                ctx.Writer.Dispose();
+                ctx.AppWriter?.Dispose();
                 ctx.Process.Dispose();
                 ctx.Cts.Dispose();
             }

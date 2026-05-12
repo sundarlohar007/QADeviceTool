@@ -14,13 +14,13 @@
         <Border Grid.Column="0" Style="{StaticResource GlassCard}" Margin="0,0,8,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-                    <TextBlock Text="Android Devices" Style="{StaticResource TextHeading2}" Margin="0,0,0,8" />
-                    <TextBlock Text="Shell command interface is available for Android targets." 
+                    <TextBlock Text="Devices" Style="{StaticResource TextHeading2}" Margin="0,0,0,8" />
+                    <TextBlock Text="Android uses adb commands. iOS supports selected pymobiledevice3 commands."
                                Style="{StaticResource TextCaption}" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <TextBlock DockPanel.Dock="Top"
-                           Text="No Android devices detected."
+                           Text="No online devices detected."
                            Margin="0,8,0,0">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
