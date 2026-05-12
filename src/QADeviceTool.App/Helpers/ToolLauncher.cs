@@ -165,9 +165,11 @@ public static class ToolLauncher
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8
             };
 
+            process.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
             process.Start();
             Services.ProcessManagerService.TrackProcess(process);
 
