@@ -89,7 +89,7 @@ public partial class DashboardViewModel : ObservableObject
                 var keyword = PreferencesService.Current.TargetPackageName;
                 if (!string.IsNullOrWhiteSpace(keyword))
                 {
-                    _dispatcher.Invoke(() => TargetPackageName = keyword);
+                    _dispatcher.BeginInvoke(DispatcherPriority.Background, () => TargetPackageName = keyword);
                 }
             }
             catch { }
@@ -149,7 +149,7 @@ public partial class DashboardViewModel : ObservableObject
     {
         IsLoading = true;
         var statuses = await _dependencyChecker.CheckAllAsync();
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             ToolStatuses.Clear();
             foreach (var status in statuses)

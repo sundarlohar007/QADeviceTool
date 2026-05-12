@@ -78,7 +78,7 @@ public partial class MainViewModel : ObservableObject
         FileExplorerVM = new FileExplorerViewModel(_adbService, _iosService, _deviceMonitor);
         MacroVM = new MacroViewModel(new MacroService(_adbService), _adbService, _deviceMonitor);
         StressTestVM = new StressTestViewModel(_adbService, _deviceMonitor);
-        SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService);
+        SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService, _adbService);
 
         // Wire up device monitor events
         _deviceMonitor.DevicesChanged += devices =>

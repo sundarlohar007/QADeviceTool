@@ -57,7 +57,7 @@ public partial class AppManagementViewModel : ObservableObject
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             var currentSelected = SelectedDevice?.Serial;
             
@@ -134,7 +134,7 @@ public partial class AppManagementViewModel : ObservableObject
                 ? await _adbService.ListInstalledAppsAsync(device.Serial)
                 : await _iosService.ListInstalledAppsAsync(device.Serial);
 
-            _dispatcher.Invoke(() =>
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {
                 InstalledApps.Clear();
                 foreach (var app in apps)
@@ -190,7 +190,7 @@ public partial class AppManagementViewModel : ObservableObject
                 if (!string.IsNullOrWhiteSpace(line))
                 {
                     var trimmed = line.Trim();
-                    _dispatcher.Invoke(() =>
+                    _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
                     {
                         ConsoleOutput += trimmed + Environment.NewLine;
                         StatusMessage = $"[Installing] {trimmed}";

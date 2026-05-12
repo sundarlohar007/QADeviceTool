@@ -1,7 +1,8 @@
 <UserControl x:Class="LogPro.Views.MacroView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:LogPro.ViewModels">
+             xmlns:vm="clr-namespace:LogPro.ViewModels"
+             xmlns:conv="clr-namespace:LogPro.Converters">
     <Grid Margin="24,16">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="260" />
@@ -40,7 +41,7 @@
                         </Button>
                         <Button Style="{StaticResource PrimaryButton}" Content="Play"
                                 Command="{Binding PlayMacroCommand}"
-                                IsEnabled="{Binding IsPlaying, Converter={x:Static vm:InverseBoolConverter.Instance}}"
+                                IsEnabled="{Binding IsPlaying, Converter={x:Static conv:InverseBoolConverter.Instance}}"
                                 Margin="0,0,6,6" />
                         <Button Style="{StaticResource SecondaryButton}" Content="Stop"
                                 Command="{Binding StopPlaybackCommand}"

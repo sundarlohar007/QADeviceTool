@@ -232,7 +232,7 @@ public class IosService : IIosService
         // Fallback: regex scan. Values can be single/double-quoted (any char) or bare
         // (no comma/brace/newline). Quoted form preserves embedded commas like 'iPhone15,3'.
         var rx = new System.Text.RegularExpressions.Regex(
-            @"['""]?(?<key>[A-Za-z][A-Za-z0-9]+)['""]?\s*[:=]\s*(?:'(?<v1>[^']*)'|""(?<v2>[^""]*)""|(?<v3>[^,\r\n}]+))");
+            @"['""]?(?<key>[A-Za-z][A-Za-z0-9]+)['""]?\s*[:=]\s*(?:'(?<v1>[^']*)'|""(?<v2>[^""]*)""|(?<v3>[^\r\n}]+))");
         foreach (System.Text.RegularExpressions.Match m in rx.Matches(output))
         {
             var key = m.Groups["key"].Value;
@@ -253,11 +253,9 @@ public class IosService : IIosService
     {
         try
         {
-            // pymd3 syslog live --out PATH writes to file AND stdout; we still consume stdout in SessionService.
-            var args = string.IsNullOrEmpty(outputFilePath)
-                ? "syslog live"
-                : $"syslog live --out {Quote(outputFilePath)}";
-            return StartLong(udid, args);
+            // syslog live streams to stdout by default; SessionService reads stdout and
+            // writes the file itself. Using --out would bypass the capture pipeline entirely.
+            return StartLong(udid, "syslog live");
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] StartLogCapture failed"); return null; }
     }
@@ -589,8 +587,13 @@ public class IosService : IIosService
             // Look for "Container" key in the dict-like output
             var match = System.Text.RegularExpressions.Regex.Match(
                 result.Output,
-                @"['""]?Container['""]?\s*[:=]\s*['""]?([^'""\r\n,}]+)['""]?");
-            return match.Success ? match.Groups[1].Value.Trim() : "";
+                @"['""]?Container['""]?\s*[:=]\s*(?:'(?<v1>[^']*)'|""(?<v2>[^""]*)""|(?<v3>[^\r\n}]+))");
+            var containerPath = match.Success
+                ? (match.Groups["v1"].Success ? match.Groups["v1"].Value
+                 : match.Groups["v2"].Success ? match.Groups["v2"].Value
+                 : match.Groups["v3"].Value).Trim()
+                : "";
+            return containerPath;
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] GetAppContainerPathAsync failed"); return ""; }
     }

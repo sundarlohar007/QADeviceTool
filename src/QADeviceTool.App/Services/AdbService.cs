@@ -311,6 +311,10 @@ public class AdbService : IAdbService
         if (string.IsNullOrWhiteSpace(serial))
             return null;
 
+        // Prevent concurrent recordings on the same AdbService instance
+        if (_activeRecordProcess != null && !_activeRecordProcess.HasExited)
+            return null;
+
         try
         {
             var remotePath = $"/sdcard/qa_screenrecord_{DateTime.Now:yyyyMMdd_HHmmss}.mp4";
@@ -341,9 +345,20 @@ public class AdbService : IAdbService
 
             if (process != null && !process.HasExited)
             {
-                // Send SIGINT to stop screenrecord gracefully (preserves the mp4)
+                // Send SIGINT (2) to screenrecord on the device to gracefully finalize the MP4 header.
+                // On Android, kill -2 sends SIGINT which makes screenrecord write the MP4 trailer.
+                try
+                {
+                    var pidResult = await RunAdbAsync($"-s {serial} shell pidof screenrecord", FastTimeoutMs);
+                    if (pidResult.Success && !string.IsNullOrWhiteSpace(pidResult.Output))
+                    {
+                        var pid = pidResult.Output.Trim();
+                        await RunAdbAsync($"-s {serial} shell kill -2 {pid}", FastTimeoutMs);
+                        await Task.Delay(500); // wait for mp4 finalization
+                    }
+                }
+                catch { }
                 try { process.Kill(false); } catch { }
-                await Task.Delay(500); // wait for mp4 finalization
                 process.Dispose();
             }
 
@@ -451,9 +466,10 @@ public class AdbService : IAdbService
     public async Task<List<DeviceFile>> ListDirectoryAsync(string serial, string path)
     {
         var files = new List<DeviceFile>();
-        
+
         try
         {
+            if (!IsSafePath(path)) return files;
             var safePath = path.Replace("'", "'\\''");
             var command = $"-s {serial} shell \"ls -lAL '{safePath}'\"";
             var result = await RunAdbAsync(command, DefaultTimeoutMs);
@@ -515,9 +531,19 @@ public class AdbService : IAdbService
 
     public async Task<bool> DeleteFileAsync(string serial, string remotePath)
     {
+        if (!IsSafePath(remotePath)) return false;
         var safePath = remotePath.Replace("'", "'\\''");
         var result = await RunAdbAsync($"-s {serial} shell \"rm -rf '{safePath}'\"");
         return result.Success;
+    }
+
+    private static bool IsSafePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        if (path.Contains("..")) return false;
+        if (path.Contains("$((") || path.Contains("$( ") || path.Contains("`")) return false;
+        if (path.Contains(';')) return false;
+        return true;
     }
 
     public async Task<List<AppItem>> ListInstalledAppsAsync(string serial)
@@ -600,6 +626,9 @@ public class AdbService : IAdbService
     {
         var tag = $"logpro_{DateTime.Now.Ticks}";
         var channelId = channel ?? "default";
+        // Validate channel ID is a simple alphanumeric/dot/dash identifier
+        if (!System.Text.RegularExpressions.Regex.IsMatch(channelId, @"^[a-zA-Z0-9._\-]+$"))
+            channelId = "default";
         // Base64-encode to prevent shell injection via $(), backticks, etc.
         var titleB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(title));
         var bodyB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(body));
@@ -612,6 +641,11 @@ public class AdbService : IAdbService
 
     public async Task<bool> BroadcastIntentAsync(string serial, string url)
     {
+        // Only allow valid URLs to prevent shell injection
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out _))
+            return false;
+        if (url.Contains(';') || url.Contains('`') || url.Contains("$("))
+            return false;
         var safeUrl = url.Replace("'", "'\\''");
         var result = await RunAdbAsync($"-s {serial} shell am start -a android.intent.action.VIEW -d '{safeUrl}'", 10000);
         return result.Success;

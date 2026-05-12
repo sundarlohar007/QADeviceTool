@@ -59,7 +59,7 @@ public partial class VitalsViewModel : ObservableObject
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             var currentSelected = SelectedDevice?.Serial;
             
@@ -96,7 +96,7 @@ public partial class VitalsViewModel : ObservableObject
 
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
-        if (value == null)
+        if (value == null || value.Platform != DevicePlatform.Android)
         {
             StopPolling();
             MemInfoOutput = string.Empty;
@@ -104,7 +104,6 @@ public partial class VitalsViewModel : ObservableObject
         }
         else if (IsPolling)
         {
-            // Immediately poll the new device
             _ = PollVitalsAsync();
         }
     }
@@ -138,7 +137,7 @@ public partial class VitalsViewModel : ObservableObject
         if (SelectedDevice == null || SelectedDevice.Platform != DevicePlatform.Android) return;
         if (SelectedDevice.ConnectionState != DeviceConnectionState.Online)
         {
-            _dispatcher.Invoke(() =>
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {
                 MemInfoOutput = $"Device is {SelectedDevice.ConnectionState}. Cannot poll vitals.";
                 TopProcessesOutput = string.Empty;
@@ -152,7 +151,7 @@ public partial class VitalsViewModel : ObservableObject
             var memResult = await _adbService.ExecuteCommandAsync(SelectedDevice.Serial, "shell dumpsys meminfo");
             var topResult = await _adbService.ExecuteCommandAsync(SelectedDevice.Serial, "shell top -b -n 1");
             
-            _dispatcher.Invoke(() =>
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {
                 if (!string.IsNullOrWhiteSpace(memResult))
                 {

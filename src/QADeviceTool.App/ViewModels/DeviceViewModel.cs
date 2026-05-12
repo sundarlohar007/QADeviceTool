@@ -60,7 +60,7 @@ public partial class DeviceViewModel : ObservableObject
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             Devices.Clear();
             foreach (var d in devices)

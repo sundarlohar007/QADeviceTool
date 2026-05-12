@@ -1,90 +1,80 @@
 ---
-phase: Code-Review
-reviewed: 2024-05-24T00:00:00Z
+phase: 02-code-review
+reviewed: 2026-05-11T14:30:00Z
 depth: standard
-files_reviewed: 7
+files_reviewed: 5
 files_reviewed_list:
-  - D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\AdbService.cs
-  - D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\IosService.cs
-  - D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\SessionService.cs
-  - D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\ProcessManagerService.cs
-  - D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\DeviceMonitorService.cs
-  - D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\CrashDetector.cs
-  - D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\ViewModels\SessionViewModel.cs
+  - src/QADeviceTool.App/Services/IosService.cs
+  - src/QADeviceTool.App/Services/SessionService.cs
+  - src/QADeviceTool.App/ViewModels/SessionViewModel.cs
+  - src/QADeviceTool.App/Helpers/ToolLauncher.cs
+  - src/QADeviceTool.App/Services/ProcessManagerService.cs
 findings:
-  critical: 3
+  critical: 4
   warning: 3
   info: 1
-  total: 7
+  total: 8
 status: issues_found
 ---
-# Phase Code-Review: Code Review Report
 
-**Reviewed:** 2024-05-24T00:00:00Z
-**Depth:** standard
-**Files Reviewed:** 7
+# Phase 2: Code Review Report (LogPro v3.1.0)
+
+**Reviewed:** 2026-05-11
+**Depth:** Standard
+**Files Reviewed:** 5
 **Status:** issues_found
 
 ## Summary
 
-The QADeviceTool source files were audited with a primary focus on the `Services` and `ViewModels`. The review found significant issues with thread-safety, state management for concurrent logging, and unmanaged process handle cleanup. The most critical issue is a severe memory leak/performance bottleneck in `SessionService`'s shared log buffer design, which will inevitably crash the application with unbounded memory growth on high-throughput ADB logging. Additionally, `SessionViewModel` improperly multiplexes concurrent logging events.
+The audit of the LogPro v3.1.0 codebase revealed several critical architectural flaws and regression issues. Most notably, the "multi-device logging" feature is severely broken due to a shared global log buffer that mixes data from all active sessions. Additionally, the promised performance improvements (specifically `BulkObservableCollection`) are completely missing from the implementation, leading to significant UI instability during heavy logging. Several process management issues also pose risks of resource leaks and data corruption.
 
 ## Critical Issues
 
-### CR-01: Shared Unbounded Log Buffer Memory Leak and Multi-Session Bleed
-**File:** `D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\SessionService.cs:33`
-**Issue:** `_logBuffer` is a single shared `ConcurrentQueue<string>` for ALL concurrent sessions. `FlushLogBuffer()` is called every 200ms by a shared `_flushTimer` and dequeues a hardcoded maximum of 200 lines. Since `logcat` often produces thousands of lines per second, this buffer will grow indefinitely, resulting in a severe memory leak (`OutOfMemoryException`). Additionally, logs from multiple devices are mixed together into this single queue, completely breaking session separation.
+### CR-01: Shared Log Buffer Causes Cross-Device Log Contamination
+**File:** `src/QADeviceTool.App/Services/SessionService.cs:22`, `126`, `133`
+**Issue:** The `SessionService` uses a single, global `ConcurrentQueue<string> _logBuffer` for ALL active log captures. When multiple devices are captured simultaneously, their log lines are interleaved into this single queue. The `FlushLogBuffer` timer then broadcasts this mixed data via a single `LogBatchReceived` event. This makes multi-device logging unusable as the UI shows a combined stream of logs from every connected device.
 **Fix:**
+Implement per-session buffers within the `CaptureContext` record and fire session-specific events:
 ```csharp
-// Give each session its own buffer and flush task, or remove the shared buffer. 
-// If retaining a queue, flush ALL items currently in the queue rather than 200:
-private void FlushLogBuffer(CaptureContext ctx)
-{
-    if (ctx.LogBuffer.IsEmpty) return;
-    var batch = new System.Text.StringBuilder();
-    while (ctx.LogBuffer.TryDequeue(out var line))
-    {
-        batch.AppendLine(line);
-    }
-    if (batch.Length > 0)
-    {
-        ctx.Session.FireLogBatchReceived(batch.ToString());
-    }
-}
+private record CaptureContext(
+    Process Process, 
+    StreamWriter Writer, 
+    ConcurrentQueue<string> Buffer, // New isolated buffer
+    LogSession Session, 
+    CancellationTokenSource Cts
+);
 ```
 
-### CR-02: NullReferenceException in StopAllCaptures during StartCaptureAsync
-**File:** `D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\SessionService.cs:64` and `198`
-**Issue:** `StartCaptureAsync` inserts `null!` into `_activeCaptures` to reserve the ID before awaiting the external tool process start: `if (!_activeCaptures.TryAdd(session.Id, null!)) return false;`. If `StopAllCaptures` (or `StopCapture`) executes during this `await` window, it will iterate over `_activeCaptures.Values` and throw a `NullReferenceException` when calling `kvp.Value.Cts.Cancel()`.
+### CR-02: Missing BulkObservableCollection Implementation
+**File:** `src/QADeviceTool.App/ViewModels/SessionViewModel.cs:31`, `361`
+**Issue:** The implementation of `BulkObservableCollection.cs` (a high-priority v3.1.0 feature) is missing from the codebase. `SessionViewModel` is still using the standard `ObservableCollection<LogEntry>`. During log pruning (triggered at 200,000 lines), the code performs 150,000 sequential `.Add()` calls. Because `ObservableCollection` fires a `CollectionChanged` notification for every single addition, this results in a multi-second UI freeze, making the application appear hung.
+**Fix:**
+Re-implement or restore `BulkObservableCollection<T>` with a `AddRange` method that calls `OnCollectionChanged` only once at the end.
+
+### CR-03: PyInstaller Process Tree Leak
+**File:** `src/QADeviceTool.App/Services/SessionService.cs:157`
+**Issue:** `StopCapture` calls `ctx.Process.Kill(entireProcessTree: false)`. The `pymobiledevice3.exe` tool is a PyInstaller standalone executable that spawns multiple Python child processes. Killing only the parent leaves these children orphaned. Over time, this leads to a massive accumulation of `pymobiledevice3` processes, leaking memory and potentially blocking USB ports.
 **Fix:**
 ```csharp
-// Do not insert null. Build the CaptureContext first, or use a separate state dictionary.
-// Alternatively, safely check for null in StopAllCaptures:
-foreach (var kvp in _activeCaptures.ToList())
-{
-    if (kvp.Value == null) continue; 
-    try { kvp.Value.Cts.Cancel(); /* ... */ } 
-    catch { /* ... */ }
-}
+// Change to true to clean up the entire process tree
+try { ctx.Process.Kill(entireProcessTree: true); } catch { }
 ```
 
-### CR-03: UI Subscription Breaking Concurrent Logging
-**File:** `D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\ViewModels\SessionViewModel.cs:338` and `440`
-**Issue:** `SessionViewModel` uses a single boolean `_isSubscribedToLogBatch` to track its subscription to the global `_sessionService.LogBatchReceived` event. If multiple sessions are running, it subscribes once. However, when the user stops *any* single session, `StopCapture` un-subscribes entirely (`_sessionService.LogBatchReceived -= OnLogBatchReceived;`). This instantly halts UI log updates for all other devices still actively capturing. 
+### CR-04: Brittle Regex Truncates iOS Device Info
+**File:** `src/QADeviceTool.App/Services/IosService.cs:176`
+**Issue:** The regex used to parse `pymobiledevice3 lockdown info` fails for values containing commas. The pattern `(?<v3>[^,\r\n}]+)` for unquoted values explicitly stops at the first comma. Since many Apple devices contain commas in their model names (e.g., "iPhone 15, Pro") or user-defined names, this data is truncated in the UI.
 **Fix:**
-Bind log events at the `LogSession` object level rather than via a global `SessionService` event. Alternatively, only unsubscribe if there are zero active captures remaining.
+Update the regex to be less restrictive for the trailing value or use the JSON output format exclusively:
+```csharp
+// Safer fallback regex that only stops at end-of-line or closing brace
+new Regex(@"['""]?(?<key>[A-Za-z0-9]+)['""]?\s*[:=]\s*(?:'(?<v1>[^']*)'|""(?<v2>[^""]*)""|(?<v3>[^\r\n}]+))");
+```
 
 ## Warnings
 
-### WR-01: UI Thread Freeze on Bulk Collection Modification
-**File:** `D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\ViewModels\SessionViewModel.cs:361`
-**Issue:** When pruning `LogEntries` to constrain memory, the code clears the `ObservableCollection` and adds up to 150,000 items sequentially via `foreach (var e in keep) LogEntries.Add(e);`. Because WPF's `ObservableCollection` fires `CollectionChanged` for every single `.Add()`, this will lock up the UI thread for seconds/minutes.
-**Fix:**
-Use a custom `BulkObservableCollection` that allows suppressing change notifications during bulk inserts, or replace the entire list instance.
-
-### WR-02: Unmanaged Process Handle Leak
-**File:** `D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\ProcessManagerService.cs:18`
-**Issue:** `TrackProcess` subscribes to `process.Exited` and removes the tracked process from the dictionary. However, it fails to call `process.Dispose()` when the process terminates naturally. This leaks OS process handles until application shutdown.
+### WR-01: Handle Leak in ProcessManagerService
+**File:** `src/QADeviceTool.App/Services/ProcessManagerService.cs:20`
+**Issue:** The `Exited` event handler removes the process from tracking but fails to call `Dispose()`. This leaks OS process handles for every external tool that exits naturally or crashes, which can eventually lead to system resource exhaustion in long-running QA sessions.
 **Fix:**
 ```csharp
 process.Exited += (s, e) =>
@@ -96,16 +86,26 @@ process.Exited += (s, e) =>
 };
 ```
 
-### WR-03: TaskCanceledException in App PID Resolver Logs Spurious Errors
-**File:** `D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\Services\SessionService.cs:122`
-**Issue:** `await Task.Delay(3000, cts.Token);` is used inside a `while` loop that resolves PIDs. When the session stops (`cts.Cancel()`), `Task.Delay` throws a `TaskCanceledException`. This is caught by a generic `catch (Exception ex)` block that logs `[AppLogger] Failed to resolve package PID`.
+### WR-02: Non-Graceful Screen Record Stop on Windows
+**File:** `src/QADeviceTool.App/Services/AdbService.cs:302`
+**Issue:** `process.Kill(false)` does not send a graceful `SIGINT` on Windows. It forcefully terminates the `screenrecord` process. This often prevents the MP4 header from being finalized, resulting in a corrupted or unplayable video file on the device/local machine.
 **Fix:**
-Catch `OperationCanceledException` and swallow it cleanly without logging an error.
+Use a more graceful termination method for ADB shell processes, such as sending a 'CTRL+C' signal via native Windows APIs or using `adb shell kill -2 <PID>` before closing the process.
+
+### WR-03: Heavy UI Refresh on Bookmark Toggles
+**File:** `src/QADeviceTool.App/ViewModels/SessionViewModel.cs:574`
+**Issue:** Toggling a bookmark calls `LogEntriesView.Refresh()`. Because the log view can contain up to 200,000 items, `Refresh()` forces WPF to re-evaluate filtering and sorting for the entire set on the UI thread, causing a noticeable "stutter" whenever a user marks a log line.
+**Fix:**
+Implement `INotifyPropertyChanged` on `LogEntry` so the UI can update the specific bound row without a full collection refresh.
 
 ## Info
 
-### IN-01: Cross-Contaminated Crash Detection State
-**File:** `D:\OpenCode\QAQC\QADeviceTool\src\QADeviceTool.App\ViewModels\SessionViewModel.cs:351`
-**Issue:** `OnLogBatchReceived` calls `_crashDetector.ScanLine(line, LogEntries.Count - 1, platform);` using `SelectedSession?.Platform ?? DevicePlatform.Android`. If a batch comes from an active iOS session while an Android session is selected in the UI, the iOS logs will be scanned using Android crash regexes. 
-**Fix:** 
-Ensure log lines or batches carry the origin platform/session so they can be processed appropriately regardless of the currently viewed session.
+### IN-01: Missing INotifyPropertyChanged on LogEntry
+**File:** `src/QADeviceTool.App/Models/LogEntry.cs`
+**Issue:** `LogEntry` uses auto-properties without change notification. This prevents the UI from reacting to property changes (like `IsBookmarked`) through standard data binding, necessitating the inefficient workarounds (like manual `Refresh()`) noted in WR-03.
+**Fix:** Use `CommunityToolkit.Mvvm` `ObservableObject` or manually implement `INotifyPropertyChanged` for the `LogEntry` class.
+
+---
+_Reviewed: 2026-05-11 14:30_
+_Reviewer: gsd-code-reviewer_
+_Depth: standard_

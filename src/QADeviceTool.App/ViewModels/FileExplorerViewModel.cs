@@ -55,7 +55,7 @@ public partial class FileExplorerViewModel : ObservableObject
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             if (SelectedDevice != null && !devices.Any(d => d.Serial == SelectedDevice.Serial))
             {
@@ -77,10 +77,11 @@ public partial class FileExplorerViewModel : ObservableObject
 
     public void OnDeviceSelected(DeviceInfo device)
     {
-        _loadCts?.Cancel();
-        _loadCts?.Dispose();
-        SelectedDevice = device;
+        var oldCts = _loadCts;
         _loadCts = new CancellationTokenSource();
+        try { oldCts?.Cancel(); } catch { }
+        try { oldCts?.Dispose(); } catch { }
+        SelectedDevice = device;
     }
 
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
@@ -120,7 +121,7 @@ public partial class FileExplorerViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            _dispatcher.Invoke(() => CurrentPath = "/");
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => CurrentPath = "/");
         }
     }
 
@@ -143,7 +144,7 @@ public partial class FileExplorerViewModel : ObservableObject
                 loadedFiles = await _iosService.ListDirectoryAsync(device.Serial, path);
 
             token.ThrowIfCancellationRequested();
-            _dispatcher.Invoke(() =>
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {
                 Files.Clear();
 
@@ -167,7 +168,7 @@ public partial class FileExplorerViewModel : ObservableObject
         catch (Exception ex)
         {
             Services.AppLogger.Log.Debug(ex, "[FileExplorer] LoadDirectoryAsync failed");
-            _dispatcher.Invoke(() => StatusMessage = $"Error loading directory: {ex.Message}");
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => StatusMessage = $"Error loading directory: {ex.Message}");
         }
         finally
         {

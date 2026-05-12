@@ -9,10 +9,12 @@ public interface ISessionService
 {
 
 
+    event Action<string, string>? LogBatchReceived;
+
     string SessionsRootDirectory { get; set; }
 
     LogSession CreateSession(DeviceInfo device, string? customSessionName = null);
-    bool StartCapture(LogSession session);
+    Task<bool> StartCaptureAsync(LogSession session, LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime);
     void StopCapture(LogSession session);
     void StopAllCaptures();
     LogSession? StopCaptureForDevice(string deviceSerial, IEnumerable<LogSession> sessions);

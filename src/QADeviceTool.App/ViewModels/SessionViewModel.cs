@@ -29,7 +29,7 @@ public partial class SessionViewModel : ObservableObject
     private readonly Dispatcher _dispatcher;
 
     // ── Log Viewer Properties ──
-    public ObservableCollection<LogEntry> LogEntries { get; } = new();
+    public BulkObservableCollection<LogEntry> LogEntries { get; } = new();
     public ICollectionView LogEntriesView { get; }
     
     // UI scroll scroll-to-end event
@@ -330,29 +330,60 @@ public partial class SessionViewModel : ObservableObject
         }
     }
 
-    private void OnLogBatchReceived(string batch)
+    private void OnLogBatchReceived(string sessionId, string batch)
     {
         _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
-            var platform = SelectedSession?.Platform ?? DevicePlatform.Android;
+            if (SelectedSession == null || SelectedSession.Id != sessionId) return;
+
+            var platform = SelectedSession.Platform;
             var lines = batch.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+            // Bulk-parse all lines then AddRange to avoid per-line CollectionChanged events
+            var entries = new List<LogEntry>(lines.Length);
             foreach (var line in lines)
             {
-                ParseAndAddLogEntry(line);
-                _crashDetector.ScanLine(line, LogEntries.Count - 1, platform);
+                var entry = ParseLogLine(line);
+                entries.Add(entry);
+                _crashDetector.ScanLine(line, LogEntries.Count + entries.Count - 1, platform);
             }
 
-            // Keep memory in check — batch remove oldest entries
+            LogEntries.AddRange(entries);
+
             if (LogEntries.Count > 200000)
             {
                 var removeCount = LogEntries.Count - 150000;
                 var keep = LogEntries.Skip(removeCount).ToList();
                 LogEntries.Clear();
-                foreach (var e in keep) LogEntries.Add(e);
+                LogEntries.AddRange(keep);
             }
 
             ScrollToEndRequested?.Invoke();
         });
+    }
+
+    private LogEntry ParseLogLine(string rawLine)
+    {
+        var entry = new LogEntry { RawLine = rawLine, Message = rawLine, Level = LogLevel.Unknown };
+        entry.Level = DetectLogLevel(rawLine);
+
+        if (!IsRawMode)
+        {
+            try
+            {
+                if (rawLine.StartsWith("["))
+                {
+                    int closeBracket = rawLine.IndexOf(']');
+                    if (closeBracket > 1)
+                    {
+                        entry.Timestamp = rawLine.Substring(1, closeBracket - 1);
+                        entry.Message = rawLine.Substring(closeBracket + 1).TrimStart();
+                    }
+                }
+            }
+            catch { /* keep raw message */ }
+        }
+        return entry;
     }
 
     private void AddLogEntry(string message, LogLevel level)
@@ -1130,7 +1161,7 @@ public partial class SessionViewModel : ObservableObject
         if (logEntryIndex < 0 || logEntryIndex >= LogEntries.Count) return;
         var entry = LogEntries[logEntryIndex];
         entry.IsBookmarked = !entry.IsBookmarked;
-        LogEntriesView.Refresh();
+        // OnPropertyChanged(nameof(LogEntriesView)); // Not needed with INotifyPropertyChanged on LogEntry
     }
 
     public int? NextBookmark()
@@ -1262,17 +1293,16 @@ public partial class SessionViewModel : ObservableObject
 
             await _dispatcher.BeginInvoke(() =>
             {
+                var parsed = lines.Select(ParseLogLine).ToList();
                 LogEntries.Clear();
-                foreach (var line in lines)
-                    ParseAndAddLogEntry(line);
+                LogEntries.AddRange(parsed);
 
-                // Keep memory in check — batch remove oldest entries
                 if (LogEntries.Count > 200000)
                 {
                     var removeCount = LogEntries.Count - 150000;
                     var keep = LogEntries.Skip(removeCount).ToList();
                     LogEntries.Clear();
-                    foreach (var e in keep) LogEntries.Add(e);
+                    LogEntries.AddRange(keep);
                 }
 
                 StatusMessage = $"Loaded {LogEntries.Count} log entries.";

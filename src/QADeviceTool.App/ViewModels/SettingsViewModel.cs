@@ -63,11 +63,11 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading;
 
-    public SettingsViewModel(DependencyChecker dependencyChecker, SessionService sessionService)
+    public SettingsViewModel(DependencyChecker dependencyChecker, SessionService sessionService, AdbService adbService)
     {
         _dependencyChecker = dependencyChecker;
         _sessionService = sessionService;
-        _adbService = new AdbService();
+        _adbService = adbService;
         _dispatcher = Application.Current.Dispatcher;
         _sessionsDirectory = sessionService.SessionsRootDirectory;
 
@@ -130,7 +130,7 @@ public partial class SettingsViewModel : ObservableObject
 
         var statuses = await _dependencyChecker.CheckAllAsync();
 
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             ToolStatuses.Clear();
             foreach (var s in statuses)

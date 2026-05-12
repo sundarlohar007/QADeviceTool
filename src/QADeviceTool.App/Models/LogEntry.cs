@@ -1,4 +1,5 @@
 using System;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace LogPro.Models;
 
@@ -34,14 +35,14 @@ public enum LogcatFormat
     Raw
 }
 
-public class LogEntry
+public partial class LogEntry : ObservableObject
 {
-    public string Timestamp { get; set; } = string.Empty;
-    public LogLevel Level { get; set; } = LogLevel.Unknown;
-    public string Tag { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-    public string RawLine { get; set; } = string.Empty;
-    public bool IsBookmarked { get; set; }
+    [ObservableProperty] private string _timestamp = string.Empty;
+    [ObservableProperty] private LogLevel _level = LogLevel.Unknown;
+    [ObservableProperty] private string _tag = string.Empty;
+    [ObservableProperty] private string _message = string.Empty;
+    [ObservableProperty] private string _rawLine = string.Empty;
+    [ObservableProperty] private bool _isBookmarked;
 
     public override string ToString()
     {

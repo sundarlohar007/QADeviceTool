@@ -14,7 +14,7 @@ public interface IAdbService
     Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? progressCallback = null);
     Task<bool> BroadcastIntentAsync(string serial, string uri);
     Task<string> ExecuteCommandAsync(string serial, string command);
-    Process? StartLogCapture(string serial, string logFilePath);
+    Task<Process?> StartLogCaptureAsync(string serial, string logFilePath, LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime);
     Task<string?> GetPidFromPackageNameAsync(string serial, string packageName);
     Task<bool> PullFileAsync(string serial, string remotePath, string localPath);
     Task<bool> PushFileAsync(string serial, string localPath, string remotePath);

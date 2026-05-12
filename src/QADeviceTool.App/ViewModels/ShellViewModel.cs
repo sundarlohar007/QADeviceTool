@@ -203,7 +203,7 @@ public partial class ShellViewModel : ObservableObject
     private void AppendOutput(string text)
     {
         if (string.IsNullOrEmpty(text)) return;
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             if (ShellOutput.Length > 50000) // Keep it from growing infinitely
             {
