@@ -2,7 +2,24 @@ using System;
 using System.Globalization;
 using System.Windows.Data;
 
-namespace QADeviceTool.ViewModels;
+namespace LogPro.Converters;
+
+public class IntToBoolConverter : IValueConverter
+{
+    public static readonly IntToBoolConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is int intVal)
+            return intVal != 0;
+        return false;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
 
 public class NullToBoolConverter : IValueConverter
 {
@@ -10,7 +27,7 @@ public class NullToBoolConverter : IValueConverter
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        return value != null;
+        return value != null && value != System.Windows.DependencyProperty.UnsetValue;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

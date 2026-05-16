@@ -3,15 +3,16 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using QADeviceTool.Models;
-using QADeviceTool.Services;
-using QADeviceTool.Helpers;
+using LogPro.Models;
+using LogPro.Services;
+using LogPro.Helpers;
 
-namespace QADeviceTool.ViewModels;
+namespace LogPro.ViewModels;
 
 public partial class ShellViewModel : ObservableObject
 {
     private readonly DeviceMonitorService _deviceMonitor;
+    private readonly IosService _iosService;
     private readonly Dispatcher _dispatcher;
 
     [ObservableProperty]
@@ -29,9 +30,10 @@ public partial class ShellViewModel : ObservableObject
     [ObservableProperty]
     private bool _isExecuting;
 
-    public ShellViewModel(DeviceMonitorService deviceMonitor)
+    public ShellViewModel(DeviceMonitorService deviceMonitor, IosService iosService)
     {
         _deviceMonitor = deviceMonitor;
+        _iosService = iosService;
         _dispatcher = Application.Current.Dispatcher;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
@@ -39,19 +41,19 @@ public partial class ShellViewModel : ObservableObject
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(() =>
         {
             var currentSelected = SelectedDevice?.Serial;
-            
+
             Devices.Clear();
             foreach (var d in devices)
             {
-                if (d.Platform == DevicePlatform.Android) // Shell only supported for Android currently
+                if (d.ConnectionState == DeviceConnectionState.Online)
                 {
                     Devices.Add(d);
                 }
             }
-                
+
             if (!string.IsNullOrEmpty(currentSelected))
             {
                 SelectedDevice = Devices.FirstOrDefault(d => d.Serial == currentSelected);
@@ -63,12 +65,23 @@ public partial class ShellViewModel : ObservableObject
         });
     }
 
+    public void OnDeviceSelected(DeviceInfo device)
+    {
+        if (device.ConnectionState == DeviceConnectionState.Online)
+        {
+            SelectedDevice = device;
+        }
+    }
+
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
         if (value != null)
         {
-            AppendOutput($"--- Selected Device: {value.DisplayName} ({value.Serial}) ---\n" +
-                         $"Type a command (e.g. 'shell ls' or 'logcat -d'). 'adb -s {value.Serial}' is automatically prepended.\n");
+            var help = value.Platform == DevicePlatform.iOS
+                ? "Type a pymobiledevice3 command (e.g. 'lockdown info', 'apps list', 'afc ls /', 'crash ls', 'diagnostics info'). iOS does not expose an interactive shell here."
+                : $"Type an adb command (e.g. 'shell ls' or 'logcat -d'). 'adb -s {value.Serial}' is automatically prepended.";
+
+            AppendOutput($"--- Selected Device: {value.DisplayName} ({value.Serial}) ---\n{help}\n");
         }
         else
         {
@@ -82,16 +95,44 @@ public partial class ShellViewModel : ObservableObject
     {
         if (SelectedDevice == null || string.IsNullOrWhiteSpace(CommandInput)) return;
 
+        if (SelectedDevice.ConnectionState != DeviceConnectionState.Online)
+        {
+            AppendOutput($"[Error] Device is {SelectedDevice.ConnectionState}. Cannot execute shell commands.\n");
+            return;
+        }
+
         var cmd = CommandInput.Trim();
-        CommandInput = string.Empty; // Clear immediately for next input
+        CommandInput = string.Empty;
 
         AppendOutput($"\n> {cmd}");
         IsExecuting = true;
 
         try
         {
-            var adbPath = PathHelper.FindInPath("adb") ?? "adb";
-            var result = await ToolLauncher.RunAsync(adbPath, $"-s {SelectedDevice.Serial} {cmd}", 60000);
+            if (SelectedDevice.Platform == DevicePlatform.iOS)
+            {
+                // pymobiledevice3 has no non-interactive shell pipe (`developer shell` is an
+                // IPython REPL). Map a small set of useful subcommands to RunAsync so the user
+                // can still inspect lockdown/diagnostics/apps/crash without an interactive shell.
+                var passthrough = MapIosShellCommand(cmd);
+                if (passthrough == null)
+                {
+                    AppendOutput("[iOS] Interactive shell not supported by pymobiledevice3.\n" +
+                                 "Try: lockdown info | apps list | afc ls / | crash ls | diagnostics info | usbmux list");
+                }
+                else
+                {
+                    var udid = passthrough.StartsWith("usbmux", StringComparison.OrdinalIgnoreCase) || passthrough.StartsWith("version", StringComparison.OrdinalIgnoreCase)
+                        ? null
+                        : SelectedDevice.Serial;
+                    var result = await _iosService.ExecuteCommandAsync(udid, passthrough, 30000);
+                    AppendOutput(string.IsNullOrWhiteSpace(result.Output) ? result.Error ?? "(no output)" : result.Output);
+                }
+            }
+            else
+            {
+                var adbPath = ToolResolver.Resolve("adb");
+                var result = await ToolLauncher.RunAsync(adbPath, $"-s {SelectedDevice.Serial} {cmd}", 60000);
 
             if (!string.IsNullOrWhiteSpace(result.Output))
             {
@@ -102,9 +143,10 @@ public partial class ShellViewModel : ObservableObject
                 AppendOutput($"[Error]\n{result.Error}");
             }
             
-            if (!result.Success && string.IsNullOrWhiteSpace(result.Error) && string.IsNullOrWhiteSpace(result.Output))
-            {
-                AppendOutput($"[Command exited with code {result.ExitCode}]");
+                if (!result.Success && string.IsNullOrWhiteSpace(result.Error) && string.IsNullOrWhiteSpace(result.Output))
+                {
+                    AppendOutput($"[Command exited with code {result.ExitCode}]");
+                }
             }
         }
         catch (Exception ex)
@@ -127,10 +169,34 @@ public partial class ShellViewModel : ObservableObject
         }
     }
 
+    private static string? MapIosShellCommand(string cmd)
+    {
+        var trimmed = cmd.Trim();
+        var allowedPrefixes = new[]
+        {
+            "lockdown info", "lockdown get",
+            "apps list", "apps query", "apps uninstall",
+            "afc ls", "afc pull", "afc push",
+            "crash ls", "crash pull",
+            "diagnostics info", "diagnostics mg",
+            "usbmux list", "usbmux forward",
+            "syslog live", "processes",
+            "version"
+        };
+        foreach (var p in allowedPrefixes)
+        {
+            if (trimmed.StartsWith(p, StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed;
+            }
+        }
+        return null;
+    }
+
     private void AppendOutput(string text)
     {
         if (string.IsNullOrEmpty(text)) return;
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             if (ShellOutput.Length > 50000) // Keep it from growing infinitely
             {

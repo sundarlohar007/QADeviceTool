@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
-namespace QADeviceTool.Services;
+namespace LogPro.Services;
 
 public static class ProcessManagerService
 {
@@ -15,17 +15,20 @@ public static class ProcessManagerService
             try
             {
                 var id = process.Id;
-                _trackedProcesses.TryAdd(id, process);
-                
                 process.EnableRaisingEvents = true;
                 process.Exited += (s, e) =>
                 {
                     _trackedProcesses.TryRemove(id, out _);
                 };
+                _trackedProcesses.TryAdd(id, process);
             }
             catch (InvalidOperationException)
             {
-                // Process might have already exited before we could get its Id.
+                // Process already exited — nothing to track
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log.Debug(ex, "[ProcessManager] Failed to track process");
             }
         }
     }

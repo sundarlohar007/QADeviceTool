@@ -1,9 +1,9 @@
 using System.Windows.Controls;
 using System.Windows.Input;
-using QADeviceTool.Models;
-using QADeviceTool.ViewModels;
+using LogPro.Models;
+using LogPro.ViewModels;
 
-namespace QADeviceTool.Views;
+namespace LogPro.Views;
 
 public partial class FileExplorerView : UserControl
 {

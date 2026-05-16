@@ -1,6 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace QADeviceTool.Models;
+namespace LogPro.Models;
 
 /// <summary>
 /// Represents a log capture session.
@@ -12,6 +12,7 @@ public partial class LogSession : ObservableObject
     public DateTime StartTime { get; set; } = DateTime.Now;
     public DateTime? EndTime { get; set; }
     public string DeviceId { get; set; } = string.Empty;
+    public string DeviceSerial { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
     public DevicePlatform Platform { get; set; }
     public string LogFilePath { get; set; } = string.Empty;

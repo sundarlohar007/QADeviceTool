@@ -1,8 +1,8 @@
-QA/QC Device Tool - Third-Party Open Source Software Notices
+LogPro - Third-Party Open Source Software Notices
 
 This application includes the following third-party open-source software 
 components. These components are bundled as dynamically linked or standalone 
-executables. The QA/QC Device Tool remains proprietary software, and its source 
+executables. The LogPro remains proprietary software, and its source 
 code is not subject to these third-party licenses.
 
 -------------------------------------------------------------------------------

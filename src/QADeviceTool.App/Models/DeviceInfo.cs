@@ -1,4 +1,4 @@
-namespace QADeviceTool.Models;
+namespace LogPro.Models;
 
 /// <summary>
 /// Represents a detected device (Android or iOS).
@@ -13,8 +13,16 @@ public class DeviceInfo
     public DevicePlatform Platform { get; set; }
     public DeviceConnectionState ConnectionState { get; set; }
     public string BatteryLevel { get; set; } = "N/A";
+    public string BatteryStatus { get; set; } = string.Empty;
+    public string Manufacturer { get; set; } = string.Empty;
+    public string Product { get; set; } = string.Empty;
+    public string UsbInfo { get; set; } = string.Empty;
+    public string Notes { get; set; } = string.Empty;
+    public string Tag { get; set; } = string.Empty;
+    public DateTime? LastConnected { get; set; }
 
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Model : Name;
+    public string DisplayNotes => string.IsNullOrEmpty(Notes) ? "No notes" : Notes;
     public string PlatformIcon => Platform == DevicePlatform.Android ? "Android" : "iOS";
     public string StatusText => ConnectionState switch
     {

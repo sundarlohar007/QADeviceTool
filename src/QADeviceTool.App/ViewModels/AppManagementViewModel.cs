@@ -1,12 +1,15 @@
+using System;
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using QADeviceTool.Models;
-using QADeviceTool.Services;
+using LogPro.Models;
+using LogPro.Services;
 
-namespace QADeviceTool.ViewModels;
+namespace LogPro.ViewModels;
 
 public partial class AppManagementViewModel : ObservableObject
 {
@@ -27,6 +30,9 @@ public partial class AppManagementViewModel : ObservableObject
 
     [ObservableProperty]
     private AppItem? _selectedApp;
+
+    [ObservableProperty]
+    private string _consoleOutput = string.Empty;
 
     [ObservableProperty]
     private string _statusMessage = "Select a device to view installed apps.";
@@ -51,7 +57,7 @@ public partial class AppManagementViewModel : ObservableObject
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             var currentSelected = SelectedDevice?.Serial;
             
@@ -70,17 +76,42 @@ public partial class AppManagementViewModel : ObservableObject
         });
     }
 
+    public void OnDeviceSelected(DeviceInfo device)
+    {
+        SelectedDevice = device;
+    }
+
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
-        if (value != null)
-        {
-            _ = LoadAppsAsync(value);
-        }
-        else
+        if (value == null)
         {
             InstalledApps.Clear();
             StatusMessage = "No device selected.";
+            return;
         }
+
+        if (value.ConnectionState == DeviceConnectionState.Unauthorized)
+        {
+            InstalledApps.Clear();
+            StatusMessage = "[!] Device is unauthorized. Accept RSA key on device and refresh.";
+            return;
+        }
+
+        if (value.ConnectionState == DeviceConnectionState.PendingTrust)
+        {
+            InstalledApps.Clear();
+            StatusMessage = "[!] Device requires trust. Accept trust dialog on iOS device and refresh.";
+            return;
+        }
+
+        if (value.ConnectionState != DeviceConnectionState.Online)
+        {
+            InstalledApps.Clear();
+            StatusMessage = $"[!] Device is {value.ConnectionState}.";
+            return;
+        }
+
+        _ = LoadAppsAsync(value);
     }
 
     [RelayCommand]
@@ -103,7 +134,7 @@ public partial class AppManagementViewModel : ObservableObject
                 ? await _adbService.ListInstalledAppsAsync(device.Serial)
                 : await _iosService.ListInstalledAppsAsync(device.Serial);
 
-            _dispatcher.Invoke(() =>
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {
                 InstalledApps.Clear();
                 foreach (var app in apps)
@@ -146,20 +177,29 @@ public partial class AppManagementViewModel : ObservableObject
 
         if (dialog.ShowDialog() != true) return;
 
-        StatusMessage = $"Installing {System.IO.Path.GetFileName(dialog.FileName)}...";
+        var fileName = System.IO.Path.GetFileName(dialog.FileName);
         IsLoading = true;
+        ConsoleOutput = string.Empty;
 
         try
         {
             (bool success, string message) result;
 
-            Action<string> updateProgress = (line) => 
+            Action<string> updateProgress = (line) =>
             {
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    _dispatcher.Invoke(() => StatusMessage = $"[Installing] {line.Trim()}");
+                    var trimmed = line.Trim();
+                    _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+                    {
+                        ConsoleOutput += trimmed + Environment.NewLine;
+                        StatusMessage = $"[Installing] {trimmed}";
+                    });
                 }
             };
+
+            ConsoleOutput = $"Installing {fileName} on {SelectedDevice.DisplayName}...{Environment.NewLine}";
+            StatusMessage = $"Installing {fileName}...";
 
             if (SelectedDevice.Platform == DevicePlatform.Android)
             {
@@ -167,36 +207,32 @@ public partial class AppManagementViewModel : ObservableObject
             }
             else
             {
-                // Pause logging if active; idevicesyslog locks the lockdown connection
                 var activeSession = _sessionService.GetActiveSessionForDevice(SelectedDevice.Serial);
                 if (activeSession != null)
                 {
-                    StatusMessage = "Pausing logs for install...";
+                    ConsoleOutput += "(Paused log capture for install)" + Environment.NewLine;
                     _sessionService.StopCapture(activeSession);
-                    await Task.Delay(1500); 
+                    await Task.Delay(1500);
                 }
 
-                StatusMessage = $"Installing {System.IO.Path.GetFileName(dialog.FileName)}...";
                 result = await _iosService.InstallIpaAsync(SelectedDevice.Serial, dialog.FileName, updateProgress);
 
                 if (activeSession != null)
                 {
-                    StatusMessage = "Resuming logs...";
-                    _sessionService.StartCapture(activeSession);
+                    await _sessionService.StartCaptureAsync(activeSession);
+                    ConsoleOutput += "(Resumed log capture)" + Environment.NewLine;
                 }
             }
 
-            StatusMessage = result.success
-                ? result.message
-                : $"[!] Install failed: {result.message}";
+            ConsoleOutput += Environment.NewLine + (result.success ? "SUCCESS: " : "FAILED: ") + result.message + Environment.NewLine;
+            StatusMessage = result.success ? result.message : $"[!] Install failed: {result.message}";
 
             if (result.success)
-            {
                 await LoadAppsAsync(SelectedDevice);
-            }
         }
         catch (Exception ex)
         {
+            ConsoleOutput += Environment.NewLine + $"ERROR: {ex.Message}" + Environment.NewLine;
             StatusMessage = $"[!] Install error: {ex.Message}";
         }
         finally
@@ -220,6 +256,7 @@ public partial class AppManagementViewModel : ObservableObject
         if (confirm != MessageBoxResult.Yes) return;
 
         IsLoading = true;
+        ConsoleOutput = $"Uninstalling {pkg} ({SelectedApp.Name}) from {SelectedDevice.DisplayName}...{Environment.NewLine}";
         StatusMessage = $"Uninstalling {pkg}...";
 
         try
@@ -228,9 +265,11 @@ public partial class AppManagementViewModel : ObservableObject
                 ? await _adbService.UninstallAppAsync(SelectedDevice.Serial, pkg)
                 : await _iosService.UninstallAppAsync(SelectedDevice.Serial, pkg);
 
+            ConsoleOutput += (success ? "SUCCESS: " : "FAILED: ") + $"Uninstall {pkg}" + Environment.NewLine;
+
             if (success)
             {
-                StatusMessage = $"Successfully uninstalled {pkg}.";
+                StatusMessage = $"Uninstalled {pkg}.";
                 await LoadAppsAsync(SelectedDevice);
             }
             else
@@ -246,5 +285,121 @@ public partial class AppManagementViewModel : ObservableObject
         {
             IsLoading = false;
         }
+    }
+
+    [RelayCommand]
+    private void ClearConsole()
+    {
+        ConsoleOutput = string.Empty;
+    }
+
+    [RelayCommand]
+    private async Task ForceStopAppAsync()
+    {
+        if (SelectedDevice == null || SelectedApp == null) return;
+        if (SelectedDevice.Platform != DevicePlatform.Android)
+        {
+            StatusMessage = "Force stop only available for Android.";
+            return;
+        }
+
+        IsLoading = true;
+        StatusMessage = $"Force stopping {SelectedApp.PackageId}...";
+        try
+        {
+            var success = await _adbService.ForceStopAppAsync(SelectedDevice.Serial, SelectedApp.PackageId);
+            StatusMessage = success ? $"Force stopped: {SelectedApp.PackageId}" : "Failed to force stop.";
+        }
+        catch (Exception ex) { StatusMessage = $"[!] Force stop error: {ex.Message}"; }
+        finally { IsLoading = false; }
+    }
+
+    [RelayCommand]
+    private async Task ClearAppDataAsync()
+    {
+        if (SelectedDevice == null || SelectedApp == null) return;
+        if (SelectedDevice.Platform != DevicePlatform.Android)
+        {
+            StatusMessage = "Clear data only available for Android.";
+            return;
+        }
+
+        var confirm = MessageBox.Show(
+            $"Clear all data for '{SelectedApp.Name}' ({SelectedApp.PackageId})?",
+            "Confirm Clear Data", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes) return;
+
+        IsLoading = true;
+        StatusMessage = $"Clearing data for {SelectedApp.PackageId}...";
+        try
+        {
+            var success = await _adbService.ClearAppDataAsync(SelectedDevice.Serial, SelectedApp.PackageId);
+            StatusMessage = success ? $"Data cleared: {SelectedApp.PackageId}" : "Failed to clear data.";
+        }
+        catch (Exception ex) { StatusMessage = $"[!] Clear data error: {ex.Message}"; }
+        finally { IsLoading = false; }
+    }
+
+    [RelayCommand]
+    private async Task ViewAppDetailsAsync()
+    {
+        if (SelectedDevice == null || SelectedApp == null) return;
+        if (SelectedDevice.Platform != DevicePlatform.Android)
+        {
+            StatusMessage = SelectedApp.ToString();
+            return;
+        }
+
+        IsLoading = true;
+        try
+        {
+            var details = await _adbService.GetAppDetailsAsync(SelectedDevice.Serial, SelectedApp.PackageId);
+            var lines = details.Split('\n', '\r').Take(30);
+            StatusMessage = string.Join(" | ", lines.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()));
+        }
+        catch (Exception ex) { StatusMessage = $"[!] Details error: {ex.Message}"; }
+        finally { IsLoading = false; }
+    }
+
+    /// <summary>
+    /// Install APK/IPA files via drag-drop from Windows Explorer.
+    /// Called from AppManagementView code-behind.
+    /// </summary>
+    public async Task InstallFilesAsync(string[] filePaths)
+    {
+        if (SelectedDevice == null)
+        {
+            StatusMessage = "[!] Select a target device first.";
+            return;
+        }
+
+        foreach (var path in filePaths)
+        {
+            var ext = Path.GetExtension(path).ToLowerInvariant();
+            if ((SelectedDevice.Platform == DevicePlatform.Android && ext != ".apk") ||
+                (SelectedDevice.Platform == DevicePlatform.iOS && ext != ".ipa"))
+            {
+                StatusMessage = $"[!] Skipped {Path.GetFileName(path)} — wrong platform for selected device.";
+                continue;
+            }
+
+            IsLoading = true;
+            StatusMessage = $"Installing {Path.GetFileName(path)}...";
+
+            try
+            {
+                var result = SelectedDevice.Platform == DevicePlatform.Android
+                    ? await _adbService.InstallApkAsync(SelectedDevice.Serial, path, null)
+                    : await _iosService.InstallIpaAsync(SelectedDevice.Serial, path, null);
+
+                StatusMessage = result.Success
+                    ? $"Installed: {Path.GetFileName(path)}"
+                    : $"[!] Failed: {result.Message}";
+            }
+            catch (Exception ex) { StatusMessage = $"[!] Install error: {ex.Message}"; }
+            finally { IsLoading = false; }
+        }
+
+        await LoadAppsAsync(SelectedDevice);
     }
 }

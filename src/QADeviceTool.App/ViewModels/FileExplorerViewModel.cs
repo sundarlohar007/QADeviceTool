@@ -5,10 +5,10 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
-using QADeviceTool.Models;
-using QADeviceTool.Services;
+using LogPro.Models;
+using LogPro.Services;
 
-namespace QADeviceTool.ViewModels;
+namespace LogPro.ViewModels;
 
 public partial class FileExplorerViewModel : ObservableObject
 {
@@ -16,6 +16,7 @@ public partial class FileExplorerViewModel : ObservableObject
     private readonly IosService _iosService;
     private readonly DeviceMonitorService _deviceMonitor;
     private readonly Dispatcher _dispatcher;
+    private CancellationTokenSource? _loadCts;
 
     [ObservableProperty]
     private ObservableCollection<DeviceFile> _files = new();
@@ -54,7 +55,7 @@ public partial class FileExplorerViewModel : ObservableObject
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             if (SelectedDevice != null && !devices.Any(d => d.Serial == SelectedDevice.Serial))
             {
@@ -74,6 +75,15 @@ public partial class FileExplorerViewModel : ObservableObject
         });
     }
 
+    public void OnDeviceSelected(DeviceInfo device)
+    {
+        var oldCts = _loadCts;
+        _loadCts = new CancellationTokenSource();
+        try { oldCts?.Cancel(); } catch { }
+        try { oldCts?.Dispose(); } catch { }
+        SelectedDevice = device;
+    }
+
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
         if (value == null)
@@ -85,21 +95,33 @@ public partial class FileExplorerViewModel : ObservableObject
 
         if (value.Platform == DevicePlatform.iOS)
         {
+            if (value.ConnectionState == DeviceConnectionState.PendingTrust)
+            {
+                Files.Clear();
+                StatusMessage = "[!] Device requires trust. Accept trust dialog on iOS device.";
+                return;
+            }
             CurrentPath = "/";
         }
         else
         {
+            if (value.ConnectionState != DeviceConnectionState.Online)
+            {
+                Files.Clear();
+                StatusMessage = $"[!] Device is {value.ConnectionState}.";
+                return;
+            }
             CurrentPath = "/sdcard/";
         }
 
-        _ = LoadDirectoryAsync(CurrentPath);
+        _ = Task.Run(async () => { try { await LoadDirectoryAsync(CurrentPath); } catch { } });
     }
 
     partial void OnCurrentPathChanged(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            _dispatcher.Invoke(() => CurrentPath = "/");
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => CurrentPath = "/");
         }
     }
 
@@ -107,38 +129,51 @@ public partial class FileExplorerViewModel : ObservableObject
     private async Task LoadDirectoryAsync(string path)
     {
         if (SelectedDevice == null) return;
-        
-        List<DeviceFile> loadedFiles;
-        if (SelectedDevice.Platform == DevicePlatform.Android)
-            loadedFiles = await _adbService.ListDirectoryAsync(SelectedDevice.Serial, path);
-        else
-            loadedFiles = await _iosService.ListDirectoryAsync(SelectedDevice.Serial, path);
 
-        _dispatcher.Invoke(() =>
+        IsLoading = true;
+        var device = SelectedDevice;
+        var token = _loadCts?.Token ?? CancellationToken.None;
+
+        try
         {
-            Files.Clear();
-            
-            // Add '..' if not at root
-            if (path != "/" && path != "")
+            token.ThrowIfCancellationRequested();
+            List<DeviceFile> loadedFiles;
+            if (device.Platform == DevicePlatform.Android)
+                loadedFiles = await _adbService.ListDirectoryAsync(device.Serial, path);
+            else
+                loadedFiles = await _iosService.ListDirectoryAsync(device.Serial, path);
+
+            token.ThrowIfCancellationRequested();
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {
-                Files.Add(new DeviceFile
+                Files.Clear();
+
+                if (path != "/" && path != "")
                 {
-                    Name = "..",
-                    Path = GetParentDirectory(path),
-                    IsDirectory = true
-                });
-            }
+                    Files.Add(new DeviceFile
+                    {
+                        Name = "..",
+                        Path = GetParentDirectory(path),
+                        IsDirectory = true
+                    });
+                }
 
-            foreach (var f in loadedFiles)
-            {
-                Files.Add(f);
-            }
+                foreach (var f in loadedFiles)
+                    Files.Add(f);
 
-            CurrentPath = path;
-            StatusMessage = $"Loaded {loadedFiles.Count} items.";
-        });
-
-        IsLoading = false;
+                CurrentPath = path;
+                StatusMessage = $"Loaded {loadedFiles.Count} items.";
+            });
+        }
+        catch (Exception ex)
+        {
+            Services.AppLogger.Log.Debug(ex, "[FileExplorer] LoadDirectoryAsync failed");
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => StatusMessage = $"Error loading directory: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     [RelayCommand]
@@ -193,14 +228,24 @@ public partial class FileExplorerViewModel : ObservableObject
         if (saveDialog.ShowDialog() == true)
         {
             IsLoading = true;
-            StatusMessage = $"Downloading {SelectedFile.Name}...";
+            try
+            {
+                StatusMessage = $"Downloading {SelectedFile.Name}...";
 
-            var success = SelectedDevice.Platform == DevicePlatform.Android
-                ? await _adbService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, saveDialog.FileName)
-                : await _iosService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, saveDialog.FileName);
+                var success = SelectedDevice.Platform == DevicePlatform.Android
+                    ? await _adbService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, saveDialog.FileName)
+                    : await _iosService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, saveDialog.FileName);
 
-            StatusMessage = success ? $"Downloaded successfully to {saveDialog.FileName}" : "Download failed.";
-            IsLoading = false;
+                StatusMessage = success ? $"Downloaded successfully to {saveDialog.FileName}" : "Download failed.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Download error: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
     }
 
@@ -218,22 +263,29 @@ public partial class FileExplorerViewModel : ObservableObject
         if (openDialog.ShowDialog() == true)
         {
             IsLoading = true;
-            var fileName = Path.GetFileName(openDialog.FileName);
-            var remotePath = CurrentPath.TrimEnd('/') + "/" + fileName;
-            
-            StatusMessage = $"Uploading {fileName}...";
-
-            var success = SelectedDevice.Platform == DevicePlatform.Android
-                ? await _adbService.PushFileAsync(SelectedDevice.Serial, openDialog.FileName, remotePath)
-                : await _iosService.PushFileAsync(SelectedDevice.Serial, openDialog.FileName, remotePath);
-
-            StatusMessage = success ? $"Uploaded successfully." : "Upload failed.";
-            
-            if (success)
+            try
             {
-                await LoadDirectoryAsync(CurrentPath);
+                var fileName = Path.GetFileName(openDialog.FileName);
+                var remotePath = CurrentPath.TrimEnd('/') + "/" + fileName;
+
+                StatusMessage = $"Uploading {fileName}...";
+
+                var success = SelectedDevice.Platform == DevicePlatform.Android
+                    ? await _adbService.PushFileAsync(SelectedDevice.Serial, openDialog.FileName, remotePath)
+                    : await _iosService.PushFileAsync(SelectedDevice.Serial, openDialog.FileName, remotePath);
+
+                StatusMessage = success ? $"Uploaded successfully." : "Upload failed.";
+
+                if (success)
+                {
+                    await LoadDirectoryAsync(CurrentPath);
+                }
             }
-            else
+            catch (Exception ex)
+            {
+                StatusMessage = $"Upload error: {ex.Message}";
+            }
+            finally
             {
                 IsLoading = false;
             }
@@ -252,20 +304,30 @@ public partial class FileExplorerViewModel : ObservableObject
         if (confirm == MessageBoxResult.Yes)
         {
             IsLoading = true;
-            StatusMessage = $"Deleting {SelectedFile.Name}...";
-
-            var success = SelectedDevice.Platform == DevicePlatform.Android
-                ? await _adbService.DeleteFileAsync(SelectedDevice.Serial, SelectedFile.Path)
-                : await _iosService.DeleteFileAsync(SelectedDevice.Serial, SelectedFile.Path);
-
-            if (success)
+            try
             {
-                StatusMessage = "Deleted successfully.";
-                await LoadDirectoryAsync(CurrentPath);
+                StatusMessage = $"Deleting {SelectedFile.Name}...";
+
+                var success = SelectedDevice.Platform == DevicePlatform.Android
+                    ? await _adbService.DeleteFileAsync(SelectedDevice.Serial, SelectedFile.Path)
+                    : await _iosService.DeleteFileAsync(SelectedDevice.Serial, SelectedFile.Path);
+
+                if (success)
+                {
+                    StatusMessage = "Deleted successfully.";
+                    await LoadDirectoryAsync(CurrentPath);
+                }
+                else
+                {
+                    StatusMessage = "Delete failed.";
+                }
             }
-            else
+            catch (Exception ex)
             {
-                StatusMessage = "Delete failed.";
+                StatusMessage = $"Delete error: {ex.Message}";
+            }
+            finally
+            {
                 IsLoading = false;
             }
         }

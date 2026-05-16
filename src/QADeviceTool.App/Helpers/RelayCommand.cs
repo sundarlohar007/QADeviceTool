@@ -1,6 +1,6 @@
 using System.Windows.Input;
 
-namespace QADeviceTool.Helpers;
+namespace LogPro.Helpers;
 
 /// <summary>
 /// Simple ICommand implementation for MVVM bindings.

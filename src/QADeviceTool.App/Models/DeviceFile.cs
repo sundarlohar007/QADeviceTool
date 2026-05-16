@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace QADeviceTool.Models;
+namespace LogPro.Models;
 
 /// <summary>
 /// Represents a file or directory on a connected device.

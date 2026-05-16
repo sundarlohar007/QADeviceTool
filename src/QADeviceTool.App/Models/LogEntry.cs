@@ -1,25 +1,48 @@
 using System;
+using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace QADeviceTool.Models;
+namespace LogPro.Models;
 
 public enum LogLevel
 {
+    Unknown = 0,
     Verbose,
     Debug,
     Info,
     Warning,
     Error,
-    Fatal,
-    Unknown
+    Fatal
 }
 
-public class LogEntry
+public enum LogcatBuffer
 {
-    public string Timestamp { get; set; } = string.Empty;
-    public LogLevel Level { get; set; } = LogLevel.Unknown;
-    public string Tag { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-    public string RawLine { get; set; } = string.Empty;
+    Main,
+    System,
+    Events,
+    Crash,
+    Radio
+}
+
+public enum LogcatFormat
+{
+    Brief,
+    Process,
+    Tag,
+    Thread,
+    Time,
+    ThreadTime,
+    Long,
+    Raw
+}
+
+public partial class LogEntry : ObservableObject
+{
+    [ObservableProperty] private string _timestamp = string.Empty;
+    [ObservableProperty] private LogLevel _level = LogLevel.Unknown;
+    [ObservableProperty] private string _tag = string.Empty;
+    [ObservableProperty] private string _message = string.Empty;
+    [ObservableProperty] private string _rawLine = string.Empty;
+    [ObservableProperty] private bool _isBookmarked;
 
     public override string ToString()
     {

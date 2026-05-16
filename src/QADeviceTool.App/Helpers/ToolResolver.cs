@@ -1,31 +1,20 @@
+using System.Collections.Concurrent;
 using System.IO;
 
-namespace QADeviceTool.Helpers;
+namespace LogPro.Helpers;
 
-/// <summary>
-/// Resolves tool executables by checking the bundled tools/ directory first,
-/// then falling back to system PATH. This allows shipping scrcpy, ADB,
-/// and libimobiledevice inside the app without requiring system-wide install.
-///
-/// Expected tools/ layout:
-///   tools/scrcpy-win64-v3.3.4/   → scrcpy.exe, adb.exe
-///   tools/iMobileDevice/          → idevice_id.exe, ideviceinfo.exe, etc.
-/// </summary>
 public static class ToolResolver
 {
     private static readonly string _appDir;
     private static readonly string _toolsDir;
+    private static readonly ConcurrentDictionary<string, string> _cache = new(StringComparer.OrdinalIgnoreCase);
 
-    // Known subfolder names to search (order matters — first match wins)
-    private static readonly string[][] _searchFolders = new[]
-    {
-        // ADB: scrcpy bundle ships its own adb.exe, also check platform-tools
-        new[] { "scrcpy-win64-*", "platform-tools", "platform-tools-*" },
-        // scrcpy
-        new[] { "scrcpy-win64-*", "scrcpy-*", "scrcpy" },
-        // libimobiledevice tools
-        new[] { "iMobileDevice", "libimobiledevice-*", "libimobiledevice" }
-    };
+    /// <summary>
+    /// Tool subdirectories that must NOT have their internal subfolders prepended to PATH.
+    /// pymobiledevice3 is a PyInstaller bundle whose `_internal/` ships its own python313.dll,
+    /// numpy DLLs, etc. — leaking those onto PATH breaks system-Python invocations.
+    /// </summary>
+    private static readonly string[] _pathExcludedSubdirs = { "pymobiledevice3" };
 
     static ToolResolver()
     {
@@ -33,49 +22,46 @@ public static class ToolResolver
         _toolsDir = Path.Combine(_appDir, "tools");
     }
 
-    /// <summary>
-    /// Finds the full path to a tool executable.
-    /// Search order:
-    ///   1. All subdirectories matching known patterns in tools/
-    ///   2. tools/ root
-    ///   3. System PATH (bare command name)
-    /// </summary>
     public static string Resolve(string toolName)
+    {
+        if (_cache.TryGetValue(toolName, out var cached))
+            return cached;
+
+        var result = ResolveInternal(toolName);
+        _cache[toolName] = result;
+        return result;
+    }
+
+    private static string ResolveInternal(string toolName)
     {
         if (!Directory.Exists(_toolsDir))
             return toolName;
 
-        // 1. Search all subdirectories in tools/ for the executable
         try
         {
+            var exeName = toolName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? toolName
+                : toolName + ".exe";
+
             foreach (var subDir in Directory.GetDirectories(_toolsDir))
             {
-                var exePath = Path.Combine(subDir, toolName + ".exe");
+                var exePath = Path.Combine(subDir, exeName);
                 if (File.Exists(exePath)) return exePath;
 
-                // Check one level deeper (e.g. tools/folder/bin/tool.exe)
-                var binPath = Path.Combine(subDir, "bin", toolName + ".exe");
+                var binPath = Path.Combine(subDir, "bin", exeName);
                 if (File.Exists(binPath)) return binPath;
             }
+
+            var rootExe = Path.Combine(_toolsDir, exeName);
+            if (File.Exists(rootExe)) return rootExe;
         }
         catch { }
 
-        // 2. Check tools/ root
-        var rootExe = Path.Combine(_toolsDir, toolName + ".exe");
-        if (File.Exists(rootExe)) return rootExe;
-
-        // 3. Fall back to bare command name (uses system PATH)
         return toolName;
     }
 
-    /// <summary>
-    /// Gets the tools directory path.
-    /// </summary>
     public static string ToolsDirectory => _toolsDir;
 
-    /// <summary>
-    /// Checks if tools directory exists and has content.
-    /// </summary>
     public static bool HasBundledTools
     {
         get
@@ -89,10 +75,6 @@ public static class ToolResolver
         }
     }
 
-    /// <summary>
-    /// Checks whether the resolved path points to a bundled tool (inside tools/ dir)
-    /// vs a system PATH command.
-    /// </summary>
     public static bool IsBundled(string resolvedPath)
     {
         try
@@ -104,8 +86,10 @@ public static class ToolResolver
     }
 
     /// <summary>
-    /// Prepends all valid subdirectories in the tools/ directory to the current process's PATH environment variable.
-    /// This ensures that the Windows loader can locate native DLLs (e.g., libimobiledevice-1.0.dll) when spawning bundled executables.
+    /// Prepends safe tool subdirectories to PATH so the Windows loader can find
+    /// adb.exe / scrcpy.exe / etc. and their satellite DLLs. Skips PyInstaller
+    /// bundles (e.g. pymobiledevice3) because their _internal/ Python DLLs would
+    /// shadow the system Python's runtime if leaked onto PATH.
     /// </summary>
     public static void InitializeNativePaths()
     {
@@ -118,6 +102,9 @@ public static class ToolResolver
 
             foreach (var subDir in Directory.GetDirectories(_toolsDir))
             {
+                var subName = Path.GetFileName(subDir);
+                if (_pathExcludedSubdirs.Any(ex => subName.Equals(ex, StringComparison.OrdinalIgnoreCase)))
+                    continue;
                 newPaths.Add(subDir);
             }
 

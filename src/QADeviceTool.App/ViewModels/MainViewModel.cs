@@ -3,10 +3,10 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using QADeviceTool.Models;
-using QADeviceTool.Services;
+using LogPro.Models;
+using LogPro.Services;
 
-namespace QADeviceTool.ViewModels;
+namespace LogPro.ViewModels;
 
 /// <summary>
 /// Main ViewModel — manages navigation and top-level state.
@@ -25,13 +25,27 @@ public partial class MainViewModel : ObservableObject
     private ObservableObject? _currentView;
 
     [ObservableProperty]
-    private string _selectedNavItem = "Dashboard";
+    private string _selectedNavItem = "dashboard";
 
     [ObservableProperty]
     private int _connectedDeviceCount;
 
     [ObservableProperty]
     private string _statusBarText = "Ready";
+
+    [ObservableProperty]
+    private ObservableCollection<DeviceInfo> _devices = new();
+
+    [ObservableProperty]
+    private DeviceInfo? _selectedDevice;
+
+    [ObservableProperty]
+    private bool _isDeviceToolsExpanded;
+
+    [ObservableProperty]
+    private bool _isSidebarCollapsed;
+
+    public double SidebarWidth => IsSidebarCollapsed ? 48 : 220;
 
     // Child ViewModels
     public DashboardViewModel DashboardVM { get; }
@@ -42,6 +56,8 @@ public partial class MainViewModel : ObservableObject
     public DeepLinkViewModel DeepLinkVM { get; }
     public VitalsViewModel VitalsVM { get; }
     public FileExplorerViewModel FileExplorerVM { get; }
+    public MacroViewModel MacroVM { get; }
+    public StressTestViewModel StressTestVM { get; }
     public SettingsViewModel SettingsVM { get; }
 
     public MainViewModel()
@@ -61,21 +77,42 @@ public partial class MainViewModel : ObservableObject
         SessionVM = new SessionViewModel(_sessionService, _adbService, _iosService, _deviceMonitor);
         DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor, _sessionService);
         AppManagementVM = new AppManagementViewModel(_adbService, _iosService, _deviceMonitor, _sessionService);
-        ShellVM = new ShellViewModel(_deviceMonitor);
-        DeepLinkVM = new DeepLinkViewModel(_adbService, _deviceMonitor);
+        ShellVM = new ShellViewModel(_deviceMonitor, _iosService);
+        DeepLinkVM = new DeepLinkViewModel(_adbService, _iosService, _deviceMonitor);
         VitalsVM = new VitalsViewModel(_adbService, _deviceMonitor);
         FileExplorerVM = new FileExplorerViewModel(_adbService, _iosService, _deviceMonitor);
-        SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService);
+        MacroVM = new MacroViewModel(new MacroService(_adbService), _adbService, _deviceMonitor);
+        StressTestVM = new StressTestViewModel(_adbService, _deviceMonitor);
+        SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService, _adbService);
 
         // Wire up device monitor events
         _deviceMonitor.DevicesChanged += devices =>
         {
-            _dispatcher.Invoke(() =>
+            _dispatcher.BeginInvoke(() =>
             {
                 ConnectedDeviceCount = devices.Count;
                 StatusBarText = devices.Count > 0
                     ? $"{devices.Count} device(s) connected"
                     : "No devices connected";
+
+                // Update global devices collection
+                Devices.Clear();
+                foreach (var device in devices)
+                {
+                    Devices.Add(device);
+                }
+
+                // Auto-select first device if none selected
+                if (SelectedDevice == null && Devices.Count > 0)
+                {
+                    SelectedDevice = Devices[0];
+                }
+                // Remove selected if it's no longer connected
+                var stillConnected = SelectedDevice != null && Devices.Any(d => d.Serial == SelectedDevice.Serial);
+                if (!stillConnected)
+                {
+                    SelectedDevice = Devices.Count > 0 ? Devices[0] : null;
+                }
             });
         };
 
@@ -87,20 +124,58 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Navigate(string destination)
+    public void ToggleDeviceTools()
     {
-        SelectedNavItem = destination;
-        CurrentView = destination switch
+        IsDeviceToolsExpanded = !IsDeviceToolsExpanded;
+    }
+
+        [RelayCommand]
+    private void ToggleSidebar()
+    {
+        IsSidebarCollapsed = !IsSidebarCollapsed;
+        OnPropertyChanged(nameof(SidebarWidth));
+    }
+
+    partial void OnIsSidebarCollapsedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(SidebarWidth));
+    }
+
+    partial void OnSelectedDeviceChanged(DeviceInfo? value)
+    {
+        // Propagate selected device to all child ViewModels
+        if (value != null)
         {
-            "Dashboard" => DashboardVM,
-            "Sessions" => SessionVM,
-            "Devices" => DeviceVM,
-            "Apps" => AppManagementVM,
-            "Shell" => ShellVM,
-            "DeepLink" => DeepLinkVM,
-            "Vitals" => VitalsVM,
-            "Files" => FileExplorerVM,
-            "Settings" => SettingsVM,
+            DashboardVM?.OnDeviceSelected(value);
+            SessionVM?.OnDeviceSelected(value);
+            ShellVM?.OnDeviceSelected(value);
+            DeepLinkVM?.OnDeviceSelected(value);
+            VitalsVM?.OnDeviceSelected(value);
+            FileExplorerVM?.OnDeviceSelected(value);
+            MacroVM?.OnDeviceSelected(value);
+            StressTestVM?.OnDeviceSelected(value);
+            AppManagementVM?.OnDeviceSelected(value);
+        }
+    }
+
+    [RelayCommand]
+    public void Navigate(string destination)
+    {
+        var normalized = destination?.ToLowerInvariant() ?? "";
+        SelectedNavItem = normalized;
+        CurrentView = normalized switch
+        {
+            "dashboard" => DashboardVM,
+            "sessions" => SessionVM,
+            "device" => DeviceVM,
+            "apps" => AppManagementVM,
+            "shell" => ShellVM,
+            "deeplink" => DeepLinkVM,
+            "vitals" => VitalsVM,
+            "files" => FileExplorerVM,
+            "macros" => MacroVM,
+            "stresstest" => StressTestVM,
+            "settings" => SettingsVM,
             _ => DashboardVM
         };
     }
