@@ -12,8 +12,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        PreviewKeyDown += OnPreviewKeyDown;
-    }
+            PreviewKeyDown += OnPreviewKeyDown;
+            }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {

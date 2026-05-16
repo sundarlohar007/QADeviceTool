@@ -70,10 +70,9 @@ public partial class App : Application
 
         // Set up MainViewModel after window creation (moved from XAML to avoid
         // duplicate VM creation during theme switches via ThemeService)
-        if (this.MainWindow is MainWindow mw)
-        {
-            mw.DataContext = new LogPro.ViewModels.MainViewModel();
-        }EarlyLog("Base OnStartup completed, initializing services...");
+        if (Application.Current.MainWindow is MainWindow mw)
+        {            mw.DataContext = new LogPro.ViewModels.MainViewModel();}
+        EarlyLog("Base OnStartup completed, initializing services...");
 
         try
         {

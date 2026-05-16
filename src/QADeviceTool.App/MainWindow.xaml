@@ -65,6 +65,10 @@
         </DataTemplate>
     </Window.Resources>
 
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
     <Border Background="{StaticResource BrushVoid}"
             BorderBrush="{StaticResource BrushBorder}"
             BorderThickness="1">

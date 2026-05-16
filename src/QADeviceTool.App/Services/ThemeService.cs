@@ -60,7 +60,7 @@ public static class ThemeService
 
         var newWindow = new MainWindow();
         if (dataContext != null)
-            newWindow.DataContext = dataContext;
+            if (dataContext != null) newWindow.DataContext = dataContext;
         newWindow.WindowState = oldState;
         if (oldState == WindowState.Normal)
         {
