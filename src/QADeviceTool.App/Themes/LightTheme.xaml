@@ -1,0 +1,169 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="ThemeBase.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <Color x:Key="Void">#F8FAFC</Color>
+    <Color x:Key="Base">#F1F5F9</Color>
+    <Color x:Key="Surface">#FFFFFF</Color>
+    <Color x:Key="Elevated">#F8FAFC</Color>
+    <Color x:Key="Overlay">#FFFFFF</Color>
+    <Color x:Key="Border">#E2E8F0</Color>
+    <Color x:Key="BorderEmphasis">#CBD5E1</Color>
+    <Color x:Key="AccentPrimary">#2563EB</Color>
+    <Color x:Key="AccentDim">#1D4ED8</Color>
+    <Color x:Key="AccentGlow">#DBEAFE</Color>
+    <Color x:Key="Cyan">#2563EB</Color>
+    <Color x:Key="CyanDim">#1D4ED8</Color>
+    <Color x:Key="CyanGlow">#DBEAFE</Color>
+    <Color x:Key="Amber">#D97706</Color>
+    <Color x:Key="AmberDim">#92400E</Color>
+    <Color x:Key="Green">#059669</Color>
+    <Color x:Key="GreenDim">#065F46</Color>
+    <Color x:Key="Red">#DC2626</Color>
+    <Color x:Key="RedDim">#991B1B</Color>
+    <Color x:Key="Violet">#7C3AED</Color>
+    <Color x:Key="TextPrimary">#0F172A</Color>
+    <Color x:Key="TextSecondary">#475569</Color>
+    <Color x:Key="TextMuted">#94A3B8</Color>
+    <!-- ═══════════ BRUSHES ═══════════ -->
+    <SolidColorBrush x:Key="BrushVoid" Color="{StaticResource Void}" />
+    <SolidColorBrush x:Key="BrushBase" Color="{StaticResource Base}" />
+    <SolidColorBrush x:Key="BrushSurface" Color="{StaticResource Surface}" />
+    <SolidColorBrush x:Key="BrushElevated" Color="{StaticResource Elevated}" />
+    <SolidColorBrush x:Key="BrushOverlay" Color="{StaticResource Overlay}" />
+    <SolidColorBrush x:Key="BrushBorder" Color="{StaticResource Border}" />
+    <SolidColorBrush x:Key="BrushBorderEmphasis" Color="{StaticResource BorderEmphasis}" />
+    <SolidColorBrush x:Key="BrushCyan" Color="{StaticResource Cyan}" />
+    <SolidColorBrush x:Key="BrushCyanDim" Color="{StaticResource CyanDim}" />
+    <SolidColorBrush x:Key="BrushCyanGlow" Color="{StaticResource CyanGlow}" />
+    <SolidColorBrush x:Key="BrushAmber" Color="{StaticResource Amber}" />
+    <SolidColorBrush x:Key="BrushGreen" Color="{StaticResource Green}" />
+    <SolidColorBrush x:Key="BrushRed" Color="{StaticResource Red}" />
+    <SolidColorBrush x:Key="BrushViolet" Color="{StaticResource Violet}" />
+    <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource TextPrimary}" />
+    <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource TextSecondary}" />
+    <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource TextMuted}" />
+    <SolidColorBrush x:Key="BrushAccentPrimary" Color="{StaticResource AccentPrimary}" />
+    <SolidColorBrush x:Key="BrushAccentDim" Color="{StaticResource AccentDim}" />
+    <SolidColorBrush x:Key="BrushAccentGlow" Color="{StaticResource AccentGlow}" />
+    <SolidColorBrush x:Key="BrushRedDim" Color="{StaticResource RedDim}" />
+    <SolidColorBrush x:Key="BrushLogSystemDown" Color="{StaticResource RedDim}" />
+    <SolidColorBrush x:Key="BrushBackgroundPrimary" Color="{StaticResource Base}" />
+    <SolidColorBrush x:Key="BrushBackgroundSurface" Color="{StaticResource Surface}" />
+    <SolidColorBrush x:Key="BrushBackgroundTertiary" Color="{StaticResource Elevated}" />
+    <SolidColorBrush x:Key="BrushBackgroundElevated" Color="{StaticResource Overlay}" />
+    <SolidColorBrush x:Key="BrushSeparator" Color="{StaticResource Border}" />
+    <SolidColorBrush x:Key="BrushSeparatorOpaque" Color="{StaticResource BorderEmphasis}" />
+    <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource Cyan}" />
+    <SolidColorBrush x:Key="BrushAccentDark" Color="{StaticResource CyanDim}" />
+    <SolidColorBrush x:Key="BrushSuccess" Color="{StaticResource Green}" />
+    <SolidColorBrush x:Key="BrushDanger" Color="{StaticResource Red}" />
+    <SolidColorBrush x:Key="BrushWarning" Color="{StaticResource Amber}" />
+    <SolidColorBrush x:Key="BrushPrimary" Color="{StaticResource Cyan}" />
+    <SolidColorBrush x:Key="BrushBackgroundDarkest" Color="{StaticResource Void}" />
+    <SolidColorBrush x:Key="BrushBackgroundDark" Color="{StaticResource Surface}" />
+    <SolidColorBrush x:Key="BrushBackgroundMedium" Color="{StaticResource Elevated}" />
+    <SolidColorBrush x:Key="BrushBackgroundCard" Color="{StaticResource Surface}" />
+    <SolidColorBrush x:Key="BrushBackgroundHover" Color="{StaticResource Elevated}" />
+    <SolidColorBrush x:Key="BrushBorderMuted" Color="{StaticResource Border}" />
+    <SolidColorBrush x:Key="BrushBorderFocus" Color="{StaticResource Cyan}" />
+    <SolidColorBrush x:Key="BrushBackgroundOverlay" Color="{StaticResource Base}" Opacity="0.95" />
+    <SolidColorBrush x:Key="BrushTextTertiary" Color="{StaticResource TextMuted}" />
+    <SolidColorBrush x:Key="BrushError" Color="{StaticResource Red}" />
+    <SolidColorBrush x:Key="BrushFillPrimary" Color="{StaticResource TextSecondary}" />
+    <SolidColorBrush x:Key="BrushFillSecondary" Color="{StaticResource TextMuted}" />
+    <SolidColorBrush x:Key="BrushFillTertiary" Color="{StaticResource Elevated}" />
+    <SolidColorBrush x:Key="BrushFillQuaternary" Color="{StaticResource Surface}" />
+    <SolidColorBrush x:Key="BrushSuccessDark" Color="{StaticResource GreenDim}" />
+    <SolidColorBrush x:Key="BrushDangerDark" Color="{StaticResource RedDim}" />
+    <SolidColorBrush x:Key="BrushWarningDark" Color="{StaticResource AmberDim}" />
+    <SolidColorBrush x:Key="BrushInfo" Color="{StaticResource Violet}" />
+    <SolidColorBrush x:Key="BrushInfoDark" Color="{StaticResource Violet}" Opacity="0.65" />
+    <SolidColorBrush x:Key="BrushCyanDark" Color="{StaticResource CyanDim}" />
+    <SolidColorBrush x:Key="BrushPink" Color="{StaticResource Violet}" />
+    <SolidColorBrush x:Key="BrushYellow" Color="{StaticResource Amber}" />
+
+    <FontFamily x:Key="FontHeader">Inter, Segoe UI, sans-serif</FontFamily>
+    <FontFamily x:Key="FontBody">Inter, Segoe UI, sans-serif</FontFamily>
+    <FontFamily x:Key="FontPrimary">Inter, Segoe UI, sans-serif</FontFamily>
+
+    <sys:Double x:Key="CornerRadiusCard">8</sys:Double>
+    <sys:Double x:Key="CornerRadiusButton">6</sys:Double>
+    <sys:Double x:Key="CornerRadiusInput">6</sys:Double>
+    <CornerRadius x:Key="CornerRadiusCardValue">8</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusButtonValue">6</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusInputValue">6</CornerRadius>
+    <Thickness x:Key="CardBorderThickness">1</Thickness>
+    <DropShadowEffect x:Key="CardShadowEffect" BlurRadius="8" ShadowDepth="1" Opacity="0.06" Color="#000000" />
+    <Style x:Key="TextHeading1" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontHeader}"/><Setter Property="FontSize" Value="{StaticResource FontSize24}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Style>
+    <Style x:Key="TextHeading2" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontHeader}"/><Setter Property="FontSize" Value="{StaticResource FontSize18}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Style>
+    <Style x:Key="TextHeading3" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontHeader}"/><Setter Property="FontSize" Value="{StaticResource FontSize14}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Style>
+    <Style x:Key="TextBody" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontPrimary}"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/></Style>
+    <Style x:Key="TextBodyPrimary" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontPrimary}"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Style>
+    <Style x:Key="TextCaption" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontPrimary}"/><Setter Property="FontSize" Value="10"/><Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/></Style>
+    <Style x:Key="TextMono" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontMono}"/><Setter Property="FontSize" Value="11"/><Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/></Style>
+
+    <Style x:Key="PrimaryButton" TargetType="Button"><Setter Property="Background" Value="{StaticResource BrushCyan}"/><Setter Property="Foreground" Value="White"/><Setter Property="FontFamily" Value="{StaticResource FontBody}"/><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Padding" Value="16,8"/><Setter Property="Cursor" Value="Hand"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding Background}" BorderThickness="1" CornerRadius="{StaticResource CornerRadiusButtonValue}" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushCyanDim}"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="border" Property="Opacity" Value="0.85"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushBorder}"/><Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="SecondaryButton" TargetType="Button"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/><Setter Property="FontFamily" Value="{StaticResource FontPrimary}"/><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="Normal"/><Setter Property="Padding" Value="14,6"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1" CornerRadius="{StaticResource CornerRadiusButtonValue}" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="BorderBrush" Value="{StaticResource BrushCyan}"/><Setter TargetName="border" Property="Background" Value="{StaticResource BrushCyanGlow}"/><Setter Property="Foreground" Value="{StaticResource BrushCyan}"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/><Setter TargetName="border" Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="TertiaryButton" TargetType="Button"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource BrushCyan}"/><Setter Property="FontFamily" Value="{StaticResource FontPrimary}"/><Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="10,5"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="{StaticResource CornerRadiusButtonValue}" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushCyanGlow}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="DangerButton" TargetType="Button"><Setter Property="Background" Value="{StaticResource BrushRed}"/><Setter Property="Foreground" Value="White"/><Setter Property="FontFamily" Value="{StaticResource FontPrimary}"/><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Padding" Value="16,7"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="{StaticResource CornerRadiusButtonValue}" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="Opacity" Value="0.85"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="LargeActionButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}"><Setter Property="FontSize" Value="14"/><Setter Property="Padding" Value="24,10"/><Setter Property="MinWidth" Value="160"/><Setter Property="MinHeight" Value="40"/></Style>
+
+    <Style TargetType="CheckBox"><Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/><Setter Property="FontSize" Value="11"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+    <Style TargetType="ProgressBar"><Setter Property="Background" Value="{StaticResource BrushBorder}"/><Setter Property="Foreground" Value="{StaticResource BrushCyan}"/><Setter Property="Height" Value="6"/></Style>
+    <Style TargetType="ToolTip"><Setter Property="Background" Value="{StaticResource BrushOverlay}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="FontSize" Value="11"/><Setter Property="Padding" Value="10,6"/><Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="BorderThickness" Value="1"/></Style>
+
+    <Style x:Key="GlassCard" TargetType="Border"><Setter Property="Background" Value="{StaticResource BrushSurface}"/><Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="BorderThickness" Value="{StaticResource CardBorderThickness}"/><Setter Property="CornerRadius" Value="{StaticResource CornerRadiusCardValue}"/><Setter Property="Padding" Value="20"/><Setter Property="Margin" Value="0"/><Setter Property="Effect" Value="{StaticResource CardShadowEffect}"/></Style>
+    <Style x:Key="AppleCard" TargetType="Border" BasedOn="{StaticResource GlassCard}"/>
+    <Style x:Key="DeviceCard" TargetType="Border" BasedOn="{StaticResource GlassCard}"/>
+
+    <Style x:Key="SectionHeader" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontHeader}"/><Setter Property="FontSize" Value="{StaticResource FontSize14}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="Margin" Value="0,0,0,12"/></Style>
+    <Style x:Key="CardTitle" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontHeader}"/><Setter Property="FontSize" Value="{StaticResource FontSize14}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Style>
+    <Style x:Key="CardDescription" TargetType="TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/></Style>
+    <Style x:Key="SeparatorLine" TargetType="Border"><Setter Property="Background" Value="{StaticResource BrushBorder}"/><Setter Property="Height" Value="1"/></Style>
+    <Style x:Key="VerticalSeparator" TargetType="Border"><Setter Property="Background" Value="{StaticResource BrushBorder}"/><Setter Property="Width" Value="1"/></Style>
+
+    <Style x:Key="StatusDotOnline" TargetType="Ellipse"><Setter Property="Width" Value="8"/><Setter Property="Height" Value="8"/><Setter Property="Fill" Value="{StaticResource BrushGreen}"/></Style>
+    <Style x:Key="StatusDotOffline" TargetType="Ellipse"><Setter Property="Width" Value="8"/><Setter Property="Height" Value="8"/><Setter Property="Fill" Value="{StaticResource BrushRed}"/></Style>
+    <Style x:Key="StatusDotWarning" TargetType="Ellipse"><Setter Property="Width" Value="8"/><Setter Property="Height" Value="8"/><Setter Property="Fill" Value="{StaticResource BrushAmber}"/></Style>
+
+    <Style x:Key="WindowControlButton" TargetType="Button"><Setter Property="Width" Value="46"/><Setter Property="Height" Value="28"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/><Setter Property="FontSize" Value="11"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="border" Background="{TemplateBinding Background}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushBase}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="CloseButton" TargetType="Button" BasedOn="{StaticResource WindowControlButton}"><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="border" Background="{TemplateBinding Background}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushRed}"/><Setter Property="Foreground" Value="White"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+
+    <Style x:Key="DarkTextBox" TargetType="TextBox"><Setter Property="Background" Value="{StaticResource BrushSurface}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="CaretBrush" Value="{StaticResource BrushCyan}"/><Setter Property="FontFamily" Value="{StaticResource FontBody}"/><Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="12,8"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox"><Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1" CornerRadius="{StaticResource CornerRadiusInputValue}" Padding="{TemplateBinding Padding}"><ScrollViewer x:Name="PART_ContentHost" Margin="0"/></Border><ControlTemplate.Triggers><Trigger Property="IsFocused" Value="True"><Setter TargetName="border" Property="BorderBrush" Value="{StaticResource BrushCyan}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="TerminalTextBox" TargetType="TextBox"><Setter Property="Background" Value="{StaticResource BrushBase}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="FontFamily" Value="{StaticResource FontMono}"/><Setter Property="FontSize" Value="11"/><Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="12"/><Setter Property="IsReadOnly" Value="True"/><Setter Property="AcceptsReturn" Value="True"/><Setter Property="VerticalScrollBarVisibility" Value="Auto"/></Style>
+
+    <Style x:Key="NavButton" TargetType="RadioButton"><Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/><Setter Property="FontFamily" Value="{StaticResource FontBody}"/><Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="14,10"/><Setter Property="Margin" Value="4,1"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton"><Border x:Name="border" Background="Transparent" BorderBrush="Transparent" BorderThickness="2,0,0,0" CornerRadius="4" Padding="{TemplateBinding Padding}"><ContentPresenter VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushBase}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Trigger><Trigger Property="IsChecked" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushCyanGlow}"/><Setter TargetName="border" Property="BorderBrush" Value="{StaticResource BrushCyan}"/><Setter Property="Foreground" Value="{StaticResource BrushCyan}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="IconButton" TargetType="Button"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/><Setter Property="Padding" Value="6"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="1" CornerRadius="{StaticResource CornerRadiusButtonValue}" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushBase}"/><Setter TargetName="border" Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="StatusBadge" TargetType="Border"><Setter Property="Background" Value="{StaticResource BrushBase}"/><Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="4"/><Setter Property="Padding" Value="8,3"/></Style>
+
+    <Style x:Key="QuickActionButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}"><Setter Property="Padding" Value="12,7"/><Setter Property="FontSize" Value="11"/></Style>
+
+    <Style x:Key="FilterToggleButton" TargetType="ToggleButton"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/><Setter Property="FontFamily" Value="{StaticResource FontPrimary}"/><Setter Property="FontSize" Value="10"/><Setter Property="Padding" Value="8,4"/><Setter Property="Margin" Value="0,0,4,0"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton"><Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1" CornerRadius="{StaticResource CornerRadiusButtonValue}" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushCyanGlow}"/><Setter TargetName="border" Property="BorderBrush" Value="{StaticResource BrushCyan}"/><Setter Property="Foreground" Value="{StaticResource BrushCyan}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="BorderBrush" Value="{StaticResource BrushCyanDim}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="DarkListBox" TargetType="ListBox"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Style>
+
+    <Style x:Key="DarkListBoxItem" TargetType="ListBoxItem"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="Padding" Value="12,9"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="border" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" BorderBrush="Transparent" BorderThickness="1" CornerRadius="{StaticResource CornerRadiusCardValue}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushBase}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushCyanGlow}"/><Setter TargetName="border" Property="BorderBrush" Value="{StaticResource BrushCyan}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style x:Key="DarkDataGrid" TargetType="DataGrid"><Setter Property="Background" Value="{StaticResource BrushSurface}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="RowBackground" Value="Transparent"/><Setter Property="AlternatingRowBackground" Value="{StaticResource BrushBase}"/><Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BrushBorder}"/><Setter Property="VerticalGridLinesBrush" Value="Transparent"/><Setter Property="SelectionUnit" Value="FullRow"/><Setter Property="CanUserResizeRows" Value="False"/><Setter Property="HeadersVisibility" Value="Column"/><Setter Property="FontSize" Value="12"/><Setter Property="RowHeight" Value="34"/><Setter Property="ColumnHeaderStyle"><Setter.Value><Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{StaticResource BrushBase}"/><Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="FontSize" Value="10"/><Setter Property="Padding" Value="10,7"/><Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="BorderThickness" Value="0,0,0,1"/></Style></Setter.Value></Setter><Setter Property="CellStyle"><Setter.Value><Style TargetType="DataGridCell"><Setter Property="Padding" Value="10,6"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DataGridCell"><Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter VerticalAlignment="Center"/></Border></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{StaticResource BrushCyanGlow}"/><Setter Property="Foreground" Value="{StaticResource BrushCyan}"/></Trigger></Style.Triggers></Style></Setter.Value></Setter><Setter Property="RowStyle"><Setter.Value><Style TargetType="DataGridRow"><Setter Property="Background" Value="Transparent"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{StaticResource BrushBase}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{StaticResource BrushCyanGlow}"/></Trigger></Style.Triggers></Style></Setter.Value></Setter></Style>
+
+    <Style TargetType="ComboBoxItem"><Setter Property="Background" Value="{StaticResource BrushSurface}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="Padding" Value="10,7"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border x:Name="border" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushBase}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="border" Property="Background" Value="{StaticResource BrushCyanGlow}"/><Setter Property="Foreground" Value="{StaticResource BrushCyan}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+
+    <Style TargetType="ComboBox"><Setter Property="Background" Value="{StaticResource BrushSurface}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="8,4"/><Setter Property="FontSize" Value="11"/></Style>
+
+    <Style TargetType="ScrollBar"><Setter Property="Width" Value="6"/><Setter Property="Background" Value="Transparent"/></Style>
+
+</ResourceDictionary>

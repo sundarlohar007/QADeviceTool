@@ -34,7 +34,7 @@ public partial class DashboardViewModel : ObservableObject
     private bool _isLoading;
 
     [ObservableProperty]
-    private string _welcomeMessage = "Welcome to QA Device Tool";
+    private string _welcomeMessage = "Welcome to LogPro";
 
     [ObservableProperty]
     private int _activeSessionCount;

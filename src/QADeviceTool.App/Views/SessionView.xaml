@@ -23,7 +23,7 @@
 
                 <!-- New session controls -->
                 <Border DockPanel.Dock="Top" Background="{StaticResource BrushBackgroundPrimary}"
-                        CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                        CornerRadius="{StaticResource CornerRadiusCard}" Padding="12" Margin="0,0,0,12">
                     <StackPanel>
                         <!-- Device selector -->
                         <TextBlock Text="Select Device" 

@@ -2,19 +2,23 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="ThemeBase.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
     <!-- ═══════════════════════════════════════════════════════ -->
     <!--  NEO-INDUSTRIAL TERMINAL — Colors                        -->
     <!--  Void blacks · Cyan signals · Amber accents · Sharp     -->
     <!-- ═══════════════════════════════════════════════════════ -->
 
     <!-- Background Hierarchy -->
-    <Color x:Key="Void">#080B10</Color>
-    <Color x:Key="Base">#0E131A</Color>
-    <Color x:Key="Surface">#151B24</Color>
-    <Color x:Key="Elevated">#1C2430</Color>
-    <Color x:Key="Overlay">#222C3A</Color>
-    <Color x:Key="Border">#253040</Color>
-    <Color x:Key="BorderEmphasis">#31445A</Color>
+    <Color x:Key="Void">#060606</Color>
+    <Color x:Key="Base">#0D0D0F</Color>
+    <Color x:Key="Surface">#141418</Color>
+    <Color x:Key="Elevated">#1A1A20</Color>
+    <Color x:Key="Overlay">#222228</Color>
+    <Color x:Key="Border">#2A2A33</Color>
+    <Color x:Key="BorderEmphasis">#353545</Color>
 
     <!-- Signal Accents -->
     <Color x:Key="Cyan">#00D4F0</Color>
@@ -28,19 +32,15 @@
     <Color x:Key="RedDim">#7F1D1D</Color>
     <Color x:Key="Violet">#8B5CF6</Color>
 
+    <!-- Semantic Accent Keys (primary) -->
+    <Color x:Key="AccentPrimary">#00D4F0</Color>
+    <Color x:Key="AccentDim">#006B80</Color>
+    <Color x:Key="AccentGlow">#003848</Color>
+
     <!-- Text -->
-    <Color x:Key="TextPrimary">#E4E8EF</Color>
+    <Color x:Key="TextPrimary">#E8ECF0</Color>
     <Color x:Key="TextSecondary">#8A9BB5</Color>
     <Color x:Key="TextMuted">#51637A</Color>
-
-    <!-- Log Levels (keep functional colors) -->
-    <Color x:Key="LogFatal">#EF4444</Color>
-    <Color x:Key="LogError">#DC2626</Color>
-    <Color x:Key="LogWarning">#F59E0B</Color>
-    <Color x:Key="LogInfo">#6B7280</Color>
-    <Color x:Key="LogDebug">#8A9BB5</Color>
-    <Color x:Key="LogVerbose">#4B5563</Color>
-    <Color x:Key="LogUnknown">#8B5CF6</Color>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <!--  BRUSHES                                                -->
@@ -62,21 +62,17 @@
     <SolidColorBrush x:Key="BrushRed" Color="{StaticResource Red}" />
     <SolidColorBrush x:Key="BrushViolet" Color="{StaticResource Violet}" />
 
-    <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource TextPrimary}" />
-    <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource TextSecondary}" />
-    <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource TextMuted}" />
+    <!-- Semantic Accent Brushes -->
+    <SolidColorBrush x:Key="BrushAccentPrimary" Color="{StaticResource AccentPrimary}" />
+    <SolidColorBrush x:Key="BrushAccentDim" Color="{StaticResource AccentDim}" />
+    <SolidColorBrush x:Key="BrushAccentGlow" Color="{StaticResource AccentGlow}" />
 
-    <!-- Log Level Brushes -->
-    <SolidColorBrush x:Key="BrushLogFatal" Color="{StaticResource LogFatal}" />
-    <SolidColorBrush x:Key="BrushLogError" Color="{StaticResource LogError}" />
-    <SolidColorBrush x:Key="BrushLogWarning" Color="{StaticResource LogWarning}" />
-    <SolidColorBrush x:Key="BrushLogInfo" Color="{StaticResource LogInfo}" />
-    <SolidColorBrush x:Key="BrushLogDebug" Color="{StaticResource LogDebug}" />
-    <SolidColorBrush x:Key="BrushLogVerbose" Color="{StaticResource LogVerbose}" />
-    <SolidColorBrush x:Key="BrushLogUnknown" Color="{StaticResource LogUnknown}" />
+    <SolidColorBrush x:Key="BrushRedDim" Color="{StaticResource RedDim}" />
     <SolidColorBrush x:Key="BrushLogSystemDown" Color="{StaticResource RedDim}" />
 
-    <!-- Compatibility Aliases (keep old keys working) -->
+    <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource TextPrimary}" />
+    <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource TextSecondary}" />
+    <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource TextMuted}" /><!-- Compatibility Aliases (keep old keys working) -->
     <SolidColorBrush x:Key="BrushBackgroundPrimary" Color="{StaticResource Base}" />
     <SolidColorBrush x:Key="BrushBackgroundSurface" Color="{StaticResource Surface}" />
     <SolidColorBrush x:Key="BrushBackgroundTertiary" Color="{StaticResource Elevated}" />
@@ -116,10 +112,22 @@
     <!--  TYPOGRAPHY                                             -->
     <!-- ═══════════════════════════════════════════════════════ -->
 
+    <!-- Font Families -->
+    <FontFamily x:Key="FontHeader">Space Grotesk, Segoe UI, sans-serif</FontFamily>
+    <FontFamily x:Key="FontBody">Segoe UI, -apple-system, Helvetica Neue, Arial</FontFamily>
     <FontFamily x:Key="FontPrimary">Segoe UI, -apple-system, Helvetica Neue, Arial</FontFamily>
-    <FontFamily x:Key="FontMono">Cascadia Code, JetBrains Mono, Consolas, monospace</FontFamily>
 
-    <sys:Double x:Key="FontSize9">9</sys:Double>
+    <!-- Theme Dimensions -->
+    <sys:Double x:Key="CornerRadiusCard">8</sys:Double>
+    <sys:Double x:Key="CornerRadiusButton">8</sys:Double>
+    <sys:Double x:Key="CornerRadiusInput">6</sys:Double>
+    <CornerRadius x:Key="CornerRadiusCardValue">8</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusButtonValue">8</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusInputValue">6</CornerRadius>
+
+    <Thickness x:Key="CardBorderThickness">0</Thickness>
+    <x:Null x:Key="CardShadowEffect" />
+<sys:Double x:Key="FontSize9">9</sys:Double>
     <sys:Double x:Key="FontSize10">10</sys:Double>
     <sys:Double x:Key="FontSize11">11</sys:Double>
     <sys:Double x:Key="FontSize12">12</sys:Double>
@@ -790,14 +798,16 @@
     </Style>
 
     <Style x:Key="SectionHeader" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSize14}" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
         <Setter Property="Margin" Value="0,0,0,12" />
     </Style>
 
     <Style x:Key="CardTitle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSize14}" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
     </Style>

@@ -48,7 +48,13 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _clearDataStatus = string.Empty;
 
+    
     [ObservableProperty]
+    private bool _isDarkTheme;
+
+    [ObservableProperty]
+    private bool _isLightTheme;
+[ObservableProperty]
     private string _pairingIpPort = string.Empty;
 
     [ObservableProperty]
@@ -73,7 +79,10 @@ public partial class SettingsViewModel : ObservableObject
 
         InitializeLogRetentionOptions();
 
-            // Execute all heavy startup IO away from the main UI thread.
+            
+        IsDarkTheme = Services.ThemeService.CurrentTheme == Services.ThemeService.ThemeDark;
+        IsLightTheme = !IsDarkTheme;
+// Execute all heavy startup IO away from the main UI thread.
             Task.Run(async () =>
             {
                 // Start dependency checks
@@ -240,5 +249,20 @@ public partial class SettingsViewModel : ObservableObject
         WirelessStatus = result.Success 
             ? $"Disconnected from {PairingIpPort}" 
             : $"Failed: {result.Message}";
+    }
+    [RelayCommand]
+    private void SwitchToDarkTheme()
+    {
+        Services.ThemeService.SwitchTheme(Services.ThemeService.ThemeDark);
+        IsDarkTheme = true;
+        IsLightTheme = false;
+    }
+
+    [RelayCommand]
+    private void SwitchToLightTheme()
+    {
+        Services.ThemeService.SwitchTheme(Services.ThemeService.ThemeLight);
+        IsDarkTheme = false;
+        IsLightTheme = true;
     }
 }

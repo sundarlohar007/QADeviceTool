@@ -99,7 +99,7 @@
                 </DockPanel>
 
                 <!-- CPU / Top Processes -->
-                <Border Grid.Row="1" Background="{StaticResource BrushBackgroundDarkest}" CornerRadius="6" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1" Margin="0,0,0,8" Padding="12">
+                <Border Grid.Row="1" Background="{StaticResource BrushBackgroundDarkest}" CornerRadius="{StaticResource CornerRadiusCard}" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1" Margin="0,0,0,8" Padding="12">
                     <StackPanel>
                         <TextBlock Text="Top Processes (CPU &amp; Memory)" Style="{StaticResource TextCaption}" FontWeight="SemiBold" Margin="0,0,0,8" Foreground="{StaticResource BrushAccent}" />
                         <TextBox Text="{Binding TopProcessesOutput, Mode=OneWay}"
@@ -117,7 +117,7 @@
                 </Border>
 
                 <!-- System Memory -->
-                <Border Grid.Row="2" Background="{StaticResource BrushBackgroundDarkest}" CornerRadius="6" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1" Margin="0,8,0,0" Padding="12">
+                <Border Grid.Row="2" Background="{StaticResource BrushBackgroundDarkest}" CornerRadius="{StaticResource CornerRadiusCard}" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1" Margin="0,8,0,0" Padding="12">
                     <StackPanel>
                         <TextBlock Text="Memory Summary" Style="{StaticResource TextCaption}" FontWeight="SemiBold" Margin="0,0,0,8" Foreground="{StaticResource BrushAccent}" />
                         <TextBox Text="{Binding MemInfoOutput, Mode=OneWay}"

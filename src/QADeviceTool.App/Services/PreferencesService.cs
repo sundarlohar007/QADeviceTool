@@ -12,6 +12,7 @@ public class AppPreferences
     public string TargetPackageName { get; set; } = string.Empty;
     public Dictionary<string, DevicePreference> DevicePreferences { get; set; } = new();
     public int LogRetentionDays { get; set; } = 7;
+    public string? ThemePreference { get; set; }
 }
 
 public class DevicePreference

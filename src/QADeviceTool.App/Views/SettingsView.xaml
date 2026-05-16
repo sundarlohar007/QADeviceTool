@@ -114,6 +114,43 @@
                 </StackPanel>
             </Border>
 
+            
+            <!-- Appearance -->
+            <Border Style="{StaticResource AppleCard}">
+                <StackPanel>
+                    <TextBlock Text="Appearance" Style="{StaticResource TextHeading3}" Margin="0,0,0,10" />
+                    <TextBlock Text="Choose between dark and light theme:"
+                               Style="{StaticResource TextBody}" Margin="0,0,0,12" />
+
+                    <StackPanel Orientation="Horizontal">
+                        <Button Style="{StaticResource PrimaryButton}"
+                                Content="Dark"
+                                Command="{Binding SwitchToDarkThemeCommand}"
+                                Width="100" Margin="0,0,12,0" />
+                        <Button Style="{StaticResource SecondaryButton}"
+                                Content="Light"
+                                Command="{Binding SwitchToLightThemeCommand}"
+                                Width="100" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <TextBlock Text="Current: " Style="{StaticResource TextCaption}" VerticalAlignment="Center" />
+                        <TextBlock VerticalAlignment="Center" Margin="4,0,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextCaption}">
+                                    <Setter Property="Text" Value="Dark" />
+                                    <Setter Property="Foreground" Value="{StaticResource BrushAccent}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLightTheme}" Value="True">
+                                            <Setter Property="Text" Value="Light" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
             <!-- Wireless ADB Pairing -->
             <Border Style="{StaticResource AppleCard}">
                 <StackPanel>

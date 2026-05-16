@@ -4,78 +4,133 @@
              xmlns:vm="clr-namespace:LogPro.ViewModels">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="32,24">
+        <StackPanel Margin="24,20">
 
-            <!-- Welcome Header -->
             <TextBlock Text="Dashboard" Style="{StaticResource TextHeading1}" Margin="0,0,0,4" />
-            <TextBlock Text="{Binding WelcomeMessage}" Style="{StaticResource TextBody}" Margin="0,0,0,28" />
+            <TextBlock Text="{Binding WelcomeMessage}" Style="{StaticResource TextBody}" Margin="0,0,0,24" />
 
-            <!-- Connected Devices -->
-            <Border Style="{StaticResource AppleCard}">
-                <StackPanel>
-                    <TextBlock Text="Connected Devices" Style="{StaticResource TextHeading3}" Margin="0,0,0,16" />
+            <!-- Quick Stats Row -->
+            <WrapPanel Margin="0,0,0,16">
+                <Border Style="{StaticResource GlassCard}" Width="220" Margin="0,0,12,12">
+                    <StackPanel>
+                        <TextBlock Text="Connected Devices" Style="{StaticResource TextCaption}" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding Devices.Count}" Style="{StaticResource TextHeading1}" Foreground="{StaticResource BrushCyan}" Margin="0,0,0,2" />
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Style="{StaticResource StatusDotOnline}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <TextBlock Style="{StaticResource TextCaption}" Text="Online" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
 
-                    <TextBlock Text="No devices connected. Connect a device via USB."
-                               Margin="0,0,0,8">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Devices.Count}" Value="0">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                <Border Style="{StaticResource GlassCard}" Width="220" Margin="0,0,12,12">
+                    <StackPanel>
+                        <TextBlock Text="Active Sessions" Style="{StaticResource TextCaption}" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding ActiveSessionCount}" Style="{StaticResource TextHeading1}" Foreground="{StaticResource BrushCyan}" Margin="0,0,0,2" />
+                        <TextBlock Style="{StaticResource TextCaption}" Text="Running" />
+                    </StackPanel>
+                </Border>
 
-                    <ItemsControl ItemsSource="{Binding Devices}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="{StaticResource BrushBackgroundPrimary}"
-                                        CornerRadius="8" Padding="14,12" Margin="0,0,0,6">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource GlassCard}" Width="220" Margin="0,0,12,12">
+                    <StackPanel>
+                        <TextBlock Text="Tests Today" Style="{StaticResource TextCaption}" Margin="0,0,0,4" />
+                        <TextBlock Text="--" Style="{StaticResource TextHeading1}" Foreground="{StaticResource BrushGreen}" Margin="0,0,0,2" />
+                        <TextBlock Style="{StaticResource TextCaption}" Text="No data" />
+                    </StackPanel>
+                </Border>
 
-                                        <TextBlock Grid.Column="0" Text="{Binding PlatformIcon}"
-                                                   FontSize="24" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <Border Style="{StaticResource GlassCard}" Width="220" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="Uptime" Style="{StaticResource TextCaption}" Margin="0,0,0,4" />
+                        <TextBlock Text="--" Style="{StaticResource TextHeading1}" Foreground="{StaticResource BrushAmber}" Margin="0,0,0,2" />
+                        <TextBlock Style="{StaticResource TextCaption}" Text="Since restart" />
+                    </StackPanel>
+                </Border>
+            </WrapPanel>
 
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding DisplayName}" 
-                                                       Foreground="{StaticResource BrushTextPrimary}"
-                                                       FontSize="14" FontWeight="Medium" />
-                                            <TextBlock Foreground="{StaticResource BrushTextSecondary}" FontSize="12"
-                                                       Text="{Binding Serial}" />
-                                        </StackPanel>
+            <!-- Two-Column Section -->
+            <Grid Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Ellipse Width="8" Height="8" Fill="{StaticResource BrushSuccess}" Margin="0,0,6,0" />
-                                            <TextBlock Text="{Binding StatusText}" Style="{StaticResource TextCaption}" 
-                                                       Foreground="{StaticResource BrushSuccess}" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
+                <!-- Connected Devices -->
+                <Border Grid.Column="0" Style="{StaticResource GlassCard}">
+                    <StackPanel>
+                        <TextBlock Text="Connected Devices" Style="{StaticResource TextHeading3}" Margin="0,0,0,12" />
+
+                        <TextBlock Text="No devices connected. Connect a device via USB."
+                                   Margin="0,0,0,8">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Devices.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <ItemsControl ItemsSource="{Binding Devices}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{StaticResource BrushBackgroundPrimary}"
+                                            CornerRadius="{StaticResource CornerRadiusCard}"
+                                            Padding="12,10" Margin="0,0,0,4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding PlatformIcon}"
+                                                       FontSize="20" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="{StaticResource BrushTextPrimary}"
+                                                           FontSize="13" FontWeight="Medium" />
+                                                <TextBlock Foreground="{StaticResource BrushTextSecondary}" FontSize="11"
+                                                           Text="{Binding Serial}" FontFamily="{StaticResource FontMono}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Ellipse Style="{StaticResource StatusDotOnline}" Margin="0,0,6,0" />
+                                                <TextBlock Text="{Binding StatusText}" Style="{StaticResource TextCaption}"
+                                                           Foreground="{StaticResource BrushGreen}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Recent Activity -->
+                <Border Grid.Column="2" Style="{StaticResource GlassCard}">
+                    <StackPanel>
+                        <TextBlock Text="Recent Activity" Style="{StaticResource TextHeading3}" Margin="0,0,0,12" />
+                        <TextBlock Text="No recent activity. Start a session to see results."
+                                   Style="{StaticResource TextBody}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
 
             <!-- Quick Actions -->
-            <Border Style="{StaticResource AppleCard}" Margin="0,16,0,0">
+            <Border Style="{StaticResource GlassCard}">
                 <StackPanel>
-                    <TextBlock Text="Quick Actions" Style="{StaticResource TextHeading3}" Margin="0,0,0,16" />
+                    <TextBlock Text="Quick Actions" Style="{StaticResource TextHeading3}" Margin="0,0,0,12" />
                     <WrapPanel>
+                        <Button Style="{StaticResource PrimaryButton}" Content="New Session"
+                                Command="{Binding QuickStartSessionCommand}" Margin="0,0,10,8" />
                         <Button Style="{StaticResource PrimaryButton}" Content="Mirror Screen"
-                                Command="{Binding QuickMirrorCommand}" Margin="0,0,10,10" />
-                        <Button Style="{StaticResource PrimaryButton}" Content="Snapshot"
-                                Command="{Binding QuickSnapshotCommand}" Margin="0,0,10,10" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Refresh Devices"
-                                Command="{Binding RefreshDevicesCommand}" Margin="0,0,10,10" />
+                                Command="{Binding QuickMirrorCommand}" Margin="0,0,10,8" />
+                        <Button Style="{StaticResource SecondaryButton}" Content="Snapshot"
+                                Command="{Binding QuickSnapshotCommand}" Margin="0,0,10,8" />
+                        <Button Style="{StaticResource SecondaryButton}" Content="Refresh"
+                                Command="{Binding RefreshDevicesCommand}" Margin="0,0,0,8" />
                     </WrapPanel>
                 </StackPanel>
             </Border>

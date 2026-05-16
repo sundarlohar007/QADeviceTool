@@ -25,7 +25,7 @@ public partial class MainViewModel : ObservableObject
     private ObservableObject? _currentView;
 
     [ObservableProperty]
-    private string _selectedNavItem = "Sessions";
+    private string _selectedNavItem = "dashboard";
 
     [ObservableProperty]
     private int _connectedDeviceCount;
@@ -41,6 +41,11 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isDeviceToolsExpanded;
+
+    [ObservableProperty]
+    private bool _isSidebarCollapsed;
+
+    public double SidebarWidth => IsSidebarCollapsed ? 48 : 220;
 
     // Child ViewModels
     public DashboardViewModel DashboardVM { get; }
@@ -112,7 +117,7 @@ public partial class MainViewModel : ObservableObject
         };
 
         // Default view
-        CurrentView = SessionVM;
+        CurrentView = DashboardVM;
 
         // Start monitoring
         _deviceMonitor.StartMonitoring();
@@ -122,6 +127,18 @@ public partial class MainViewModel : ObservableObject
     public void ToggleDeviceTools()
     {
         IsDeviceToolsExpanded = !IsDeviceToolsExpanded;
+    }
+
+        [RelayCommand]
+    private void ToggleSidebar()
+    {
+        IsSidebarCollapsed = !IsSidebarCollapsed;
+        OnPropertyChanged(nameof(SidebarWidth));
+    }
+
+    partial void OnIsSidebarCollapsedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(SidebarWidth));
     }
 
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
