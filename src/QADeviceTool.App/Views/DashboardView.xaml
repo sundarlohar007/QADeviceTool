@@ -3,47 +3,301 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:LogPro.ViewModels">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="32,24">
+    <Grid Background="{StaticResource BrushVoid}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.Resources>
+            <Style x:Key="StatCard" TargetType="Border">
+                <Setter Property="Background" Value="#1A1A1F" />
+                <Setter Property="CornerRadius" Value="12" />
+                <Setter Property="Padding" Value="16" />
+                <Setter Property="BorderBrush" Value="#252530" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Effect">
+                    <Setter.Value>
+                        <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.4" Color="Black" />
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style x:Key="StatLabel" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontWeight" Value="Medium" />
+                <Setter Property="Foreground" Value="#BAC9CD" />
+            </Style>
+            <Style x:Key="StatValue" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+                <Setter Property="FontSize" Value="32" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="Margin" Value="0,4,0,4" />
+            </Style>
+            <Style x:Key="StatSubtitle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontWeight" Value="Medium" />
+                <Setter Property="Foreground" Value="#859397" />
+            </Style>
+            <Style x:Key="GlassCardLg" TargetType="Border">
+                <Setter Property="Background" Value="#1A1A1F" />
+                <Setter Property="CornerRadius" Value="12" />
+                <Setter Property="BorderBrush" Value="#252530" />
+                <Setter Property="BorderThickness" Value="1" />
+            </Style>
+            <Style x:Key="CardHeader" TargetType="Border">
+                <Setter Property="Background" Value="#22222A" />
+                <Setter Property="Padding" Value="16,12" />
+                <Setter Property="CornerRadius" Value="12,12,0,0" />
+            </Style>
+            <Style x:Key="CardHeaderText" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="Foreground" Value="#E5E2E1" />
+            </Style>
+            <Style x:Key="DeviceRow" TargetType="Border">
+                <Setter Property="Background" Value="#252530" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="12" />
+                <Setter Property="Margin" Value="0,0,0,8" />
+            </Style>
+            <Style x:Key="DeviceIconBox" TargetType="Border">
+                <Setter Property="Background" Value="#353534" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Width" Value="40" />
+                <Setter Property="Height" Value="40" />
+            </Style>
+            <Style x:Key="QuickActionBtn" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="#BAC9CD" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="16,8" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="b" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="b" Property="Background" Value="#2A2A2A" />
+                                    <Setter Property="Foreground" Value="#8CEBFF" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </Grid.Resources>
 
-            <!-- Welcome Header -->
-            <TextBlock Text="Dashboard" Style="{StaticResource TextHeading1}" Margin="0,0,0,4" />
-            <TextBlock Text="{Binding WelcomeMessage}" Style="{StaticResource TextBody}" Margin="0,0,0,28" />
+        <Grid Grid.Row="0" Margin="24,24,24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Dashboard"
+                       FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold"
+                       Foreground="#E5E2E1" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Width="40" Height="40" Margin="0,0,12,0"
+                        Background="#1A1A1F" Foreground="#BAC9CD"
+                        BorderThickness="1" BorderBrush="#252530"
+                        Command="{Binding RefreshDevicesCommand}" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border CornerRadius="8" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
+                                <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}" />
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+                <Button Background="#00D4F0" Foreground="#001F25"
+                        FontFamily="{StaticResource FontHeader}" FontSize="13" FontWeight="Bold"
+                        Padding="16,10" Cursor="Hand" BorderThickness="0"
+                        Command="{Binding QuickStartSessionCommand}">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border CornerRadius="8" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="New Session" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </StackPanel>
+        </Grid>
 
-            <!-- Connected Devices -->
-            <Border Style="{StaticResource AppleCard}">
+        <Grid Grid.Row="1" Margin="24,0,24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Style="{StaticResource StatCard}">
                 <StackPanel>
-                    <TextBlock Text="Connected Devices" Style="{StaticResource TextHeading3}" Margin="0,0,0,16" />
-                    <TextBlock Text="No devices connected. Connect a device via USB." Margin="0,0,0,8">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Devices.Count}" Value="0">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
+                    <Grid>
+                        <TextBlock Text="Connected Devices" Style="{StaticResource StatLabel}" />
+                        <Ellipse Width="8" Height="8" Fill="#4ADE80" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Ellipse.Effect><DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#4ADE80" /></Ellipse.Effect>
+                        </Ellipse>
+                    </Grid>
+                    <TextBlock Text="{Binding Devices.Count, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="#00D4F0">
+                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="#00D4F0" /></TextBlock.Effect>
                     </TextBlock>
+                    <TextBlock Text="iOS &amp; Android" Style="{StaticResource StatSubtitle}" />
                 </StackPanel>
             </Border>
-
-            <!-- Quick Actions -->
-            <Border Style="{StaticResource AppleCard}" Margin="0,16,0,0">
+            <Border Grid.Column="2" Style="{StaticResource StatCard}">
                 <StackPanel>
-                    <TextBlock Text="Quick Actions" Style="{StaticResource TextHeading3}" Margin="0,0,0,16" />
-                    <WrapPanel>
-                        <Button Style="{StaticResource PrimaryButton}" Content="Mirror Screen"
-                                Command="{Binding QuickMirrorCommand}" Margin="0,0,10,10" />
-                        <Button Style="{StaticResource PrimaryButton}" Content="Snapshot"
-                                Command="{Binding QuickSnapshotCommand}" Margin="0,0,10,10" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Refresh Devices"
-                                Command="{Binding RefreshDevicesCommand}" Margin="0,0,10,10" />
-                    </WrapPanel>
+                    <TextBlock Text="Active Sessions" Style="{StaticResource StatLabel}" />
+                    <TextBlock Text="{Binding ActiveSessionCount, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="#00D4F0">
+                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="#00D4F0" /></TextBlock.Effect>
+                    </TextBlock>
+                    <TextBlock Text="Currently running" Style="{StaticResource StatSubtitle}" />
                 </StackPanel>
             </Border>
+            <Border Grid.Column="4" Style="{StaticResource StatCard}">
+                <StackPanel>
+                    <Grid>
+                        <TextBlock Text="Tests Run" Style="{StaticResource StatLabel}" />
+                        <TextBlock Text="&#xE74A;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#4ADE80" HorizontalAlignment="Right" />
+                    </Grid>
+                    <TextBlock Text="0" Style="{StaticResource StatValue}" Foreground="#4ADE80" />
+                    <TextBlock Text="Session data pending" Style="{StaticResource StatSubtitle}" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="6" Style="{StaticResource StatCard}">
+                <StackPanel>
+                    <TextBlock Text="Uptime" Style="{StaticResource StatLabel}" />
+                    <TextBlock Text="--" Style="{StaticResource StatValue}" Foreground="#FBBF24" />
+                    <TextBlock Text="Since last restart" Style="{StaticResource StatSubtitle}" />
+                </StackPanel>
+            </Border>
+        </Grid>
 
-        </StackPanel>
-    </ScrollViewer>
+        <Grid Grid.Row="2" Margin="24,0,24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="6*" />
+                <ColumnDefinition Width="24" />
+                <ColumnDefinition Width="4*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Style="{StaticResource GlassCardLg}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE839;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="CONNECTED DEVICES" Style="{StaticResource CardHeaderText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
+                        <StackPanel>
+                            <TextBlock Text="No devices connected. Connect a device via USB."
+                                       FontFamily="{StaticResource FontHeader}" FontSize="12" Foreground="#859397"
+                                       HorizontalAlignment="Center" Margin="0,24,0,24">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Devices.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ItemsControl ItemsSource="{Binding Devices}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource DeviceRow}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" Style="{StaticResource DeviceIconBox}" Margin="0,0,12,0">
+                                                    <TextBlock Text="&#xE8EA;" FontFamily="Segoe MDL2 Assets" FontSize="20" Foreground="#BAC9CD" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DisplayName}" FontFamily="{StaticResource FontBody}" FontSize="14" FontWeight="SemiBold" Foreground="#E5E2E1" />
+                                                    <TextBlock FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="#859397">
+                                                        <Run Text="SN: " /><Run Text="{Binding Serial, Mode=OneWay}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding OsVersion}" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="#8CEBFF" Margin="0,0,12,0" />
+                                                    <Ellipse Width="8" Height="8" Fill="#4ADE80">
+                                                        <Ellipse.Effect><DropShadowEffect BlurRadius="6" ShadowDepth="0" Color="#4ADE80" /></Ellipse.Effect>
+                                                    </Ellipse>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource GlassCardLg}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE823;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="RECENT ACTIVITY" Style="{StaticResource CardHeaderText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
+                        <TextBlock Text="No activity yet. Start a session to see results here."
+                                   FontFamily="{StaticResource FontHeader}" FontSize="12" Foreground="#859397"
+                                   HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,24,0,24" />
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="3" Margin="24,0,24,24" Background="#1A1A1F" CornerRadius="12" BorderBrush="#252530" BorderThickness="1" Padding="8">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickMirrorCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
+                        <TextBlock Text="Mirror Screen" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Border Width="1" Height="24" Background="#3C494C" Margin="8,0" VerticalAlignment="Center" />
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickSnapshotCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
+                        <TextBlock Text="Snapshot" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Border Width="1" Height="24" Background="#3C494C" Margin="8,0" VerticalAlignment="Center" />
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickStartSessionCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE7B5;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
+                        <TextBlock Text="Start Session" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Border Width="1" Height="24" Background="#3C494C" Margin="8,0" VerticalAlignment="Center" />
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding RefreshDevicesCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
+                        <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+    </Grid>
 </UserControl>
