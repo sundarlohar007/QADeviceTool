@@ -80,8 +80,8 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     {
         var oldCts = _loadCts;
         _loadCts = new CancellationTokenSource();
-        try { oldCts?.Cancel(); } 
-        try { oldCts?.Dispose(); } 
+        try { oldCts?.Cancel(); } catch { /* best effort */ }
+        try { oldCts?.Dispose(); } catch { /* best effort */ }
         SelectedDevice = device;
     }
 

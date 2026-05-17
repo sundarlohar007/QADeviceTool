@@ -93,6 +93,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
                     _dispatcher.BeginInvoke(DispatcherPriority.Background, () => TargetPackageName = keyword);
                 }
             }
+            catch (Exception) { /* keyword load best-effort */ }
             
 
             try

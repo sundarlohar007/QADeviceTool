@@ -112,7 +112,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
 
         _recordOutputPath = Path.Combine(_macroDir, $"recording_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
         // Kill previous recording process if double-invoked
-        if (_recordProcess != null) { try { _recordProcess.Kill(); _recordProcess.Dispose(); }  }
+        if (_recordProcess != null) { try { _recordProcess.Kill(); _recordProcess.Dispose(); } catch { /* best effort */ } }
         _recordProcess = await _macroService.StartRecordingAsync(SelectedDevice.Serial, _recordOutputPath);
 
         if (_recordProcess == null)
@@ -137,7 +137,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
                 _recordProcess.WaitForExit(1500);
             }
             
-            try { _recordProcess.Dispose(); } 
+            try { _recordProcess.Dispose(); } catch { /* best effort */ }
             _recordProcess = null;
         }
 
