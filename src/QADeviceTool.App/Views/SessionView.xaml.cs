@@ -70,10 +70,10 @@ public partial class SessionView : UserControl
         {
             try
             {
-                if (LogDataGrid.Items.Count > 0)
+                if (LogList.Items.Count > 0)
                 {
-                    var lastItem = LogDataGrid.Items[LogDataGrid.Items.Count - 1];
-                    LogDataGrid.ScrollIntoView(lastItem);
+                    var lastItem = LogList.Items[LogList.Items.Count - 1];
+                    LogList.ScrollIntoView(lastItem);
                 }
             }
             catch (Exception ex)

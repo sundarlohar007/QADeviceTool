@@ -3,88 +3,254 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:LogPro.ViewModels"
              xmlns:conv="clr-namespace:LogPro.Converters">
-    <Grid Margin="24,16">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="260" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+    <UserControl.Resources>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="#1A1A1F" />
+            <Setter Property="BorderBrush" Value="#252530" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+        </Style>
+        <Style x:Key="CardHdr" TargetType="Border">
+            <Setter Property="Background" Value="#22222A" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="CornerRadius" Value="12,12,0,0" />
+        </Style>
+        <Style x:Key="HdrText" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#E5E2E1" />
+        </Style>
+        <Style x:Key="GhostBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#BAC9CD" />
+            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" />
+                                <Setter Property="Foreground" Value="#8CEBFF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="b" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
+            <Setter Property="Foreground" Value="#EF4444" />
+            <Setter Property="BorderBrush" Value="#7F1D1D" />
+        </Style>
+        <Style x:Key="RecBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
+            <Setter Property="Foreground" Value="#8CEBFF" />
+            <Setter Property="BorderBrush" Value="#006B80" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRecording}" Value="True">
+                    <Setter Property="Foreground" Value="#EF4444" />
+                    <Setter Property="BorderBrush" Value="#EF4444" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="DarkInput" TargetType="TextBox">
+            <Setter Property="Background" Value="#0E0E0E" />
+            <Setter Property="Foreground" Value="#E5E2E1" />
+            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="CaretBrush" Value="#8CEBFF" />
+            <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="MetaLabel" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#859397" />
+        </Style>
+    </UserControl.Resources>
 
-        <!-- Device List -->
-        <Border Grid.Column="0" Style="{StaticResource AppleCard}" Margin="0,0,8,0">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="Device" Style="{StaticResource TextHeading3}" Margin="0,0,0,12" />
-                <ListBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}"
-                         Style="{StaticResource DarkListBox}" DisplayMemberPath="DisplayName" />
-            </DockPanel>
-        </Border>
+    <Grid Background="#060606">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <!-- Macro Controls -->
-        <Border Grid.Column="1" Style="{StaticResource AppleCard}" Margin="8,0,0,0">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-                    <TextBlock Text="Input Macros" Style="{StaticResource TextHeading3}" Margin="0,0,0,8" />
-
-                    <!-- Record/Playback Controls -->
-                    <WrapPanel Margin="0,0,0,8">
-                        <Button Content="Record" Command="{Binding ToggleRecordingCommand}"
-                                Margin="0,0,6,6">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+        <!-- Top Header -->
+        <Grid Grid.Row="0" Margin="24,24,24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Macros" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="#E5E2E1" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#8CEBFF" FontSize="12" Margin="0,4,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="200" Margin="0,0,8,0" />
+                <Button Style="{StaticResource RecBtn}" Command="{Binding ToggleRecordingCommand}" Margin="0,0,6,0">
+                    <Button.Content>
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="● Record" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsRecording}" Value="True">
-                                            <Setter Property="Background" Value="{StaticResource BrushRed}" />
-                                            <Setter Property="Content" Value="Stop Rec" />
+                                            <Setter Property="Text" Value="■ Stop Rec" />
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
-                            </Button.Style>
-                        </Button>
-                        <Button Style="{StaticResource PrimaryButton}" Content="Play"
-                                Command="{Binding PlayMacroCommand}"
-                                IsEnabled="{Binding IsPlaying, Converter={x:Static conv:InverseBoolConverter.Instance}}"
-                                Margin="0,0,6,6" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Stop"
-                                Command="{Binding StopPlaybackCommand}"
-                                Margin="0,0,6,6" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Delete"
-                                Command="{Binding DeleteMacroCommand}"
-                                Margin="0,0,6,6" />
-                    </WrapPanel>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button.Content>
+                </Button>
+                <Button Style="{StaticResource GhostBtn}" Command="{Binding PlayMacroCommand}"
+                        IsEnabled="{Binding IsPlaying, Converter={x:Static conv:InverseBoolConverter.Instance}}"
+                        Content="▶ Play" Margin="0,0,6,0" />
+                <Button Style="{StaticResource GhostBtn}" Command="{Binding StopPlaybackCommand}" Content="■ Stop" Margin="0,0,6,0" />
+                <Button Style="{StaticResource DangerBtn}" Command="{Binding DeleteMacroCommand}" Content="Delete" />
+            </StackPanel>
+        </Grid>
 
-                    <!-- Speed & Loop -->
-                    <StackPanel Orientation="Horizontal" Margin="0,4,0,8">
-                        <TextBlock Text="Speed:" VerticalAlignment="Center"
-                                   Foreground="{StaticResource BrushTextSecondary}" FontSize="11" Margin="0,0,6,0" />
-                        <Slider Width="100" Minimum="0.5" Maximum="5" Value="{Binding PlaybackSpeed}"
-                                TickFrequency="0.5" IsSnapToTickEnabled="True" Margin="0,0,12,0" />
-                        <TextBlock Text="{Binding PlaybackSpeed, StringFormat={}{0:F1}x}"
-                                   VerticalAlignment="Center" FontSize="11" Width="30"
-                                   Foreground="{StaticResource BrushCyan}" Margin="0,0,12,0" />
-                        <TextBlock Text="Loop:" VerticalAlignment="Center"
-                                   Foreground="{StaticResource BrushTextSecondary}" FontSize="11" Margin="0,0,6,0" />
-                        <TextBox Text="{Binding LoopCount, UpdateSourceTrigger=PropertyChanged}"
-                                 Style="{StaticResource DarkTextBox}" Width="50" TextAlignment="Center" />
-                    </StackPanel>
+        <!-- Main Split -->
+        <Grid Grid.Row="1" Margin="24,0,24,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="13*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="7*" />
+            </Grid.ColumnDefinitions>
 
-                    <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource BrushAccent}"
-                               FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" />
-                </StackPanel>
+            <!-- Library -->
+            <Border Grid.Column="0" Style="{StaticResource Card}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="MACRO LIBRARY" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <ListBox ItemsSource="{Binding Macros}" SelectedItem="{Binding SelectedMacro}" Background="Transparent" BorderThickness="0" Padding="8">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="14,10" />
+                                <Setter Property="Margin" Value="0,3" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="b" Background="#252530" BorderBrush="Transparent" BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="b" Property="Background" Value="#003848" />
+                                                    <Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" />
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="b" Property="Background" Value="#2A2A33" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="6" Background="#003848" Margin="0,0,12,0">
+                                        <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" FontFamily="{StaticResource FontBody}" FontSize="13" FontWeight="SemiBold" Foreground="#E5E2E1" />
+                                        <TextBlock Text="{Binding DisplayInfo}" FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="#859397" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
 
-                <!-- Macro Library -->
-                <ListBox ItemsSource="{Binding Macros}" SelectedItem="{Binding SelectedMacro}"
-                         Style="{StaticResource DarkListBox}">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
+            <!-- Detail / Playback Config -->
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="PLAYBACK CONFIG" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Margin="16">
+                        <!-- Selected Macro -->
+                        <TextBlock Text="SELECTION" Style="{StaticResource MetaLabel}" Margin="0,0,0,6" />
+                        <Border Background="#0E0E0E" CornerRadius="8" Padding="12" Margin="0,0,0,18" BorderBrush="#252530" BorderThickness="1">
                             <StackPanel>
-                                <TextBlock Text="{Binding Name}" FontSize="13"
-                                           Foreground="{StaticResource BrushTextPrimary}" />
-                                <TextBlock Text="{Binding DisplayInfo}" FontSize="10"
-                                           Foreground="{StaticResource BrushTextSecondary}" />
+                                <TextBlock Text="{Binding SelectedMacro.Name, FallbackValue='— No macro selected —'}"
+                                           FontFamily="{StaticResource FontHeader}" FontSize="14" FontWeight="SemiBold" Foreground="#E5E2E1" />
+                                <TextBlock Text="{Binding SelectedMacro.DisplayInfo}"
+                                           FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="#859397" Margin="0,4,0,0" />
                             </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
-        </Border>
+                        </Border>
+
+                        <!-- Speed -->
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="SPEED" Style="{StaticResource MetaLabel}" />
+                            <TextBlock Grid.Column="1" Text="{Binding PlaybackSpeed, StringFormat={}{0:F1}x}"
+                                       FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="#8CEBFF" />
+                        </Grid>
+                        <Slider Minimum="0.5" Maximum="5" Value="{Binding PlaybackSpeed}"
+                                TickFrequency="0.5" IsSnapToTickEnabled="True"
+                                Foreground="#8CEBFF" Background="#252530" Margin="0,0,0,18" />
+
+                        <!-- Loop -->
+                        <TextBlock Text="LOOP COUNT" Style="{StaticResource MetaLabel}" Margin="0,0,0,6" />
+                        <TextBox Style="{StaticResource DarkInput}" Width="100" HorizontalAlignment="Left"
+                                 TextAlignment="Center"
+                                 Text="{Binding LoopCount, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,18" />
+
+                        <!-- Hint -->
+                        <Border Background="#0E0E0E" CornerRadius="6" Padding="12" BorderBrush="#252530" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="HOW IT WORKS" Style="{StaticResource MetaLabel}" Margin="0,0,0,6" />
+                                <TextBlock Foreground="#BAC9CD" FontSize="11" TextWrapping="Wrap" LineHeight="18">
+                                    Record captures input events from the selected device. Play replays the macro at the configured speed for N loops. Stop interrupts active playback.
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

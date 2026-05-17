@@ -3,131 +3,129 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:LogPro.ViewModels"
              xmlns:conv="clr-namespace:LogPro.Converters">
-
-    <Grid Margin="24,16">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="250" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-
-        <!-- ═══════ LEFT: Device List ═══════ -->
-        <Border Grid.Column="0" Style="{StaticResource GlassCard}" Margin="0,0,8,0">
+    <UserControl.Resources>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="#1A1A1F" />
+            <Setter Property="BorderBrush" Value="#252530" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+        </Style>
+        <Style x:Key="CardHdr" TargetType="Border">
+            <Setter Property="Background" Value="#22222A" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="CornerRadius" Value="12,12,0,0" />
+        </Style>
+        <Style x:Key="HdrText" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#E5E2E1" />
+        </Style>
+        <Style x:Key="GhostBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#BAC9CD" />
+            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" />
+                                <Setter Property="Foreground" Value="#8CEBFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
+            <Setter Property="Background" Value="#00D4F0" />
+            <Setter Property="Foreground" Value="#001F25" />
+            <Setter Property="BorderBrush" Value="#00D4F0" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+        <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
+            <Setter Property="Foreground" Value="#EF4444" />
+            <Setter Property="BorderBrush" Value="#7F1D1D" />
+        </Style>
+        <Style x:Key="DarkInput" TargetType="TextBox">
+            <Setter Property="Background" Value="#0E0E0E" />
+            <Setter Property="Foreground" Value="#E5E2E1" />
+            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="CaretBrush" Value="#8CEBFF" />
+            <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="MonoBlock" TargetType="TextBox" BasedOn="{StaticResource DarkInput}">
+            <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
+        </Style>
+    </UserControl.Resources>
+    <Grid Background="#060606">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid Grid.Row="0" Margin="24,24,24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Shell" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="#E5E2E1" />
+                <TextBlock Text="ADB / iOS Shell commands" Foreground="#BAC9CD" FontSize="12" Margin="0,4,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="220" Margin="0,0,8,0" />
+                <Button Style="{StaticResource GhostBtn}" Command="{Binding ClearOutputCommand}" Content="Clear" />
+            </StackPanel>
+        </Grid>
+        <Border Grid.Row="1" Style="{StaticResource Card}" Margin="24,0,24,16">
             <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-                    <TextBlock Text="Devices" Style="{StaticResource TextHeading2}" Margin="0,0,0,8" />
-                    <TextBlock Text="Android uses adb commands. iOS supports selected pymobiledevice3 commands."
-                               Style="{StaticResource TextCaption}" TextWrapping="Wrap" />
-                </StackPanel>
-
-                <TextBlock DockPanel.Dock="Top"
-                           Text="No online devices detected."
-                           Margin="0,8,0,0">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Devices.Count}" Value="0">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-
-                <ListBox ItemsSource="{Binding Devices}"
-                         SelectedItem="{Binding SelectedDevice}"
-                         Style="{StaticResource DarkListBox}"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto">
-<ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource DarkListBoxItem}" />
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{Binding PlatformIcon}" FontSize="18" 
-                                           VerticalAlignment="Center" Margin="0,0,8,0" />
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding DisplayName}" 
-                                               Foreground="{StaticResource BrushTextPrimary}"
-                                               FontSize="13" FontWeight="SemiBold" />
-                                    <TextBlock Text="{Binding Serial}" Style="{StaticResource TextCaption}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="OUTPUT" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+                <TextBox Style="{StaticResource MonoBlock}" Text="{Binding ShellOutput, Mode=OneWay}" Background="#060606" BorderThickness="0" Margin="0" />
             </DockPanel>
         </Border>
-
-        <!-- ═══════ RIGHT: Shell Terminal ═══════ -->
-        <Border Grid.Column="1" Style="{StaticResource GlassCard}" Margin="8,0,0,0">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <DockPanel Grid.Row="0" Margin="0,0,0,12">
-                    <TextBlock DockPanel.Dock="Left" Text="Device Shell" Style="{StaticResource TextHeading2}" VerticalAlignment="Center" />
-                    <Button DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Content="Clear Output" 
-                            Command="{Binding ClearOutputCommand}" Padding="12,6" HorizontalAlignment="Right" />
-                </DockPanel>
-
-                <!-- Terminal Output -->
-                <TextBox Grid.Row="1" 
-                         Text="{Binding ShellOutput, Mode=OneWay}"
-                         Style="{StaticResource TerminalTextBox}"
-                         IsReadOnly="True"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                         FontFamily="{StaticResource FontMono}"
-                         FontSize="13"
-                         Background="{StaticResource BrushVoid}"
-                         Foreground="{StaticResource BrushTextPrimary}"
-                         BorderThickness="1"
-                         BorderBrush="{StaticResource BrushBorderMuted}"
-                         Padding="8"
-                         Margin="0,0,0,12">
-                </TextBox>
-
-                <!-- Input Area -->
-                <Grid Grid.Row="2">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock Grid.Column="0" Text="$ " FontFamily="{StaticResource FontMono}" FontSize="16" 
-                               Foreground="{StaticResource BrushAccent}" VerticalAlignment="Center" Margin="8,0" />
-
-                    <TextBox Grid.Column="1" 
-                             Text="{Binding CommandInput, UpdateSourceTrigger=PropertyChanged}"
-                             Background="{StaticResource BrushBackgroundDarkest}"
-                             Foreground="{StaticResource BrushTextPrimary}"
-                             BorderBrush="{StaticResource BrushBorder}"
-                             BorderThickness="1"
-                             FontFamily="{StaticResource FontMono}"
-                             FontSize="14"
-                             Padding="10,8"
-                             VerticalContentAlignment="Center"
-                             IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
-                        <!-- Normally we'd bind Enter key to a command here using input bindings -->
-                        <TextBox.InputBindings>
-                            <KeyBinding Key="Enter" Command="{Binding ExecuteCommandCommand}" />
-                        </TextBox.InputBindings>
-                    </TextBox>
-
-                    <Button Grid.Column="2" 
-                            Style="{StaticResource PrimaryButton}" 
-                            Content="Send"
-                            Command="{Binding ExecuteCommandCommand}"
-                            Margin="12,0,0,0" Padding="16,0" Width="80"
-                            IsEnabled="{Binding IsExecuting, Converter={x:Static conv:InverseBoolConverter.Instance}}" />
-                </Grid>
-
-            </Grid>
-        </Border>
+        <Grid Grid.Row="2" Margin="24,0,24,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Style="{StaticResource DarkInput}" Text="{Binding CommandInput, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource FontMono}" Margin="0,0,8,0" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}" />
+            <Button Grid.Column="1" Style="{StaticResource PrimaryBtn}" Command="{Binding ExecuteCommandCommand}" IsEnabled="{Binding IsExecuting, Converter={x:Static conv:InverseBoolConverter.Instance}}" Content="Execute" />
+        </Grid>
     </Grid>
 </UserControl>

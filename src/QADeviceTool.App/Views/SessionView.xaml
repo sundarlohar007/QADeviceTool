@@ -4,267 +4,217 @@
              xmlns:vm="clr-namespace:LogPro.ViewModels"
              xmlns:models="clr-namespace:LogPro.Models"
              xmlns:conv="clr-namespace:LogPro.Converters">
-
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
-        <conv:LogLevelColorMultiConverter x:Key="LogLevelColorConverter" />
+        <conv:LogLevelColorMultiConverter x:Key="LogColor" />
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="#1A1A1F" />
+            <Setter Property="BorderBrush" Value="#252530" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+        </Style>
+        <Style x:Key="CardHdr" TargetType="Border">
+            <Setter Property="Background" Value="#22222A" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="CornerRadius" Value="12,12,0,0" />
+        </Style>
+        <Style x:Key="HdrText" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#E5E2E1" />
+        </Style>
+        <Style x:Key="GreenBtn" TargetType="Button">
+            <Setter Property="Background" Value="#00D4F0" />
+            <Setter Property="Foreground" Value="#001F25" />
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Opacity" Value="0.85" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GhostBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#BAC9CD" />
+            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" />
+                                <Setter Property="Foreground" Value="#8CEBFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
+            <Setter Property="Foreground" Value="#EF4444" />
+            <Setter Property="BorderBrush" Value="#7F1D1D" />
+        </Style>
+        <Style x:Key="DarkInput" TargetType="TextBox">
+            <Setter Property="Background" Value="#0E0E0E" />
+            <Setter Property="Foreground" Value="#E5E2E1" />
+            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="CaretBrush" Value="#8CEBFF" />
+            <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
-
-    <Grid Margin="24,16">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="300" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-
-        <!-- LEFT: Session List -->
-        <Border Grid.Column="0" Style="{StaticResource AppleCard}" Margin="0,0,8,0">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="Sessions" Style="{StaticResource TextHeading3}" Margin="0,0,0,12" />
-
-                <!-- New session controls -->
-                <Border DockPanel.Dock="Top" Background="{StaticResource BrushBackgroundPrimary}"
-                        CornerRadius="{StaticResource CornerRadiusCard}" Padding="12" Margin="0,0,0,12">
-                    <StackPanel>
-                        <!-- Device selector -->
-                        <TextBlock Text="Select Device" 
-                                   Foreground="{StaticResource BrushTextSecondary}"
-                                   FontSize="11" Margin="0,0,0,4" />
-                        <ComboBox ItemsSource="{Binding AvailableDevices}"
-                                  SelectedItem="{Binding SelectedDevice}"
-                                  DisplayMemberPath="DisplayName"
-                                  Margin="0,0,0,8" />
-
-                        <!-- Optional custom name -->
-                        <TextBlock Text="Session name (optional)" 
-                                   Foreground="{StaticResource BrushTextSecondary}"
-                                   FontSize="11" Margin="0,0,0,4" />
-                        <TextBox Style="{StaticResource DarkTextBox}"
-                                 Text="{Binding NewSessionName, UpdateSourceTrigger=PropertyChanged}"
-                                 Margin="0,0,0,8" />
-
-                        <StackPanel Orientation="Horizontal">
-                            <Button Style="{StaticResource PrimaryButton}" Content="+ New Session"
-                                    Command="{Binding CreateSessionCommand}" Margin="0,0,6,0" />
-                            <Button Style="{StaticResource SecondaryButton}" Content="Open Folder"
-                                    Command="{Binding OpenSessionFolderCommand}" />
-                        </StackPanel>
-
-                        <!-- Auto-capture toggle -->
-                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <CheckBox IsChecked="{Binding AutoCapture}" VerticalAlignment="Center" Margin="0,0,6,0" />
-                            <TextBlock Text="Auto-start when device connected"
-                                       Foreground="{StaticResource BrushTextSecondary}"
-                                       FontSize="11" VerticalAlignment="Center" />
-                        </StackPanel>
+    <Grid Background="#060606">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Grid.Row="0" Margin="24,24,24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Sessions" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="#E5E2E1" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#BAC9CD" FontSize="12" Margin="0,4,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Border Background="#003848" CornerRadius="6" Padding="8,4" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="{Binding IsScreenRecording, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="6" Height="6" Fill="#EF4444" Margin="0,0,6,0" />
+                        <TextBlock Text="REC" Foreground="#EF4444" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
-
-                <!-- Session list -->
-                <ListBox ItemsSource="{Binding Sessions}"
-                         SelectedItem="{Binding SelectedSession}"
-                         Style="{StaticResource DarkListBox}"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         MouseRightButtonUp="SessionList_MouseRightButtonUp">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource DarkListBoxItem}" />
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Open Directory" Click="OpenDirectory_Click" />
-                            <Separator Background="{StaticResource BrushSeparator}" Margin="0,4" />
-                            <MenuItem Header="Delete Session" Click="DeleteSession_Click" />
-                        </ContextMenu>
-                    </ListBox.ContextMenu>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel>
-                                <TextBlock Foreground="{StaticResource BrushTextPrimary}"
-                                           FontSize="13" FontWeight="Medium"
-                                           Text="{Binding Name}" />
-                                <TextBlock Foreground="{StaticResource BrushTextSecondary}" FontSize="11"
-                                           Text="{Binding DurationText}" Margin="0,2,0,0" />
+                <Button Style="{StaticResource GhostBtn}" Margin="0,0,8,0" Command="{Binding TakeSnapshotCommand}" Content="Snapshot" />
+                <Button Style="{StaticResource GhostBtn}" Margin="0,0,8,0" Command="{Binding ToggleScreenRecordCommand}" Content="Rec Screen" />
+                <Button Style="{StaticResource DangerBtn}" Margin="0,0,8,0" Command="{Binding StopCaptureCommand}" Content="Stop" />
+                <Button Style="{StaticResource GreenBtn}" Command="{Binding StartCaptureCommand}" Content="Start Capture" />
+            </StackPanel>
+        </Grid>
+        <Grid Grid.Row="1" Margin="24,0,24,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Style="{StaticResource Card}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="SESSIONS" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <StackPanel DockPanel.Dock="Top" Margin="12">
+                        <TextBlock Text="DEVICE" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="#859397" Margin="0,0,0,4" />
+                        <ComboBox ItemsSource="{Binding AvailableDevices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Margin="0,0,0,12" />
+                        <TextBlock Text="SESSION NAME" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="#859397" Margin="0,0,0,4" />
+                        <TextBox Style="{StaticResource DarkInput}" Text="{Binding NewSessionName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
+                        <Button Style="{StaticResource GreenBtn}" Command="{Binding CreateSessionCommand}" Content="+ New Session" HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}" Background="Transparent" BorderThickness="0" Padding="8">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="10" />
+                                <Setter Property="Margin" Value="0,2" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="b" Background="#252530" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsSelected" Value="True"><Setter TargetName="b" Property="Background" Value="#003848" /></Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#2A2A33" /></Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontFamily="{StaticResource FontBody}" FontSize="12" FontWeight="SemiBold" Foreground="#E5E2E1" />
+                                    <TextBlock Text="{Binding DurationText}" FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="#859397" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                <TextBlock Text="LIVE OUTPUT" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                             </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
-        </Border>
-
-        <!-- RIGHT: Log Viewer -->
-        <Border Grid.Column="1" Style="{StaticResource AppleCard}" Margin="8,0,0,0">
-            <DockPanel>
-                <!-- Header with actions -->
-                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <TextBlock Text="Live Log" Style="{StaticResource TextHeading3}" Margin="0,0,0,12" />
-                    
-                    <!-- Primary Actions -->
-                    <WrapPanel Margin="0,0,0,8">
-                        <Button Style="{StaticResource PrimaryButton}" Content="Start"
-                                Command="{Binding StartCaptureCommand}"
-                                Margin="0,0,6,6" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Stop"
-                                Command="{Binding StopCaptureCommand}"
-                                Margin="0,0,6,6" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Save"
-                                Command="{Binding SaveLogCommand}"
-                                Margin="0,0,6,6" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Copy All"
-                                Command="{Binding CopyToClipboardCommand}"
-                                Margin="0,0,6,6" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Snap"
-                                Command="{Binding TakeSnapshotCommand}"
-                                Margin="0,0,6,6" />
-                        <Button Command="{Binding ToggleScreenRecordCommand}"
-                                Margin="0,0,6,6">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
-                                    <Setter Property="Content" Value="Record" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsScreenRecording}" Value="True">
-                                            <Setter Property="Background" Value="{StaticResource BrushRed}" />
-                                            <Setter Property="Content" Value="Stop Rec" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <Button Style="{StaticResource PrimaryButton}" Content="Report"
-                                Command="{Binding GenerateBugReportCommand}"
-                                Margin="0,0,6,6" />
-                    </WrapPanel>
-
-                    <!-- Secondary Actions -->
-                    <WrapPanel>
-                        <Button Style="{StaticResource SecondaryButton}" Content="Export CSV"
-                                Command="{Binding ExportCsvCommand}"
-                                Margin="0,0,6,6" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Export JSON"
-                                Command="{Binding ExportJsonCommand}"
-                                Margin="0,0,6,6" />
-                        <CheckBox Content="Anonymize"
-                                  IsChecked="{Binding AnonymizeExport}"
-                                  Foreground="{StaticResource BrushTextSecondary}"
-                                  VerticalAlignment="Center"
-                                  Margin="8,0,6,6" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Clear"
-                                Command="{Binding ClearLogCommand}"
-                                Margin="0,0,6,6" />
-                    </WrapPanel>
-                </StackPanel>
-
-                <!-- Status message -->
-                <TextBlock DockPanel.Dock="Top" Text="{Binding StatusMessage}" 
-                           Foreground="{StaticResource BrushAccent}"
-                           FontSize="12" Margin="0,0,0,6" />
-
-                <!-- Filters -->
-                <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Search -->
-                    <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <TextBlock Text="Search:" VerticalAlignment="Center" Foreground="{StaticResource BrushTextSecondary}" Margin="0,0,8,0" />
-                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=250}"
-                                 Style="{StaticResource DarkTextBox}" Width="160" Margin="0,0,12,0" />
-                    </StackPanel>
-
-                    <!-- Log Buffer & Format -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,8,0">
-                        <TextBlock Text="Buf:" VerticalAlignment="Center" Foreground="{StaticResource BrushTextSecondary}" FontSize="10" Margin="0,0,4,0" />
-                        <ComboBox Width="75" FontSize="10" Height="22"
-                                  SelectedItem="{Binding SelectedLogBuffer, Mode=TwoWay}">
-                            <ComboBox.ItemsSource>
-                                <x:Array Type="{x:Type models:LogcatBuffer}">
-                                    <models:LogcatBuffer>Main</models:LogcatBuffer>
-                                    <models:LogcatBuffer>System</models:LogcatBuffer>
-                                    <models:LogcatBuffer>Events</models:LogcatBuffer>
-                                    <models:LogcatBuffer>Crash</models:LogcatBuffer>
-                                    <models:LogcatBuffer>Radio</models:LogcatBuffer>
-                                </x:Array>
-                            </ComboBox.ItemsSource>
-                        </ComboBox>
-                        <TextBlock Text="Fmt:" VerticalAlignment="Center" Foreground="{StaticResource BrushTextSecondary}" FontSize="10" Margin="8,0,4,0" />
-                        <ComboBox Width="85" FontSize="10" Height="22"
-                                  SelectedItem="{Binding SelectedLogFormat, Mode=TwoWay}">
-                            <ComboBox.ItemsSource>
-                                <x:Array Type="{x:Type models:LogcatFormat}">
-                                    <models:LogcatFormat>ThreadTime</models:LogcatFormat>
-                                    <models:LogcatFormat>Time</models:LogcatFormat>
-                                    <models:LogcatFormat>Brief</models:LogcatFormat>
-                                    <models:LogcatFormat>Process</models:LogcatFormat>
-                                    <models:LogcatFormat>Tag</models:LogcatFormat>
-                                    <models:LogcatFormat>Thread</models:LogcatFormat>
-                                    <models:LogcatFormat>Long</models:LogcatFormat>
-                                    <models:LogcatFormat>Raw</models:LogcatFormat>
-                                </x:Array>
-                            </ComboBox.ItemsSource>
-                        </ComboBox>
-                    </StackPanel>
-
-                    <!-- Toggles + Bookmarks -->
-                    <StackPanel Grid.Column="3" Orientation="Horizontal">
-                        <ToggleButton x:Name="ColorToggle" Content="Color" IsChecked="{Binding IsColorCodingEnabled}"
-                                      Style="{StaticResource FilterToggleButton}" />
-                        <ToggleButton x:Name="ParseToggle" Content="Parse" IsChecked="{Binding IsRawMode, Converter={x:Static conv:InverseBoolConverter.Instance}}"
-                                      Style="{StaticResource FilterToggleButton}" />
-                        <ToggleButton x:Name="ScrollToggle" Content="Scroll" IsChecked="{Binding IsAutoScrollEnabled}"
-                                      Style="{StaticResource FilterToggleButton}" />
-                    </StackPanel>
-                </Grid>
-
-                <!-- Log viewer -->
-                <ListView x:Name="LogDataGrid"
-                          ItemsSource="{Binding LogEntriesView}"
-                          VirtualizingStackPanel.IsVirtualizing="True"
-                          VirtualizingStackPanel.VirtualizationMode="Recycling"
-                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                          ScrollViewer.VerticalScrollBarVisibility="Visible"
-                          Background="{StaticResource BrushVoid}"
-                          BorderBrush="{StaticResource BrushBorder}"
-                          BorderThickness="1"
-                          FontFamily="{StaticResource FontMono}"
-                          FontSize="11">
-
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="Padding" Value="0" />
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="BorderThickness" Value="0" />
-                            <Setter Property="Background" Value="Transparent" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
-
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <Border x:Name="logBorder" Padding="8,1" CornerRadius="0">
-                                <Border.Background>
-                                    <MultiBinding Converter="{StaticResource LogLevelColorConverter}" ConverterParameter="Background">
-                                        <Binding Path="Level" />
-                                        <Binding Path="DataContext.IsColorCodingEnabled" RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                                    </MultiBinding>
-                                </Border.Background>
-                                <TextBlock Text="{Binding RawLine}"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center"
-                                           FontFamily="{StaticResource FontMono}"
-                                           FontSize="11">
-                                    <TextBlock.Foreground>
-                                        <MultiBinding Converter="{StaticResource LogLevelColorConverter}" ConverterParameter="Foreground">
-                                            <Binding Path="Level" />
-                                            <Binding Path="DataContext.IsColorCodingEnabled" RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                                        </MultiBinding>
-                                    </TextBlock.Foreground>
-                                </TextBlock>
-                            </Border>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-            </DockPanel>
-        </Border>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <TextBox Style="{StaticResource DarkInput}" Width="200" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+                                <Button Style="{StaticResource GhostBtn}" Command="{Binding ClearLogCommand}" Content="Clear" Margin="0,0,8,0" />
+                                <Button Style="{StaticResource GhostBtn}" Command="{Binding SaveLogCommand}" Content="Save" Margin="0,0,8,0" />
+                                <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportCsvCommand}" Content="CSV" Margin="0,0,8,0" />
+                                <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportJsonCommand}" Content="JSON" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <ListBox x:Name="LogList" ItemsSource="{Binding LogEntriesView}" Background="#060606" BorderThickness="0" Foreground="#E5E2E1" FontFamily="{StaticResource FontMono}" FontSize="11" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="8,2" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="Background" Value="Transparent" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding RawLine}" TextWrapping="NoWrap" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>
