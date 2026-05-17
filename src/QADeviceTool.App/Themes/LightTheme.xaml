@@ -48,6 +48,8 @@
     <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource TextSecondary}" />
     <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource TextMuted}" />
     <SolidColorBrush x:Key="BrushAccentPrimary" Color="{StaticResource AccentPrimary}" />
+    <Color x:Key="PrimaryLight">#3B82F6</Color>
+    <SolidColorBrush x:Key="BrushPrimaryLight" Color="{StaticResource PrimaryLight}" />
     <SolidColorBrush x:Key="BrushAccentDim" Color="{StaticResource AccentDim}" />
     <SolidColorBrush x:Key="BrushAccentGlow" Color="{StaticResource AccentGlow}" />
     <SolidColorBrush x:Key="BrushRedDim" Color="{StaticResource RedDim}" />

@@ -3,197 +3,320 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="#1A1A1F" />
+            <Setter Property="BorderBrush" Value="#252530" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+        </Style>
+        <Style x:Key="CardHdr" TargetType="Border">
+            <Setter Property="Background" Value="#22222A" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="CornerRadius" Value="12,12,0,0" />
+        </Style>
+        <Style x:Key="HdrText" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#E5E2E1" />
+        </Style>
+        <Style x:Key="MetaLabel" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#859397" />
+        </Style>
+        <Style x:Key="SectionLabel" TargetType="TextBlock" BasedOn="{StaticResource MetaLabel}">
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style x:Key="GhostBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#BAC9CD" />
+            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" />
+                                <Setter Property="Foreground" Value="#8CEBFF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="b" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
+            <Setter Property="Background" Value="#00D4F0" />
+            <Setter Property="Foreground" Value="#060606" />
+            <Setter Property="BorderBrush" Value="#00D4F0" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Padding" Value="16,9" />
+        </Style>
+        <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
+            <Setter Property="Background" Value="#7F1D1D" />
+            <Setter Property="Foreground" Value="#FFB4AB" />
+            <Setter Property="BorderBrush" Value="#7F1D1D" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Padding" Value="16,9" />
+        </Style>
+        <Style x:Key="DarkInput" TargetType="TextBox">
+            <Setter Property="Background" Value="#0E0E0E" />
+            <Setter Property="Foreground" Value="#E5E2E1" />
+            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="CaretBrush" Value="#8CEBFF" />
+            <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="b" Property="Opacity" Value="0.5" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Badge" TargetType="Border">
+            <Setter Property="Background" Value="#0E0E0E" />
+            <Setter Property="BorderBrush" Value="#252530" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
     </UserControl.Resources>
 
-    <Grid Margin="24,16">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+    <Grid Background="#060606">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <!-- ── Left: config panel ── -->
-        <Border Grid.Column="0" Style="{StaticResource AppleCard}" Margin="0,0,8,0">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel>
-
-                    <!-- Section: device + app -->
-                    <TextBlock Text="Target" Style="{StaticResource TextHeading3}" Margin="0,0,0,8" />
-
-                    <TextBlock Text="Device:" Foreground="{StaticResource BrushTextSecondary}" FontSize="11" />
-                    <ComboBox ItemsSource="{Binding Devices}"
-                              SelectedItem="{Binding SelectedDevice}"
-                              DisplayMemberPath="DisplayName"
-                              Margin="0,4,0,4" />
-                    <TextBlock Text="{Binding PlatformBadge}"
-                               Foreground="{StaticResource BrushAccent}"
-                               FontSize="11" Margin="0,0,0,8" />
-
-                    <Grid Margin="0,0,0,4">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="App (search by name or package):"
-                                   Foreground="{StaticResource BrushTextSecondary}" FontSize="11" />
-                        <Button Grid.Column="1" Content="↻"
-                                Command="{Binding RefreshAppsCommand}"
-                                Style="{StaticResource SecondaryButton}"
-                                Padding="8,2" FontSize="11"
-                                ToolTip="Reload installed apps from device"
-                                IsEnabled="{Binding IsPlatformSupported}" />
-                    </Grid>
-                    <TextBox Text="{Binding AppSearchQuery, UpdateSourceTrigger=PropertyChanged}"
-                             Style="{StaticResource DarkTextBox}"
-                             Margin="0,4,0,2"
-                             IsEnabled="{Binding IsPlatformSupported}" />
-                    <TextBlock Text="Loading..." Foreground="{StaticResource BrushAccent}" FontSize="10"
-                               Visibility="{Binding IsLoadingApps, Converter={StaticResource BoolToVis}}" />
-                    <ListBox ItemsSource="{Binding FilteredApps}"
-                             SelectedItem="{Binding SelectedApp}"
-                             MaxHeight="120" Margin="0,2,0,4"
-                             FontSize="11"
-                             Background="{StaticResource BrushBackgroundPrimary}"
-                             Foreground="{StaticResource BrushTextPrimary}"
-                             BorderBrush="{StaticResource BrushBorder}"
-                             BorderThickness="1">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Name}" FontWeight="Medium" />
-                                    <TextBlock Text="{Binding PackageId}" FontSize="10"
-                                               Foreground="{StaticResource BrushTextTertiary}" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-
-                    <TextBlock Text="Resolved Package:" Foreground="{StaticResource BrushTextSecondary}" FontSize="11" Margin="0,4,0,0" />
-                    <TextBox Text="{Binding TargetPackage, UpdateSourceTrigger=PropertyChanged}"
-                             Style="{StaticResource DarkTextBox}" Margin="0,4,0,12"
-                             ToolTip="Auto-filled when you pick from the list above. You can also type/paste manually." />
-
-                    <!-- Section: run config -->
-                    <TextBlock Text="Run Config" Style="{StaticResource TextHeading3}" Margin="0,4,0,8" />
-
-                    <TextBlock Text="Event Count:" Foreground="{StaticResource BrushTextSecondary}" FontSize="11" />
-                    <TextBox Text="{Binding EventCount, UpdateSourceTrigger=PropertyChanged}"
-                             Style="{StaticResource DarkTextBox}" Margin="0,4,0,8" />
-                    <TextBlock Text="Seed (0 = random):" Foreground="{StaticResource BrushTextSecondary}" FontSize="11" />
-                    <TextBox Text="{Binding Seed, UpdateSourceTrigger=PropertyChanged}"
-                             Style="{StaticResource DarkTextBox}" Margin="0,4,0,8" />
-                    <TextBlock Text="Throttle (ms):" Foreground="{StaticResource BrushTextSecondary}" FontSize="11" />
-                    <TextBox Text="{Binding ThrottleMs, UpdateSourceTrigger=PropertyChanged}"
-                             Style="{StaticResource DarkTextBox}" Margin="0,4,0,12" />
-
-                    <!-- Section: percentages -->
-                    <TextBlock Text="Event Mix (%)" Style="{StaticResource TextHeading3}" Margin="0,4,0,4" />
-                    <Grid Margin="0,2,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="56"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition/><RowDefinition/><RowDefinition/>
-                            <RowDefinition/><RowDefinition/><RowDefinition/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Touch" FontSize="11" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding PctTouch, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" FontSize="11" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Motion" FontSize="11" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding PctMotion, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" FontSize="11" />
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Trackball" FontSize="11" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding PctTrackball, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" FontSize="11" />
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Nav" FontSize="11" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding PctNav, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" FontSize="11" />
-                        <TextBlock Grid.Row="4" Grid.Column="0" Text="SysKeys" FontSize="11" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding PctSyskeys, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" FontSize="11" />
-                        <TextBlock Grid.Row="5" Grid.Column="0" Text="AppSwitch" FontSize="11" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding PctAppswitch, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" FontSize="11" />
-                    </Grid>
-
-                    <!-- Section: actions -->
-                    <Grid Margin="0,4,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0"
-                                Style="{StaticResource PrimaryButton}"
-                                Content="▶ Run Monkey"
-                                Command="{Binding RunMonkeyCommand}"
-                                IsEnabled="{Binding CanRun}"
-                                Margin="0,0,4,0" />
-                        <Button Grid.Column="1"
-                                Style="{StaticResource DangerButton}"
-                                Content="■ Stop"
-                                Command="{Binding StopMonkeyCommand}"
-                                IsEnabled="{Binding IsRunning}"
-                                Margin="4,0,0,0" />
-                    </Grid>
-
-                    <TextBlock Text="{Binding StatusMessage}"
-                               Foreground="{StaticResource BrushAccent}"
-                               FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
+        <!-- Page Header -->
+        <Grid Grid.Row="0" Margin="24,24,24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE945;" FontFamily="Segoe MDL2 Assets" FontSize="22" Foreground="#8CEBFF" Margin="0,0,10,0" VerticalAlignment="Center" />
+                    <TextBlock Text="Stress Test" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="#E5E2E1" VerticalAlignment="Center" />
                 </StackPanel>
-            </ScrollViewer>
-        </Border>
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#8CEBFF" FontSize="12" Margin="0,4,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Style="{StaticResource DangerBtn}" Content="■ STOP" Command="{Binding StopMonkeyCommand}" IsEnabled="{Binding IsRunning}" Margin="0,0,8,0" />
+                <Button Style="{StaticResource PrimaryBtn}" Content="▶ RUN MONKEY" Command="{Binding RunMonkeyCommand}" IsEnabled="{Binding CanRun}" />
+            </StackPanel>
+        </Grid>
 
-        <!-- ── Right: live output panel ── -->
-        <Border Grid.Column="1" Style="{StaticResource AppleCard}" Margin="8,0,0,0">
-            <DockPanel>
-                <!-- Header -->
-                <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Monkey Output" Style="{StaticResource TextHeading3}" VerticalAlignment="Center" />
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
-                        <Border Background="{StaticResource BrushBackgroundPrimary}" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
-                            <TextBlock FontSize="11">
-                                <Run Text="Events: " Foreground="{StaticResource BrushTextTertiary}" />
-                                <Run Text="{Binding EventsInjected, Mode=OneWay}" FontWeight="SemiBold" Foreground="{StaticResource BrushTextPrimary}" />
-                                <Run Text=" / " Foreground="{StaticResource BrushTextTertiary}" />
-                                <Run Text="{Binding EventCount, Mode=OneWay}" Foreground="{StaticResource BrushTextSecondary}" />
-                            </TextBlock>
-                        </Border>
-                        <Border Background="{StaticResource BrushBackgroundPrimary}" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
-                            <TextBlock FontSize="11">
-                                <Run Text="Crashes: " Foreground="{StaticResource BrushTextTertiary}" />
-                                <Run Text="{Binding CrashCount, Mode=OneWay}" FontWeight="Bold" Foreground="{StaticResource BrushDanger}" />
-                            </TextBlock>
-                        </Border>
-                        <Border Background="{StaticResource BrushBackgroundPrimary}" CornerRadius="4" Padding="6,2">
-                            <TextBlock FontSize="11">
-                                <Run Text="ANRs: " Foreground="{StaticResource BrushTextTertiary}" />
-                                <Run Text="{Binding AnrCount, Mode=OneWay}" FontWeight="Bold" Foreground="{StaticResource BrushWarning}" />
-                            </TextBlock>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
-                        <Button Style="{StaticResource SecondaryButton}" Content="Save"
-                                Command="{Binding SaveOutputCommand}" FontSize="11" Padding="8,2" Margin="0,0,4,0"
-                                ToolTip="Save output to sessions directory" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Clear"
-                                Command="{Binding ClearOutputCommand}" FontSize="11" Padding="8,2" />
-                    </StackPanel>
-                </Grid>
+        <!-- Main Split -->
+        <Grid Grid.Row="1" Margin="24,0,24,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="380" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-                <!-- Progress bar -->
-                <ProgressBar DockPanel.Dock="Top"
-                             Value="{Binding ProgressPercent, Mode=OneWay}"
-                             Maximum="100" Height="4" Margin="0,0,0,8"
-                             Foreground="{StaticResource BrushAccent}"
-                             Background="{StaticResource BrushBackgroundPrimary}" />
+            <!-- Config Panel -->
+            <Border Grid.Column="0" Style="{StaticResource Card}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="TEST CONFIGURATION" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
 
-                <!-- Live output -->
-                <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True"
-                         Style="{StaticResource DarkTextBox}"
-                         FontFamily="{StaticResource FontMono}" FontSize="11"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto"
-                         TextWrapping="NoWrap" AcceptsReturn="True" />
-            </DockPanel>
-        </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="16">
+
+                            <!-- Target -->
+                            <TextBlock Text="TARGET" Style="{StaticResource SectionLabel}" />
+                            <TextBlock Text="DEVICE" Style="{StaticResource MetaLabel}" Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Margin="0,0,0,6" />
+                            <TextBlock Text="{Binding PlatformBadge}" Foreground="#8CEBFF" FontFamily="{StaticResource FontMono}" FontSize="10" Margin="0,0,0,14" />
+
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="APP (name or package)" Style="{StaticResource MetaLabel}" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Style="{StaticResource GhostBtn}" Command="{Binding RefreshAppsCommand}" IsEnabled="{Binding IsPlatformSupported}" Content="↻" Padding="8,2" />
+                            </Grid>
+                            <TextBox Style="{StaticResource DarkInput}" Text="{Binding AppSearchQuery, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsPlatformSupported}" Margin="0,4,0,4" />
+                            <TextBlock Text="Loading apps..." Foreground="#8CEBFF" FontSize="10" Visibility="{Binding IsLoadingApps, Converter={StaticResource BoolToVis}}" Margin="0,0,0,4" />
+
+                            <Border Background="#0E0E0E" BorderBrush="#252530" BorderThickness="1" CornerRadius="6" Margin="0,0,0,8">
+                                <ListBox ItemsSource="{Binding FilteredApps}" SelectedItem="{Binding SelectedApp}" MaxHeight="130" Background="Transparent" BorderThickness="0" Padding="4" FontSize="11">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="8,5" />
+                                            <Setter Property="Margin" Value="0,1" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <Border x:Name="b" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="b" Property="Background" Value="#003848" /></Trigger>
+                                                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#22222A" /></Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}" Foreground="#E5E2E1" FontSize="12" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding PackageId}" Foreground="#859397" FontFamily="{StaticResource FontMono}" FontSize="10" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+
+                            <TextBlock Text="RESOLVED PACKAGE" Style="{StaticResource MetaLabel}" Margin="0,0,0,4" />
+                            <TextBox Style="{StaticResource DarkInput}" Text="{Binding TargetPackage, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,18"
+                                     ToolTip="Auto-filled from selection. Manual edit OK." />
+
+                            <!-- Run Config -->
+                            <TextBlock Text="RUN CONFIG" Style="{StaticResource SectionLabel}" />
+                            <Grid Margin="0,0,0,18">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="EVENTS" Style="{StaticResource MetaLabel}" Margin="0,0,0,4" />
+                                    <TextBox Style="{StaticResource DarkInput}" Text="{Binding EventCount, UpdateSourceTrigger=PropertyChanged}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="SEED" Style="{StaticResource MetaLabel}" Margin="0,0,0,4" />
+                                    <TextBox Style="{StaticResource DarkInput}" Text="{Binding Seed, UpdateSourceTrigger=PropertyChanged}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="4">
+                                    <TextBlock Text="THROTTLE ms" Style="{StaticResource MetaLabel}" Margin="0,0,0,4" />
+                                    <TextBox Style="{StaticResource DarkInput}" Text="{Binding ThrottleMs, UpdateSourceTrigger=PropertyChanged}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Event Mix -->
+                            <TextBlock Text="EVENT MIX  (%)" Style="{StaticResource SectionLabel}" />
+                            <Border Background="#0E0E0E" BorderBrush="#252530" BorderThickness="1" CornerRadius="8" Padding="12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="70"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="6"/>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="6"/>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="6"/>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="6"/>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="6"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Touch" Foreground="#BAC9CD" FontSize="11" VerticalAlignment="Center" />
+                                    <TextBox  Grid.Row="0" Grid.Column="1" Style="{StaticResource DarkInput}" Text="{Binding PctTouch, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Center" />
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Motion" Foreground="#BAC9CD" FontSize="11" VerticalAlignment="Center" />
+                                    <TextBox  Grid.Row="2" Grid.Column="1" Style="{StaticResource DarkInput}" Text="{Binding PctMotion, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Center" />
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Trackball" Foreground="#BAC9CD" FontSize="11" VerticalAlignment="Center" />
+                                    <TextBox  Grid.Row="4" Grid.Column="1" Style="{StaticResource DarkInput}" Text="{Binding PctTrackball, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Center" />
+                                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Nav" Foreground="#BAC9CD" FontSize="11" VerticalAlignment="Center" />
+                                    <TextBox  Grid.Row="6" Grid.Column="1" Style="{StaticResource DarkInput}" Text="{Binding PctNav, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Center" />
+                                    <TextBlock Grid.Row="8" Grid.Column="0" Text="SysKeys" Foreground="#BAC9CD" FontSize="11" VerticalAlignment="Center" />
+                                    <TextBox  Grid.Row="8" Grid.Column="1" Style="{StaticResource DarkInput}" Text="{Binding PctSyskeys, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Center" />
+                                    <TextBlock Grid.Row="10" Grid.Column="0" Text="AppSwitch" Foreground="#BAC9CD" FontSize="11" VerticalAlignment="Center" />
+                                    <TextBox  Grid.Row="10" Grid.Column="1" Style="{StaticResource DarkInput}" Text="{Binding PctAppswitch, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <!-- Output Panel -->
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="&#xE9F5;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                <TextBlock Text="LIVE EXECUTION LOG" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="20,0,0,0" VerticalAlignment="Center">
+                                <Border Style="{StaticResource Badge}">
+                                    <TextBlock FontSize="11">
+                                        <Run Text="EVENTS " Foreground="#859397" />
+                                        <Run Text="{Binding EventsInjected, Mode=OneWay}" FontWeight="Bold" Foreground="#E5E2E1" />
+                                        <Run Text=" / " Foreground="#859397" />
+                                        <Run Text="{Binding EventCount, Mode=OneWay}" Foreground="#BAC9CD" />
+                                    </TextBlock>
+                                </Border>
+                                <Border Style="{StaticResource Badge}">
+                                    <TextBlock FontSize="11">
+                                        <Run Text="CRASHES " Foreground="#859397" />
+                                        <Run Text="{Binding CrashCount, Mode=OneWay}" FontWeight="Bold" Foreground="#EF4444" />
+                                    </TextBlock>
+                                </Border>
+                                <Border Style="{StaticResource Badge}">
+                                    <TextBlock FontSize="11">
+                                        <Run Text="ANRs " Foreground="#859397" />
+                                        <Run Text="{Binding AnrCount, Mode=OneWay}" FontWeight="Bold" Foreground="#F59E0B" />
+                                    </TextBlock>
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <Button Style="{StaticResource GhostBtn}" Content="Save" Command="{Binding SaveOutputCommand}" Margin="0,0,6,0" ToolTip="Save output to sessions directory" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Clear" Command="{Binding ClearOutputCommand}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border DockPanel.Dock="Top" Background="#0E0E0E" Height="4" Margin="16,12,16,0" CornerRadius="2">
+                        <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Maximum="100" Height="4" Background="Transparent" Foreground="#00D4F0" BorderThickness="0" />
+                    </Border>
+
+                    <Border Margin="16,12,16,16" Background="#060606" BorderBrush="#252530" BorderThickness="1" CornerRadius="8">
+                        <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True"
+                                 Background="Transparent" Foreground="#8CEBFF" BorderThickness="0"
+                                 FontFamily="{StaticResource FontMono}" FontSize="11"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                 TextWrapping="NoWrap" AcceptsReturn="True" Padding="14" />
+                    </Border>
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>
