@@ -167,14 +167,13 @@ public class MacroService
     /// Replays a macro via sendevent (raw evdev replay).
     /// </summary>
     public async Task ReplayMacroAsync(string serial, MacroFile macro, string? inputDevice = null,
-        
-{
-        
-    if (macro.Events.Count == 0) return;
-        
-    var device = inputDevice ?? macro.InputDevice ?? "/dev/input/event2";
-        
-    var sw = System.Diagnostics.Stopwatch.StartNew();
+        float speedMultiplier = 1.0f, CancellationToken token = default)
+    {
+        if (macro.Events.Count == 0) return;
+        var device = inputDevice ?? macro.InputDevice ?? "/dev/input/event2";
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var expectedElapsed = 0L;
+        foreach (var evt in macro.Events)
         
     var expectedElapsed = 0L;
         

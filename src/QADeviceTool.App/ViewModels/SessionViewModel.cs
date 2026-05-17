@@ -356,7 +356,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
             LogEntries.AddRange(entries);
 
-            if (LogEntries.Count > 200000)                 TrimLogEntries(150000);
+                if (LogEntries.Count > 200000)
+                    TrimLogEntries(150000);
 
             ScrollToEndRequested?.Invoke();
         });
