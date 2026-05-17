@@ -3,9 +3,6 @@ name: Build & Release
 on:
   push:
     branches: [main, beta]
-    paths:
-      - 'src/**'
-      - 'publish/**'
   pull_request:
     branches: [main]
   release:
@@ -21,7 +18,6 @@ env:
   PROJECT: src/QADeviceTool.App/QADeviceTool.App.csproj
   TEST_PROJECT: src/LogPro.Tests/LogPro.Tests.csproj
   SETUP_SCRIPT: publish/setup.iss
-  DOTNET_VERSION: '8.0.x'
 
 permissions:
   contents: write
@@ -34,14 +30,26 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.semver }}
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: actions/setup-dotnet@v4
-        with: { dotnet-version: '${{ env.DOTNET_VERSION }}' }
-      - run: dotnet restore ${{ env.SOLUTION }}
-      - run: dotnet build ${{ env.SOLUTION }} -c Release --no-restore
-      - run: dotnet test ${{ env.TEST_PROJECT }} -c Release --no-build --verbosity normal
-      - name: Version
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      - name: Build
+        run: dotnet build ${{ env.SOLUTION }} -c Release --no-restore
+
+      - name: Test
+        run: dotnet test ${{ env.TEST_PROJECT }} -c Release --no-build --verbosity normal
+
+      - name: Determine Version
         id: version
         shell: pwsh
         run: |
@@ -53,46 +61,78 @@ jobs:
             $ver = "3.2.${{ github.run_number }}"
           }
           echo "semver=$ver" >> $env:GITHUB_OUTPUT
-      - run: dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/app
-      - uses: actions/upload-artifact@v4
-        with: { name: app-published, path: publish/app/ }
+          Write-Host "Version: $ver"
+
+      - name: Publish
+        run: dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/app
+
+      - name: Upload App
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-published
+          path: publish/app/
 
   installer:
     name: Setup.exe
     needs: build
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with: { name: app-published, path: publish/app/ }
-      - run: choco install innosetup --no-progress -y
-      - name: Inject Version
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download App
+        uses: actions/download-artifact@v4
+        with:
+          name: app-published
+          path: publish/app/
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Inject Version & Compile
         shell: pwsh
         run: |
           $ver = "${{ needs.build.outputs.version }}"
           $iss = Get-Content "${{ env.SETUP_SCRIPT }}" -Raw
           $iss = $iss -replace '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$ver`""
           Set-Content "${{ env.SETUP_SCRIPT }}" -Value $iss
-      - shell: pwsh
-        run: & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "${{ env.SETUP_SCRIPT }}"
-      - uses: actions/upload-artifact@v4
-        with: { name: setup-exe, path: dist/*.exe }
+          Write-Host "Compiling installer for v$ver..."
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "${{ env.SETUP_SCRIPT }}"
+
+      - name: Upload Setup.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: setup-exe
+          path: dist/*.exe
 
   portable:
     name: Portable.zip
     needs: build
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with: { name: app-published, path: publish/app/ }
-      - shell: pwsh
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download App
+        uses: actions/download-artifact@v4
+        with:
+          name: app-published
+          path: publish/app/
+
+      - name: Create Portable Archive
+        shell: pwsh
         run: |
           $ver = "${{ needs.build.outputs.version }}"
           New-Item -ItemType Directory -Force -Path dist
-          Compress-Archive -Path publish/app/* -DestinationPath dist/QADeviceTool_v${ver}_portable.zip
-      - uses: actions/upload-artifact@v4
-        with: { name: portable-zip, path: dist/*.zip }
+          $zipName = "QADeviceTool_v${ver}_portable.zip"
+          Compress-Archive -Path publish/app/* -DestinationPath dist/$zipName
+          Write-Host "Created: dist/$zipName"
+
+      - name: Upload Portable.zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-zip
+          path: dist/*.zip
 
   release:
     name: GitHub Release
@@ -100,29 +140,52 @@ jobs:
     needs: [installer, portable]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: actions/download-artifact@v4
-        with: { path: dist/ }
-      - shell: bash
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Flatten Artifacts
+        shell: bash
         run: |
           find dist/ -type f \( -name '*.exe' -o -name '*.zip' \) -exec mv {} dist/ \;
           rm -rf dist/setup-exe dist/portable-zip dist/app-published
-      - name: Changelog
+          echo "=== Release Assets ==="
+          ls -la dist/
+
+      - name: Generate Changelog
         shell: bash
         run: |
           PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           echo "## QADeviceTool v${{ needs.build.outputs.version }}" > CHANGELOG.md
-          if [ -n "$PREV" ]; then git log "$PREV..HEAD" --pretty=format:"- %s" --no-merges >> CHANGELOG.md
-          else git log --pretty=format:"- %s" --no-merges >> CHANGELOG.md; fi
-      - if: github.event_name == 'release'
+          echo "" >> CHANGELOG.md
+          if [ -n "$PREV" ]; then
+            git log "$PREV..HEAD" --pretty=format:"- %s" --no-merges >> CHANGELOG.md
+          else
+            git log --pretty=format:"- %s" --no-merges >> CHANGELOG.md
+          fi
+          cat CHANGELOG.md
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
-        with: { files: dist/*, body_path: CHANGELOG.md }
-        env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
-      - if: github.event_name == 'workflow_dispatch'
+        with:
+          files: dist/*
+          body_path: CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-tag (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ needs.build.outputs.version }}" -m "Release v${{ needs.build.outputs.version }}"
-          git push origin "v${{ needs.build.outputs.version }}"
+          VER="${{ needs.build.outputs.version }}"
+          git tag -a "v$VER" -m "Release v$VER"
+          git push origin "v$VER"
