@@ -1310,7 +1310,6 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         {
             _isLoadingSession = false;
         }
-    }
 
     private void TrimLogEntries(int maxEntries)
     {
