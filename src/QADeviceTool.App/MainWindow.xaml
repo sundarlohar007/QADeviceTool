@@ -5,7 +5,7 @@
         xmlns:vm="clr-namespace:LogPro.ViewModels"
         xmlns:views="clr-namespace:LogPro.Views"
         xmlns:conv="clr-namespace:LogPro.Converters"
-        Title="LogPro"
+        Title="QADeviceTool"
         Width="1280" Height="800"
         MinWidth="960" MinHeight="600"
         WindowStartupLocation="CenterScreen"
@@ -13,7 +13,7 @@
         WindowStyle="None"
         AllowsTransparency="True"
         ResizeMode="CanResize"
-        Icon="Assets/LogProIcon.ico">
+        Icon="QAQCDeviceIcon.ico">
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="4" CornerRadius="0" GlassFrameThickness="0" UseAeroCaptionButtons="False" />
@@ -43,7 +43,7 @@
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}"><views:SettingsView /></DataTemplate>
 
         <Style x:Key="NavItem" TargetType="RadioButton">
-            <Setter Property="Foreground" Value="#BAC9CD" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Medium" />
@@ -58,13 +58,13 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#2A2A2A" />
-                                <Setter Property="Foreground" Value="#8CEBFF" />
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushElevated}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#1C1B1B" />
-                                <Setter TargetName="bd" Property="BorderBrush" Value="#8CEBFF" />
-                                <Setter Property="Foreground" Value="#8CEBFF" />
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushSurface}" />
+                                <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -76,7 +76,7 @@
             <Setter Property="Width" Value="46" />
             <Setter Property="Height" Value="40" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#BAC9CD" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
@@ -89,8 +89,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="Background" Value="#FFFFFF1A" />
-                                <Setter Property="Foreground" Value="#E5E2E1" />
+                                <Setter TargetName="b" Property="Background" Value="{DynamicResource BrushElevated}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -117,11 +117,7 @@
         </Style>
     </Window.Resources>
 
-    <Window.DataContext>
-        <vm:MainViewModel />
-    </Window.DataContext>
-
-    <Border Background="#060606" BorderBrush="#0E0E0E" BorderThickness="1">
+<Border Background="{DynamicResource BrushVoid}" BorderBrush="{DynamicResource BrushBase}" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="40" />
@@ -130,15 +126,15 @@
             </Grid.RowDefinitions>
 
             <!-- TITLE BAR -->
-            <Border Grid.Row="0" Background="#0E0E0E" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Border Grid.Row="0" Background="{DynamicResource BrushBase}" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="16,0" VerticalAlignment="Center">
-                        <TextBlock Text="LogPro" FontFamily="{StaticResource FontHeader}" FontSize="14" FontWeight="Bold"
-                                   Foreground="#E5E2E1" VerticalAlignment="Center" />
+                        <TextBlock Text="QADeviceTool" FontFamily="{StaticResource FontHeader}" FontSize="14" FontWeight="Bold"
+                                   Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
                         <Button Style="{StaticResource WinCtrl}" Content="&#xE921;" Click="Minimize_Click" />
@@ -156,16 +152,16 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- SIDEBAR -->
-                <Border Grid.Column="0" Background="#0E0E0E">
+                <Border Grid.Column="0" Background="{DynamicResource BrushBase}">
                     <DockPanel>
                         <!-- Brand at top -->
                         <StackPanel DockPanel.Dock="Top" Margin="16,16,16,24">
-                            <TextBlock Text="LogPro" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="Bold" Foreground="#8CEBFF" />
-                            <TextBlock Text="Terminal v3.0" FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="#BAC9CD" Opacity="0.6" Margin="0,4,0,0" />
+                            <TextBlock Text="QADeviceTool" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource BrushPrimaryLight}" />
+                            <TextBlock Text="Terminal v3.0" FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource BrushTextSecondary}" Opacity="0.6" Margin="0,4,0,0" />
                         </StackPanel>
 
                         <!-- Collapse at bottom -->
-                        <Button DockPanel.Dock="Bottom" Margin="16,8" Background="Transparent" Foreground="#BAC9CD" BorderThickness="0" Cursor="Hand"
+                        <Button DockPanel.Dock="Bottom" Margin="16,8" Background="Transparent" Foreground="{DynamicResource BrushTextSecondary}" BorderThickness="0" Cursor="Hand"
                                 Command="{Binding ToggleSidebarCommand}">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
@@ -177,8 +173,8 @@
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="b" Property="Background" Value="#2A2A2A" />
-                                            <Setter Property="Foreground" Value="#8CEBFF" />
+                                            <Setter TargetName="b" Property="Background" Value="{DynamicResource BrushElevated}" />
+                                            <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -187,13 +183,13 @@
 
                         <!-- Nav items -->
                         <StackPanel>
-                            <RadioButton Style="{StaticResource NavItem}" IsChecked="True" Command="{Binding NavigateCommand}" CommandParameter="Dashboard">
+                            <RadioButton Style="{StaticResource NavItem}" IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:StringEqualsConverter.Instance}, ConverterParameter=dashboard}" Command="{Binding NavigateCommand}" CommandParameter="Dashboard">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE80F;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,12,0" />
                                     <TextBlock Text="Dashboard" VerticalAlignment="Center" />
                                 </StackPanel>
                             </RadioButton>
-                            <RadioButton Style="{StaticResource NavItem}" Command="{Binding NavigateCommand}" CommandParameter="Sessions">
+                            <RadioButton Style="{StaticResource NavItem}" IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:StringEqualsConverter.Instance}, ConverterParameter=sessions}" Command="{Binding NavigateCommand}" CommandParameter="Sessions">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,12,0" />
                                     <TextBlock Text="Sessions" VerticalAlignment="Center" />
@@ -229,7 +225,7 @@
                                     <TextBlock Text="Deep Link" VerticalAlignment="Center" />
                                 </StackPanel>
                             </RadioButton>
-                            <RadioButton Style="{StaticResource NavItem}" Command="{Binding NavigateCommand}" CommandParameter="Vitals">
+                            <RadioButton Style="{StaticResource NavItem}" IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:StringEqualsConverter.Instance}, ConverterParameter=vitals}" Command="{Binding NavigateCommand}" CommandParameter="Vitals">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,12,0" />
                                     <TextBlock Text="Vitals" VerticalAlignment="Center" />
@@ -258,13 +254,13 @@
                 </Border>
 
                 <!-- CONTENT -->
-                <Border Grid.Column="1" Background="#060606">
+                <Border Grid.Column="1" Background="{DynamicResource BrushVoid}">
                     <ContentPresenter Content="{Binding CurrentView}" />
                 </Border>
             </Grid>
 
             <!-- STATUS BAR -->
-            <Border Grid.Row="2" Background="#1C1B1B">
+            <Border Grid.Row="2" Background="{DynamicResource BrushSurface}">
                 <Grid Margin="16,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -283,13 +279,13 @@
                                 </Style>
                             </Ellipse.Style>
                         </Ellipse>
-                        <TextBlock Text="SYSTEM STATUS: NOMINAL" FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="#BAC9CD" VerticalAlignment="Center" Margin="0,0,24,0" />
-                        <TextBlock FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="#BAC9CD" VerticalAlignment="Center" Margin="0,0,24,0">
+                        <TextBlock Text="SYSTEM STATUS: NOMINAL" FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,24,0" />
+                        <TextBlock FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,24,0">
                             <Run Text="Devices: " /><Run Text="{Binding ConnectedDeviceCount}" />
                         </TextBlock>
-                        <TextBlock Text="{Binding StatusBarText}" FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="#BAC9CD" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding StatusBarText}" FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" />
                     </StackPanel>
-                    <TextBlock Grid.Column="1" Text="v3.0.0" FontFamily="{StaticResource FontMono}" FontSize="12" FontWeight="Medium" Foreground="#8CEBFF" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="v3.0.0" FontFamily="{StaticResource FontMono}" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" />
                 </Grid>
             </Border>
         </Grid>

@@ -5,8 +5,8 @@
              xmlns:conv="clr-namespace:LogPro.Converters">
     <UserControl.Resources>
         <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="#1A1A1F" />
-            <Setter Property="BorderBrush" Value="#252530" />
+            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="12" />
         </Style>
@@ -19,12 +19,12 @@
             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Bold" />
-            <Setter Property="Foreground" Value="#E5E2E1" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
         </Style>
         <Style x:Key="GhostBtn" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#BAC9CD" />
-            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Padding" Value="10,6" />
@@ -37,8 +37,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" />
-                                <Setter Property="Foreground" Value="#8CEBFF" />
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -46,12 +46,12 @@
             </Setter>
         </Style>
         <Style x:Key="DarkInput" TargetType="TextBox">
-            <Setter Property="Background" Value="#0E0E0E" />
-            <Setter Property="Foreground" Value="#E5E2E1" />
-            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="Background" Value="{DynamicResource BrushBase}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="10,8" />
-            <Setter Property="CaretBrush" Value="#8CEBFF" />
+            <Setter Property="CaretBrush" Value="{DynamicResource BrushPrimaryLight}" />
             <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="Template">
@@ -61,14 +61,14 @@
                             <ScrollViewer x:Name="PART_ContentHost" />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" /></Trigger>
+                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" /></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
     </UserControl.Resources>
-    <Grid Background="#060606">
+    <Grid Background="{DynamicResource BrushVoid}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -79,13 +79,13 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock Text="File Explorer" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="#E5E2E1" />
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#BAC9CD" FontSize="12" Margin="0,4,0,0" />
+                <TextBlock Text="File Explorer" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <ComboBox ItemsSource="{Binding DataContext.DeviceVM.Devices, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="200" Margin="0,0,8,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding RefreshCommand}" Content="Refresh" Margin="0,0,8,0" />
-                <Button Style="{StaticResource GhostBtn}" Command="{Binding UploadFileCommand}" Content="Upload" />
+                <Button Style="{StaticResource GhostBtn}" Command="{Binding UploadFileCommand}" IsEnabled="{Binding SelectedFile, Converter={x:Static conv:NullToBoolConverter.Instance}}" Content="Upload" />
             </StackPanel>
         </Grid>
         <Border Grid.Row="1" Style="{StaticResource Card}" Margin="24,0,24,24">
@@ -104,16 +104,16 @@
                         <Button Grid.Column="2" Style="{StaticResource GhostBtn}" Command="{Binding NavigateToPathCommand}" Margin="8,0,0,0" Content="Go" />
                     </Grid>
                 </Border>
-                <DataGrid ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}" AutoGenerateColumns="False" Background="Transparent" BorderThickness="0" RowBackground="Transparent" AlternatingRowBackground="#1F1F25" Foreground="#E5E2E1" HorizontalGridLinesBrush="#252530" VerticalGridLinesBrush="Transparent" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" HeadersVisibility="Column">
+                <DataGrid ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}" AutoGenerateColumns="False" Background="Transparent" BorderThickness="0" RowBackground="Transparent" AlternatingRowBackground="#1F1F25" Foreground="{DynamicResource BrushTextPrimary}" HorizontalGridLinesBrush="{DynamicResource BrushBorder}" VerticalGridLinesBrush="Transparent" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" HeadersVisibility="Column">
                     <DataGrid.ColumnHeaderStyle>
                         <Style TargetType="DataGridColumnHeader">
                             <Setter Property="Background" Value="#22222A" />
-                            <Setter Property="Foreground" Value="#859397" />
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
                             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
                             <Setter Property="FontSize" Value="10" />
                             <Setter Property="FontWeight" Value="Bold" />
                             <Setter Property="Padding" Value="12,8" />
-                            <Setter Property="BorderBrush" Value="#252530" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
                             <Setter Property="BorderThickness" Value="0,0,0,1" />
                         </Style>
                     </DataGrid.ColumnHeaderStyle>
@@ -122,7 +122,7 @@
                             <Setter Property="Padding" Value="12,8" />
                             <Setter Property="Background" Value="Transparent" />
                             <Setter Property="BorderThickness" Value="0" />
-                            <Setter Property="Foreground" Value="#E5E2E1" />
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="DataGridCell">
@@ -135,7 +135,7 @@
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="#003848" />
-                                    <Setter Property="Foreground" Value="#8CEBFF" />
+                                    <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
                                 </Trigger>
                             </Style.Triggers>
                         </Style>

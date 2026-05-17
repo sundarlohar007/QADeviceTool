@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
@@ -10,11 +11,11 @@ using LogPro.Services;
 
 namespace LogPro.ViewModels;
 
-public partial class FileExplorerViewModel : ObservableObject
+public partial class FileExplorerViewModel : ObservableObject, IDisposable
 {
-    private readonly AdbService _adbService;
-    private readonly IosService _iosService;
-    private readonly DeviceMonitorService _deviceMonitor;
+    private readonly IAdbService _adbService;
+    private readonly IIosService _iosService;
+    private readonly IDeviceMonitorService _deviceMonitor;
     private readonly Dispatcher _dispatcher;
     private CancellationTokenSource? _loadCts;
 
@@ -36,7 +37,7 @@ public partial class FileExplorerViewModel : ObservableObject
     [ObservableProperty]
     private DeviceFile? _selectedFile;
 
-    public FileExplorerViewModel(AdbService adbService, IosService iosService, DeviceMonitorService deviceMonitor)
+    public FileExplorerViewModel(IAdbService adbService, IIosService iosService, DeviceMonitorService deviceMonitor)
     {
         _adbService = adbService;
         _iosService = iosService;
@@ -79,8 +80,8 @@ public partial class FileExplorerViewModel : ObservableObject
     {
         var oldCts = _loadCts;
         _loadCts = new CancellationTokenSource();
-        try { oldCts?.Cancel(); } catch { }
-        try { oldCts?.Dispose(); } catch { }
+        try { oldCts?.Cancel(); } 
+        try { oldCts?.Dispose(); } 
         SelectedDevice = device;
     }
 
@@ -114,7 +115,7 @@ public partial class FileExplorerViewModel : ObservableObject
             CurrentPath = "/sdcard/";
         }
 
-        _ = Task.Run(async () => { try { await LoadDirectoryAsync(CurrentPath); } catch { } });
+        _ = Task.Run(async () => { try { await LoadDirectoryAsync(CurrentPath); }  });
     }
 
     partial void OnCurrentPathChanged(string value)
@@ -343,4 +344,11 @@ public partial class FileExplorerViewModel : ObservableObject
         if (lastSlash <= 0) return "/";
         return trimmed.Substring(0, lastSlash);
     }
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        GC.SuppressFinalize(this);
+    }
 }
+

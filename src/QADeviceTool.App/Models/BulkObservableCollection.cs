@@ -33,4 +33,19 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
             base.OnCollectionChanged(e);
         }
     }
+
+    public void RemoveRange(int index, int count)
+    {
+        if (index < 0 || count <= 0 || index + count > Items.Count)
+            return;
+        _isBulkUpdate = true;
+        for (int i = 0; i < count; i++)
+        {
+            Items.RemoveAt(index);
+        }
+        _isBulkUpdate = false;
+        OnPropertyChanged(new PropertyChangedEventArgs("Count"));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
 }

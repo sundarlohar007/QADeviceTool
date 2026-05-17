@@ -1,0 +1,128 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main, beta]
+    paths:
+      - 'src/**'
+      - 'publish/**'
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g. 3.2.1)'
+        required: false
+
+env:
+  SOLUTION: QADeviceTool.sln
+  PROJECT: src/QADeviceTool.App/QADeviceTool.App.csproj
+  TEST_PROJECT: src/LogPro.Tests/LogPro.Tests.csproj
+  SETUP_SCRIPT: publish/setup.iss
+  DOTNET_VERSION: '8.0.x'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.semver }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '${{ env.DOTNET_VERSION }}' }
+      - run: dotnet restore ${{ env.SOLUTION }}
+      - run: dotnet build ${{ env.SOLUTION }} -c Release --no-restore
+      - run: dotnet test ${{ env.TEST_PROJECT }} -c Release --no-build --verbosity normal
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "release") {
+            $ver = "${{ github.event.release.tag_name }}" -replace '^v', ''
+          } elseif ("${{ inputs.version }}") {
+            $ver = "${{ inputs.version }}"
+          } else {
+            $ver = "3.2.${{ github.run_number }}"
+          }
+          echo "semver=$ver" >> $env:GITHUB_OUTPUT
+      - run: dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/app
+      - uses: actions/upload-artifact@v4
+        with: { name: app-published, path: publish/app/ }
+
+  installer:
+    name: Setup.exe
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: app-published, path: publish/app/ }
+      - run: choco install innosetup --no-progress -y
+      - name: Inject Version
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.build.outputs.version }}"
+          $iss = Get-Content "${{ env.SETUP_SCRIPT }}" -Raw
+          $iss = $iss -replace '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$ver`""
+          Set-Content "${{ env.SETUP_SCRIPT }}" -Value $iss
+      - shell: pwsh
+        run: & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "${{ env.SETUP_SCRIPT }}"
+      - uses: actions/upload-artifact@v4
+        with: { name: setup-exe, path: dist/*.exe }
+
+  portable:
+    name: Portable.zip
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: app-published, path: publish/app/ }
+      - shell: pwsh
+        run: |
+          $ver = "${{ needs.build.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path dist
+          Compress-Archive -Path publish/app/* -DestinationPath dist/QADeviceTool_v${ver}_portable.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: portable-zip, path: dist/*.zip }
+
+  release:
+    name: GitHub Release
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    needs: [installer, portable]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/download-artifact@v4
+        with: { path: dist/ }
+      - shell: bash
+        run: |
+          find dist/ -type f \( -name '*.exe' -o -name '*.zip' \) -exec mv {} dist/ \;
+          rm -rf dist/setup-exe dist/portable-zip dist/app-published
+      - name: Changelog
+        shell: bash
+        run: |
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "## QADeviceTool v${{ needs.build.outputs.version }}" > CHANGELOG.md
+          if [ -n "$PREV" ]; then git log "$PREV..HEAD" --pretty=format:"- %s" --no-merges >> CHANGELOG.md
+          else git log --pretty=format:"- %s" --no-merges >> CHANGELOG.md; fi
+      - if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with: { files: dist/*, body_path: CHANGELOG.md }
+        env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
+      - if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ needs.build.outputs.version }}" -m "Release v${{ needs.build.outputs.version }}"
+          git push origin "v${{ needs.build.outputs.version }}"

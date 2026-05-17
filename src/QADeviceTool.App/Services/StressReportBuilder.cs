@@ -3,6 +3,14 @@ using System.Text.RegularExpressions;
 
 namespace LogPro.Services;
 
+internal sealed class MetricSnapshot
+{
+    public DateTime Timestamp { get; set; }
+    public int? TotalPssKb { get; set; }
+    public double? CpuPercent { get; set; }
+    public int EventsInjected { get; set; }
+}
+
 internal sealed class StressPerformanceMetrics
 {
     public int? TotalPssKb { get; set; }
@@ -22,6 +30,7 @@ internal sealed class StressRunSummary
     public int CrashCount { get; set; }
     public int AnrCount { get; set; }
     public TimeSpan Duration { get; set; }
+    public List<MetricSnapshot> MetricSnapshots { get; set; } = new();
     public StressPerformanceMetrics Metrics { get; set; } = new();
 }
 
@@ -83,4 +92,27 @@ internal static class StressReportBuilder
     private static string FormatMs(int? value) => value.HasValue ? $"{value.Value} ms" : "not available";
     private static string FormatInt(int? value) => value.HasValue ? value.Value.ToString() : "not available";
     private static string FormatText(string value) => string.IsNullOrWhiteSpace(value) ? "not available" : value.Trim();
+
+    private static string BuildDetailedReport(StressRunSummary s)
+    {
+        var sb = new StringBuilder(BuildBasicReport(s));
+        sb.AppendLine();
+        sb.AppendLine("--- PERFORMANCE TIME-SERIES ---");
+        snb.AppendLine($"Snapshots taken: {s.MetricSnapshots.Count}");
+        if (s.MetricSnapshots.Count > 0)
+        {
+            var minMem = s.MetricSnapshots.Min(m => m.TotalPssKb ?? 0);
+            var maxMem = s.MetricSnapshots.Max(m => m.TotalPssKb ?? 0);
+            var avgCpu = s.MetricSnapshots.Average(m => m.CpuPercent ?? 0);
+            sb.AppendLine($"Memory range: {minMem / 1024}MB - {maxMem / 1024}MB");
+            sb.AppendLine($"Average CPU: {avgCpu:F1}%");
+            sb.AppendLine();
+            sb.AppendLine("  Time          | Mem (MB) | CPU%  | Events");
+            sb.AppendLine("  --------------|----------|-------|-------");
+            foreach (var m in s.MetricSnapshots)
+                sb.AppendLine($"  {m.Timestamp:HH:mm:ss}   | {(m.TotalPssKb ?? 0) / 1024,7} | {m.CpuPercent ?? 0,4:F1} | {m.EventsInjected,5}");
+        }
+        return sb.ToString();
+    }
 }
+

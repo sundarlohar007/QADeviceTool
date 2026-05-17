@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Threading;
@@ -9,10 +10,10 @@ using LogPro.Helpers;
 
 namespace LogPro.ViewModels;
 
-public partial class ShellViewModel : ObservableObject
+public partial class ShellViewModel : ObservableObject, IDisposable
 {
-    private readonly DeviceMonitorService _deviceMonitor;
-    private readonly IosService _iosService;
+    private readonly IDeviceMonitorService _deviceMonitor;
+    private readonly IIosService _iosService;
     private readonly Dispatcher _dispatcher;
 
     [ObservableProperty]
@@ -29,8 +30,9 @@ public partial class ShellViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isExecuting;
+    private readonly System.Text.StringBuilder _outputBuilder = new();
 
-    public ShellViewModel(DeviceMonitorService deviceMonitor, IosService iosService)
+    public ShellViewModel(IDeviceMonitorService deviceMonitor, IosService iosService)
     {
         _deviceMonitor = deviceMonitor;
         _iosService = iosService;
@@ -205,4 +207,11 @@ public partial class ShellViewModel : ObservableObject
             ShellOutput += text.TrimEnd('\r', '\n') + "\n";
         });
     }
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        GC.SuppressFinalize(this);
+    }
 }
+

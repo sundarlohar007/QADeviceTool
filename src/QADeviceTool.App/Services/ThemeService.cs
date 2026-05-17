@@ -32,12 +32,12 @@ public static class ThemeService
 
     static ThemeService()
     {
-        _currentTheme = PreferencesService.Current.ThemePreference ?? ThemeDark;
+        
     }
 
     public static void ApplyStartupTheme(Application app)
     {
-        LoadThemeDictionary(app.Resources.MergedDictionaries, _currentTheme);
+        if (string.IsNullOrEmpty(_currentTheme)) { _currentTheme = PreferencesService.Current.ThemePreference ?? ThemeDark; }`r`n        LoadThemeDictionary(app.Resources.MergedDictionaries, _currentTheme);
     }
 
     public static void SwitchTheme(string themeName)
@@ -50,7 +50,7 @@ public static class ThemeService
         PreferencesService.Current.ThemePreference = themeName;
         PreferencesService.Save();
 
-        var oldWindow = Application.Current.MainWindow;
+        var oldWindow = Application.Current.MainWindow;`r`n        if (oldWindow is MainWindow mw)`r`n            mw.IsThemeSwitching = true;
         var dataContext = oldWindow?.DataContext;
         var oldState = oldWindow?.WindowState ?? WindowState.Normal;
         var oldLeft = oldWindow?.Left ?? 0;
@@ -59,8 +59,7 @@ public static class ThemeService
         var oldHeight = oldWindow?.Height ?? 800;
 
         var newWindow = new MainWindow();
-        if (dataContext != null)
-            if (dataContext != null) newWindow.DataContext = dataContext;
+        if (dataContext != null)`r`n            newWindow.DataContext = dataContext;
         newWindow.WindowState = oldState;
         if (oldState == WindowState.Normal)
         {

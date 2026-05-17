@@ -12,10 +12,10 @@
         </Grid.RowDefinitions>
         <Grid.Resources>
             <Style x:Key="StatCard" TargetType="Border">
-                <Setter Property="Background" Value="#1A1A1F" />
+                <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
                 <Setter Property="CornerRadius" Value="12" />
                 <Setter Property="Padding" Value="16" />
-                <Setter Property="BorderBrush" Value="#252530" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="Effect">
                     <Setter.Value>
@@ -27,7 +27,7 @@
                 <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
                 <Setter Property="FontSize" Value="12" />
                 <Setter Property="FontWeight" Value="Medium" />
-                <Setter Property="Foreground" Value="#BAC9CD" />
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             </Style>
             <Style x:Key="StatValue" TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
@@ -39,12 +39,12 @@
                 <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
                 <Setter Property="FontSize" Value="12" />
                 <Setter Property="FontWeight" Value="Medium" />
-                <Setter Property="Foreground" Value="#859397" />
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
             </Style>
             <Style x:Key="GlassCardLg" TargetType="Border">
-                <Setter Property="Background" Value="#1A1A1F" />
+                <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
                 <Setter Property="CornerRadius" Value="12" />
-                <Setter Property="BorderBrush" Value="#252530" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
                 <Setter Property="BorderThickness" Value="1" />
             </Style>
             <Style x:Key="CardHeader" TargetType="Border">
@@ -56,10 +56,10 @@
                 <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
                 <Setter Property="FontSize" Value="12" />
                 <Setter Property="FontWeight" Value="Bold" />
-                <Setter Property="Foreground" Value="#E5E2E1" />
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
             </Style>
             <Style x:Key="DeviceRow" TargetType="Border">
-                <Setter Property="Background" Value="#252530" />
+                <Setter Property="Background" Value="{DynamicResource BrushBorder}" />
                 <Setter Property="CornerRadius" Value="8" />
                 <Setter Property="Padding" Value="12" />
                 <Setter Property="Margin" Value="0,0,0,8" />
@@ -72,7 +72,7 @@
             </Style>
             <Style x:Key="QuickActionBtn" TargetType="Button">
                 <Setter Property="Background" Value="Transparent" />
-                <Setter Property="Foreground" Value="#BAC9CD" />
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
                 <Setter Property="BorderThickness" Value="0" />
                 <Setter Property="Padding" Value="16,8" />
                 <Setter Property="Cursor" Value="Hand" />
@@ -87,7 +87,7 @@
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Setter TargetName="b" Property="Background" Value="#2A2A2A" />
-                                    <Setter Property="Foreground" Value="#8CEBFF" />
+                                    <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -103,11 +103,11 @@
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="Dashboard"
                        FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold"
-                       Foreground="#E5E2E1" VerticalAlignment="Center" />
+                       Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" />
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <Button Width="40" Height="40" Margin="0,0,12,0"
-                        Background="#1A1A1F" Foreground="#BAC9CD"
-                        BorderThickness="1" BorderBrush="#252530"
+                        Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextSecondary}"
+                        BorderThickness="1" BorderBrush="{DynamicResource BrushBorder}"
                         Command="{Binding RefreshDevicesCommand}" Cursor="Hand">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
@@ -117,10 +117,10 @@
                         </ControlTemplate>
                     </Button.Template>
                 </Button>
-                <Button Background="#00D4F0" Foreground="#001F25"
+                <Button Background="{DynamicResource BrushCyan}" Foreground="#001F25"
                         FontFamily="{StaticResource FontHeader}" FontSize="13" FontWeight="Bold"
                         Padding="16,10" Cursor="Hand" BorderThickness="0"
-                        Command="{Binding QuickStartSessionCommand}">
+                        Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border CornerRadius="8" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
@@ -149,12 +149,21 @@
                 <StackPanel>
                     <Grid>
                         <TextBlock Text="Connected Devices" Style="{StaticResource StatLabel}" />
-                        <Ellipse Width="8" Height="8" Fill="#4ADE80" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <Ellipse.Effect><DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#4ADE80" /></Ellipse.Effect>
+                        <Ellipse Width="8" Height="8" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="#EF4444" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Devices.Count, Converter={x:Static conv:IntToBoolConverter.Instance}}" Value="True">
+                                            <Setter Property="Fill" Value="#4ADE80" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
                         </Ellipse>
                     </Grid>
-                    <TextBlock Text="{Binding Devices.Count, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="#00D4F0">
-                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="#00D4F0" /></TextBlock.Effect>
+                    <TextBlock Text="{Binding Devices.Count, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="{DynamicResource BrushCyan}">
+                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="{DynamicResource BrushCyan}" /></TextBlock.Effect>
                     </TextBlock>
                     <TextBlock Text="iOS &amp; Android" Style="{StaticResource StatSubtitle}" />
                 </StackPanel>
@@ -162,8 +171,8 @@
             <Border Grid.Column="2" Style="{StaticResource StatCard}">
                 <StackPanel>
                     <TextBlock Text="Active Sessions" Style="{StaticResource StatLabel}" />
-                    <TextBlock Text="{Binding ActiveSessionCount, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="#00D4F0">
-                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="#00D4F0" /></TextBlock.Effect>
+                    <TextBlock Text="{Binding ActiveSessionCount, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="{DynamicResource BrushCyan}">
+                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="{DynamicResource BrushCyan}" /></TextBlock.Effect>
                     </TextBlock>
                     <TextBlock Text="Currently running" Style="{StaticResource StatSubtitle}" />
                 </StackPanel>
@@ -197,14 +206,14 @@
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE839;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE839;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="CONNECTED DEVICES" Style="{StaticResource CardHeaderText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
                         <StackPanel>
                             <TextBlock Text="No devices connected. Connect a device via USB."
-                                       FontFamily="{StaticResource FontHeader}" FontSize="12" Foreground="#859397"
+                                       FontFamily="{StaticResource FontHeader}" FontSize="12" Foreground="{DynamicResource BrushTextMuted}"
                                        HorizontalAlignment="Center" Margin="0,24,0,24">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
@@ -228,18 +237,30 @@
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <Border Grid.Column="0" Style="{StaticResource DeviceIconBox}" Margin="0,0,12,0">
-                                                    <TextBlock Text="&#xE8EA;" FontFamily="Segoe MDL2 Assets" FontSize="20" Foreground="#BAC9CD" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    <TextBlock Text="&#xE8EA;" FontFamily="Segoe MDL2 Assets" FontSize="20" Foreground="{DynamicResource BrushTextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                 </Border>
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding DisplayName}" FontFamily="{StaticResource FontBody}" FontSize="14" FontWeight="SemiBold" Foreground="#E5E2E1" />
-                                                    <TextBlock FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="#859397">
+                                                    <TextBlock Text="{Binding DisplayName}" FontFamily="{StaticResource FontBody}" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+                                                    <TextBlock FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{DynamicResource BrushTextMuted}">
                                                         <Run Text="SN: " /><Run Text="{Binding Serial, Mode=OneWay}" />
                                                     </TextBlock>
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding OsVersion}" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="#8CEBFF" Margin="0,0,12,0" />
-                                                    <Ellipse Width="8" Height="8" Fill="#4ADE80">
-                                                        <Ellipse.Effect><DropShadowEffect BlurRadius="6" ShadowDepth="0" Color="#4ADE80" /></Ellipse.Effect>
+                                                    <TextBlock Text="{Binding OsVersion}" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,12,0" />
+                                                    <Ellipse Width="8" Height="8">
+                                                        <Ellipse.Style>
+                                                            <Style TargetType="Ellipse">
+                                                                <Setter Property="Fill" Value="#EF4444" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding ConnectionState}" Value="Connected">
+                                                                        <Setter Property="Fill" Value="#4ADE80" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding ConnectionState}" Value="Unauthorized">
+                                                                        <Setter Property="Fill" Value="#F59E0B" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Ellipse.Style>
                                                     </Ellipse>
                                                 </StackPanel>
                                             </Grid>
@@ -255,36 +276,36 @@
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE823;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE823;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="RECENT ACTIVITY" Style="{StaticResource CardHeaderText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
                         <TextBlock Text="No activity yet. Start a session to see results here."
-                                   FontFamily="{StaticResource FontHeader}" FontSize="12" Foreground="#859397"
+                                   FontFamily="{StaticResource FontHeader}" FontSize="12" Foreground="{DynamicResource BrushTextMuted}"
                                    HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,24,0,24" />
                     </ScrollViewer>
                 </DockPanel>
             </Border>
         </Grid>
 
-        <Border Grid.Row="3" Margin="24,0,24,24" Background="#1A1A1F" CornerRadius="12" BorderBrush="#252530" BorderThickness="1" Padding="8">
+        <Border Grid.Row="3" Margin="24,0,24,24" Background="{DynamicResource BrushSurface}" CornerRadius="12" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="8">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickMirrorCommand}">
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickMirrorCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Mirror Screen" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
                 <Border Width="1" Height="24" Background="#3C494C" Margin="8,0" VerticalAlignment="Center" />
-                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickSnapshotCommand}">
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickSnapshotCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Snapshot" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
                 <Border Width="1" Height="24" Background="#3C494C" Margin="8,0" VerticalAlignment="Center" />
-                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickStartSessionCommand}">
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7B5;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Start Session" VerticalAlignment="Center" />

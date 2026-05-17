@@ -8,4 +8,11 @@ public partial class ShellView : UserControl
     {
         InitializeComponent();
     }
+
+    private void OutputTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.TextBox tb)
+            tb.ScrollToEnd();
+    }
 }
+

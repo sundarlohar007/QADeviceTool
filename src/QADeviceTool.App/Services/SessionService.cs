@@ -75,7 +75,7 @@ public class SessionService : ISessionService
         await Task.Delay(250).ConfigureAwait(false);
         if (process.HasExited)
         {
-            try { process.Dispose(); } catch { }
+            try { process.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Process dispose error"); }
             return false;
         }
 
@@ -128,8 +128,8 @@ public class SessionService : ISessionService
             while (!cts.Token.IsCancellationRequested)
             {
                 await Task.Delay(2000, cts.Token);
-                try { await writer.FlushAsync(); } catch { }
-                if (appWriter != null) { try { await appWriter.FlushAsync(); } catch { } }
+                try { await writer.FlushAsync(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
+                if (appWriter != null) { try { await appWriter.FlushAsync(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); } }
             }
         }, cts.Token);
 
@@ -209,9 +209,17 @@ public class SessionService : ISessionService
 
     private void FlushAllBuffers()
     {
-        foreach (var kvp in _activeCaptures)
+        if (!Monitor.TryEnter(_bufferLock, 0)) return;
+        try
         {
-            FlushCaptureBuffer(kvp.Key, kvp.Value);
+            foreach (var kvp in _activeCaptures)
+            {
+                FlushCaptureBuffer(kvp.Key, kvp.Value);
+            }
+        }
+        finally
+        {
+            Monitor.Exit(_bufferLock);
         }
     }
 
@@ -248,13 +256,13 @@ public class SessionService : ISessionService
             if (!ctx.Process.HasExited)
             {
                 bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
-                try { ctx.Process.Kill(killTree); } catch { }
-                try { ctx.Process.WaitForExit(1000); } catch { }
+                try { ctx.Process.Kill(killTree); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Kill error"); }
+                try { ctx.Process.WaitForExit(1000); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] WaitForExit error"); }
             }
 
-            try { ctx.Process.CancelOutputRead(); } catch { }
-            try { ctx.Writer.Flush(); } catch { }
-            try { ctx.AppWriter?.Flush(); } catch { }
+            try { ctx.Process.CancelOutputRead(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] CancelOutputRead error"); }
+            try { ctx.Writer.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
+            try { ctx.AppWriter?.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); }
             FlushCaptureBuffer(session.Id, ctx);
             ctx.Writer.Dispose();
             ctx.AppWriter?.Dispose();
@@ -290,12 +298,12 @@ public class SessionService : ISessionService
                 if (!ctx.Process.HasExited)
                 {
                     bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
-                    try { ctx.Process.Kill(killTree); } catch { }
-                    try { ctx.Process.WaitForExit(1000); } catch { }
+                    try { ctx.Process.Kill(killTree); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Kill error"); }
+                    try { ctx.Process.WaitForExit(1000); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] WaitForExit error"); }
                 }
-                try { ctx.Process.CancelOutputRead(); } catch { }
-                try { ctx.Writer.Flush(); } catch { }
-                try { ctx.AppWriter?.Flush(); } catch { }
+                try { ctx.Process.CancelOutputRead(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] CancelOutputRead error"); }
+                try { ctx.Writer.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
+                try { ctx.AppWriter?.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); }
                 FlushCaptureBuffer(kvp.Key, ctx);
                 ctx.Writer.Dispose();
                 ctx.AppWriter?.Dispose();
@@ -374,7 +382,7 @@ public class SessionService : ISessionService
         if (string.IsNullOrEmpty(session.LogFilePath) || !File.Exists(session.LogFilePath))
             return "No log file found.";
 
-        var lines = await File.ReadAllLinesAsync(session.LogFilePath);
+        using var reader = new StreamReader(session.LogFilePath);
         var subset = lines.TakeLast(maxLines).ToArray();
         return string.Join(Environment.NewLine, subset);
     }
@@ -432,13 +440,14 @@ public class SessionService : ISessionService
         {
             if (!File.Exists(session.LogFilePath)) return false;
             
-            var lines = await File.ReadAllLinesAsync(session.LogFilePath);
+            using var reader = new StreamReader(session.LogFilePath);
             using var writer = new StreamWriter(outputPath, false);
             
             // CSV header
             await writer.WriteLineAsync("Timestamp,Level,Message");
             
-            foreach (var line in lines)
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 
@@ -472,10 +481,11 @@ public class SessionService : ISessionService
         {
             if (!File.Exists(session.LogFilePath)) return false;
             
-            var lines = await File.ReadAllLinesAsync(session.LogFilePath);
+            using var reader = new StreamReader(session.LogFilePath);
             var entries = new List<Dictionary<string, string>>();
             
-            foreach (var line in lines)
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 
@@ -566,7 +576,7 @@ public class SessionService : ISessionService
                 }
             }
         }
-        catch { /* keep defaults */ }
+        catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] PreferencesService load failed, keeping defaults"); }
 
         return result;
     }
@@ -578,7 +588,8 @@ public class SessionService : ISessionService
 
         var result = message;
 
-        var serialPattern = new System.Text.RegularExpressions.Regex(@"\b[A-Z0-9]{8,20}\b");
+        // Match known serial formats: Samsung RF..., Pixel HT..., generic alphanumeric, network host:port
+        var serialPattern = new System.Text.RegularExpressions.Regex(@"\b(RF[A-Z0-9]{6,10}|HT[A-Z0-9]{6,10}|[A-Z]{2}[A-Z0-9]{6,14})\b");
         result = serialPattern.Replace(result, "[SERIAL]");
 
         var ipPattern = new System.Text.RegularExpressions.Regex(@"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b");

@@ -16,10 +16,10 @@ using LogPro.Services;
 
 namespace LogPro.ViewModels;
 
-public partial class StressTestViewModel : ObservableObject
+public partial class StressTestViewModel : ObservableObject, IDisposable
 {
-    private readonly AdbService _adbService;
-    private readonly DeviceMonitorService _deviceMonitor;
+    private readonly IAdbService _adbService;
+    private readonly IDeviceMonitorService _deviceMonitor;
     private readonly Dispatcher _dispatcher;
 
     private CancellationTokenSource? _runCts;
@@ -52,7 +52,7 @@ public partial class StressTestViewModel : ObservableObject
     private bool _isRunning;
 
     public bool CanRun => IsPlatformSupported && !IsRunning;
-    [ObservableProperty] private string _output = "Ready. Pick a device, search/select an app, then Run.";
+    private readonly System.Text.StringBuilder _outputBuffer = new();
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _crashCount;
     [ObservableProperty] private int _anrCount;
@@ -63,7 +63,7 @@ public partial class StressTestViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanRun))]
     private bool _isPlatformSupported;
 
-    public StressTestViewModel(AdbService adbService, DeviceMonitorService deviceMonitor)
+    public StressTestViewModel(IAdbService adbService, DeviceMonitorService deviceMonitor)
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
@@ -181,6 +181,13 @@ public partial class StressTestViewModel : ObservableObject
             StatusMessage = "[!] Event count must be > 0.";
             return;
         }
+        // Validate monkey event percentages sum to 100
+        var totalPct = PctTouch + PctMotion + PctTrackball + PctNav + PctSyskeys + PctAppswitch;
+        if (totalPct != 100)
+        {
+            StatusMessage = $"[!] Event percentages must sum to 100%. Current total: {totalPct}%.";
+            return;
+        }
 
         // Verify package actually exists on device — auto-resolve case-insensitive partial name.
         if (_allApps.Count > 0 && !_allApps.Any(a => a.PackageId == TargetPackage))
@@ -201,6 +208,21 @@ public partial class StressTestViewModel : ObservableObject
 
         _runCts = new CancellationTokenSource();
         IsRunning = true;
+            _metricSnapshots.Clear();
+            var metricsTimer = new System.Threading.Timer(async _ =>
+            {
+                try
+                {
+                    if (_runningOnSerial == null || _adbService == null) return;
+                    var memResult = await _adbService.ExecuteCommandAsync(_runningOnSerial, "shell dumpsys meminfo " + TargetPackage);
+                    var snapshot = new Services.MetricSnapshot { Timestamp = DateTime.Now, EventsInjected = EventsInjected };
+                    var pssMatch = System.Text.RegularExpressions.Regex.Match(memResult, @"TOTAL\s+(\d+)");
+                    if (pssMatch.Success && int.TryParse(pssMatch.Groups[1].Value, out var pss))
+                        snapshot.TotalPssKb = pss;
+                    lock (_metricSnapshots) { _metricSnapshots.Add(snapshot); }
+                }
+                catch { /* metrics best-effort */ }
+            }, null, 5000, 5000);
         CrashCount = 0;
         AnrCount = 0;
         EventsInjected = 0;
@@ -276,7 +298,7 @@ public partial class StressTestViewModel : ObservableObject
         }
         finally
         {
-            try { _adbProcess?.Dispose(); } catch { }
+            try { _adbProcess?.Dispose(); } 
             _adbProcess = null;
             _runningOnSerial = null;
             IsRunning = false;
@@ -291,7 +313,7 @@ public partial class StressTestViewModel : ObservableObject
         var serialAtStop = _runningOnSerial;
 
         // Cancel waiter, kill local adb process tree, then kill on-device monkey.
-        try { _runCts?.Cancel(); } catch { }
+        try { _runCts?.Cancel(); } 
         try
         {
             if (_adbProcess != null && !_adbProcess.HasExited)
@@ -384,7 +406,7 @@ public partial class StressTestViewModel : ObservableObject
             const int MaxChars = 200_000;
             if (Output.Length > MaxChars)
                 Output = "...[truncated]...\n" + Output.Substring(Output.Length - MaxChars / 2);
-            Output += line + "\n";
+            _outputBuffer.AppendLine(line); Output = _outputBuffer.ToString();
         });
     }
 
@@ -418,4 +440,12 @@ public partial class StressTestViewModel : ObservableObject
         }
         catch (Exception ex) { StatusMessage = $"[!] Save failed: {ex.Message}"; }
     }
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+            _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        GC.SuppressFinalize(this);
+    }
 }
+

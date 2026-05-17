@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Threading;
@@ -10,10 +11,10 @@ using System.Linq;
 
 namespace LogPro.ViewModels;
 
-public partial class VitalsViewModel : ObservableObject
+public partial class VitalsViewModel : ObservableObject, IDisposable
 {
-    private readonly AdbService _adbService;
-    private readonly DeviceMonitorService _deviceMonitor;
+    private readonly IAdbService _adbService;
+    private readonly IDeviceMonitorService _deviceMonitor;
     private readonly Dispatcher _dispatcher;
     private DispatcherTimer? _pollTimer;
     private CancellationTokenSource? _pollCts;
@@ -33,7 +34,7 @@ public partial class VitalsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isPolling;
 
-    public VitalsViewModel(AdbService adbService, DeviceMonitorService deviceMonitor)
+    public VitalsViewModel(IAdbService adbService, DeviceMonitorService deviceMonitor)
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
@@ -178,4 +179,33 @@ public partial class VitalsViewModel : ObservableObject
             _isPollingNow = false;
         }
     }
+
+    
+public void OnNavigatedFrom()
+    
+{
+    
+    StopPolling();
+    
 }
+
+    
+public void OnNavigatedTo()
+    
+{
+    
+    if (SelectedDevice != null && SelectedDevice.Platform == DevicePlatform.Android)
+    
+        StartPolling();
+    
+}
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+            _pollTimer?.Stop(); _pollTimer = null;
+            _pollCts?.Cancel(); _pollCts?.Dispose();
+        GC.SuppressFinalize(this);
+    }
+}
+

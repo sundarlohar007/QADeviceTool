@@ -10,10 +10,6 @@ namespace LogPro.Views;
 
 public partial class SessionView : UserControl
 {
-    private static readonly string LogPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LogPro", "debug.log");
-
     private SessionViewModel? _vm;
 
     public SessionView()
@@ -37,30 +33,11 @@ public partial class SessionView : UserControl
             }
             catch (Exception ex)
             {
-                Log($"DataContextChanged error: {ex}");
+                Services.AppLogger.Log.Debug(ex, "SessionView DataContextChanged error");
             }
         };
     }
 
-    private static void Log(string message, Exception? ex = null)
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(LogPath);
-            if (dir != null && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            var logLine = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] SessionView: {message}\n";
-            if (ex != null)
-            {
-                logLine += $"  EXCEPTION: {ex.GetType().Name}\n  MESSAGE: {ex.Message}\n  STACK: {ex.StackTrace}\n";
-            }
-            File.AppendAllText(LogPath, logLine);
-        }
-        catch (Exception logEx) { System.Diagnostics.Debug.WriteLine($"[SessionView] Log failed: {logEx.Message}"); }
-    }
 
     private void OnScrollToEndRequested()
     {

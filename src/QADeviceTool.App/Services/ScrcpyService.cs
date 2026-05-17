@@ -49,6 +49,8 @@ public class ScrcpyService : IScrcpyService
 
     public string? MirroredDeviceSerial { get; private set; }
 
+    public string? LastError { get; private set; }
+
     public async Task<bool> StartMirroringAsync(string serial, ScrcpyOptions? options = null)
     {
         // Stop any existing mirroring before starting a new one
@@ -58,19 +60,20 @@ public class ScrcpyService : IScrcpyService
         }
 
         var check = await CheckAvailabilityAsync();
-        if (!check.IsInstalled) return false;
+        if (!check.IsInstalled) { LastError = "scrcpy not installed or not found."; return false; }
 
         var args = BuildScrcpyArguments(serial, options);
         _mirrorProcess = ToolLauncher.StartLongRunning(_scrcpy, args);
 
-        if (_mirrorProcess == null) return false;
+        if (_mirrorProcess == null) { LastError = "Failed to start scrcpy process."; return false; }
 
         MirroredDeviceSerial = serial;
 
         // Wait briefly to see if process starts and stays running
         await Task.Delay(500);
 
-        if (_mirrorProcess.HasExited)
+        LastError = "scrcpy process exited immediately.";
+            if (_mirrorProcess.HasExited)
         {
             MirroredDeviceSerial = null;
             _mirrorProcess.Dispose();
@@ -78,8 +81,13 @@ public class ScrcpyService : IScrcpyService
             return false;
         }
 
+        LastError = null;
+
+
         return true;
-    }
+
+
+        }
 
     private string BuildScrcpyArguments(string serial, ScrcpyOptions? options)
     {
@@ -134,7 +142,7 @@ public class ScrcpyService : IScrcpyService
                 _mirrorProcess.Kill(true);
             }
         }
-        catch { }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "[ScrcpyService] Mirror operation failed"); }
         finally
         {
             _mirrorProcess?.Dispose();

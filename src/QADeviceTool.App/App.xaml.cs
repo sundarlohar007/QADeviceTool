@@ -7,7 +7,7 @@ namespace LogPro;
 
 public partial class App : Application
 {
-    private static readonly string EarlyLogPath = Path.Combine(Path.GetTempPath(), "LogPro_startup-debug.log");
+    private static readonly string EarlyLogPath = Path.Combine(Path.GetTempPath(), "QADeviceTool_startup-debug.log");
     private const long EarlyLogMaxBytes = 1024 * 1024; // 1 MiB cap; truncate-on-roll instead of unbounded growth.
 
     private void EarlyLog(string message, Exception? ex = null)
@@ -57,7 +57,8 @@ public partial class App : Application
         EarlyLog($"Current Directory: {Environment.CurrentDirectory}");
         EarlyLog($"OS Architecture: {(Environment.Is64BitOperatingSystem ? "x64" : "x86")}");
         EarlyLog($"Process Architecture: {(Environment.Is64BitProcess ? "x64" : "x86")}");
-        EarlyLog($"PATH Variable: {Environment.GetEnvironmentVariable("PATH")}");
+        var pathEntries = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(";");
+                EarlyLog($"PATH entries: {pathEntries.Length}");
 
         // Ensure native DLL paths are initialized for iOS tools
         ToolResolver.InitializeNativePaths();
@@ -82,10 +83,11 @@ public partial class App : Application
 
             // Cleanup old logs based on retention settings
             Services.PreferencesService.CleanupOldLogs();
+            // First-run privacy notice             if (!PreferencesService.Current.PrivacyNoticeAccepted)             {                 var accepted = System.Windows.MessageBox.Show(                     "QADeviceTool stores logs, screenshots, and session data locally on this machine. No data is sent externally. This data is used for QA testing purposes only. Continue?",                     "Privacy Notice",                     System.Windows.MessageBoxButton.YesNo,                     System.Windows.MessageBoxImage.Information);                 if (accepted == System.Windows.MessageBoxResult.Yes)                 {                     PreferencesService.Current.PrivacyNoticeAccepted = true;                     PreferencesService.Save();                 }             }
             EarlyLog("Old logs cleaned up.");
 
             Services.AppLogger.Log.Info("========================================");
-            Services.AppLogger.Log.Info("LogPro - Application Starting");
+            Services.AppLogger.Log.Info("QADeviceTool - Application Starting");
             Services.AppLogger.Log.Info("========================================");
 
             // Ensure sessions directory exists
@@ -105,7 +107,7 @@ public partial class App : Application
         
         MessageBox.Show(
             $"An error occurred:\n\n{e.Exception.Message}\n\nCheck startup log at:\n{EarlyLogPath}",
-            "LogPro - Error",
+            "QADeviceTool - Error",
             MessageBoxButton.OK,
             MessageBoxImage.Warning);
             
@@ -133,6 +135,15 @@ public partial class App : Application
         EarlyLog("APPLICATION EXITING.");
         Services.AppLogger.Log.Info("Application Exiting.");
         Services.ProcessManagerService.KillAllTrackedProcesses();
+        // Apply log retention from preferences to NLog config
+        try
+        {
+            var config = NLog.LogManager.Configuration;
+            if (config?.Variables["maxArchiveDays"] != null)
+                config.Variables["maxArchiveDays"] = PreferencesService.Current.LogRetentionDays.ToString();
+        }
+        catch { /* NLog config may not be initialized yet */ }
+
         NLog.LogManager.Shutdown(); // Flush and close logs
         base.OnExit(e);
     }

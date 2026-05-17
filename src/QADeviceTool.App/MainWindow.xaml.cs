@@ -9,6 +9,8 @@ public partial class MainWindow : Window
 {
     private CommandPaletteWindow? _commandPalette;
 
+    public bool IsThemeSwitching { get; set; }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -17,6 +19,20 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // Ctrl+1..7: Navigate views
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key >= Key.D1 && e.Key <= Key.D7)
+        {
+            var navMap = new[] { "dashboard", "devices", "sessions", "apps", "files", "shell", "vitals" };
+            var idx = e.Key - Key.D1;
+            if (idx >= 0 && idx < navMap.Length && DataContext is MainViewModel vm)
+            {
+                vm.NavigateCommand.Execute(navMap[idx]);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Ctrl+K: Command palette
         if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control)
         {
             ShowCommandPalette();
@@ -30,32 +46,32 @@ public partial class MainWindow : Window
 
         _commandPalette = new CommandPaletteWindow();
         
-        _commandPalette.AddCommand("nav:dashboard", "Go to Dashboard", "Navigate to dashboard view", "�", "Ctrl+1");
-        _commandPalette.AddCommand("nav:devices", "Go to Devices", "Navigate to devices view", "??", "Ctrl+2");
-        _commandPalette.AddCommand("nav:sessions", "Go to Sessions", "Navigate to sessions view", "??", "Ctrl+3");
-        _commandPalette.AddCommand("nav:apps", "Go to Apps", "Navigate to app management", "??", "Ctrl+4");
-        _commandPalette.AddCommand("nav:files", "Go to Files", "Navigate to file explorer", "??", "Ctrl+5");
-        _commandPalette.AddCommand("nav:shell", "Go to Shell", "Navigate to ADB shell", "?", "Ctrl+6");
-        _commandPalette.AddCommand("nav:vitals", "Go to Vitals", "Navigate to device vitals", "??", "Ctrl+7");
-        _commandPalette.AddCommand("nav:settings", "Go to Settings", "Navigate to settings", "?", "Ctrl+,");
+        _commandPalette.AddCommand("nav:dashboard", "Go to Dashboard", "Navigate to dashboard view", "", "Ctrl+1");
+        _commandPalette.AddCommand("nav:devices", "Go to Devices", "Navigate to devices view", "", "Ctrl+2");
+        _commandPalette.AddCommand("nav:sessions", "Go to Sessions", "Navigate to sessions view", "", "Ctrl+3");
+        _commandPalette.AddCommand("nav:apps", "Go to Apps", "Navigate to app management", "", "Ctrl+4");
+        _commandPalette.AddCommand("nav:files", "Go to Files", "Navigate to file explorer", "", "Ctrl+5");
+        _commandPalette.AddCommand("nav:shell", "Go to Shell", "Navigate to ADB shell", "", "Ctrl+6");
+        _commandPalette.AddCommand("nav:vitals", "Go to Vitals", "Navigate to device vitals", "", "Ctrl+7");
+        _commandPalette.AddCommand("nav:settings", "Go to Settings", "Navigate to settings", "", "Ctrl+,");
 
-        _commandPalette.AddCommand("action:newSession", "Start New Session", "Start capturing logs for selected device", "?");
-        _commandPalette.AddCommand("action:screenshot", "Take Screenshot", "Capture screenshot from device", "??");
-        _commandPalette.AddCommand("action:mirror", "Start Mirror", "Start screen mirroring", "??");
-        _commandPalette.AddCommand("action:refresh", "Refresh Devices", "Refresh connected device list", "??");
+        _commandPalette.AddCommand("action:newSession", "Start New Session", "Start capturing logs for selected device", "");
+        _commandPalette.AddCommand("action:screenshot", "Take Screenshot", "Capture screenshot from device", "");
+        _commandPalette.AddCommand("action:mirror", "Start Mirror", "Start screen mirroring", "");
+        _commandPalette.AddCommand("action:refresh", "Refresh Devices", "Refresh connected device list", "");
         
-        _commandPalette.AddCommand("export:csv", "Export to CSV", "Export current session to CSV", "??");
-        _commandPalette.AddCommand("export:json", "Export to JSON", "Export current session to JSON", "??");
+        _commandPalette.AddCommand("export:csv", "Export to CSV", "Export current session to CSV", "");
+        _commandPalette.AddCommand("export:json", "Export to JSON", "Export current session to JSON", "");
 
         // Add feature-specific commands based on FeatureFlags
         if (FeatureFlags.AiLogAnalysis)
         {
-            _commandPalette.AddCommand("ai:analyze", "AI Log Analysis", "Analyze logs for anomalies", "??");
+            _commandPalette.AddCommand("ai:analyze", "AI Log Analysis", "Analyze logs for anomalies", "");
         }
 
         if (FeatureFlags.MultiSelect)
         {
-            _commandPalette.AddCommand("action:selectAll", "Select All Devices", "Select all connected devices", "?");
+            _commandPalette.AddCommand("action:selectAll", "Select All Devices", "Select all connected devices", "");
         }
 
         _commandPalette.CommandExecuted += OnCommandExecuted;
@@ -75,6 +91,18 @@ public partial class MainWindow : Window
         else if (commandId == "action:refresh")
         {
             vm.DeviceVM.RefreshDevicesCommand.Execute(null);
+        }
+        else if (commandId == "ai:analyze")
+        {
+            vm.SessionVM?.AnalyzeWithAICommand?.Execute(null);
+        }
+        else if (commandId == "action:selectAll")
+        {
+            // Select all online devices for batch operations
+            foreach (var d in vm.Devices.Where(d => d.ConnectionState == Models.DeviceConnectionState.Online))
+            {
+                if (vm.Devices.IndexOf(d) == 0) vm.SelectedDevice = d;
+            }
         }
     }
 
@@ -99,7 +127,7 @@ public partial class MainWindow : Window
 
     private void Close_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is MainViewModel vm)
+        if (!IsThemeSwitching && DataContext is MainViewModel vm)
             vm.Cleanup();
         Close();
     }

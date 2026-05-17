@@ -23,7 +23,7 @@ public class IosService : IIosService
     private readonly string _exe;
     private readonly bool _isModuleInvocation;
     private readonly string _toolKind;
-    private static readonly SemaphoreSlim _ipcLock = new(1, 1);
+    private static readonly SemaphoreSlim _ipcLock = new(3, 3);
 
     private const int DefaultTimeoutMs = 15000;
     private const int InfoTimeoutMs = 10000;
@@ -69,7 +69,7 @@ public class IosService : IIosService
             };
             using var p = System.Diagnostics.Process.Start(psi);
             if (p == null) return false;
-            if (!p.WaitForExit(5000)) { try { p.Kill(true); } catch { } return false; }
+            if (!p.WaitForExit(5000)) { try { p.Kill(true); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[IosService] failed to determine pymd3 binary"); } return false; }
             return p.ExitCode == 0;
         }
         catch (Exception ex)
@@ -232,7 +232,7 @@ public class IosService : IIosService
                 if (root.TryGetProperty("BatteryCurrentCapacity", out var bc)) device.BatteryLevel = bc.ToString() + "%";
                 return;
             }
-            catch { /* fall through to regex */ }
+            catch (Exception ex) { AppLogger.Log.Debug(ex, "[IosService] parse fallback to regex"); }
         }
 
         // Fallback: regex scan. Values can be single/double-quoted (any char) or bare
@@ -272,6 +272,10 @@ public class IosService : IIosService
         {
             // developer screenshot uses the deprecated lockdown screenshot service — works without DeveloperDiskImage.
             var result = await RunAsync(udid, $"developer screenshot {Quote(outputPath)}", DefaultTimeoutMs).ConfigureAwait(false);
+            if (!result.Success && (result.Error.Contains("Developer") || result.Error.Contains("DeveloperDiskImage") || result.Error.Contains("Developer Mode")))
+            {
+                AppLogger.Log.Warn("[IosService] Developer Mode may not be enabled. Enable it in Settings > Privacy & Security > Developer Mode.");
+            }
             return result.Success && File.Exists(outputPath);
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] CaptureScreenshotAsync failed"); return false; }
@@ -332,7 +336,7 @@ public class IosService : IIosService
                     return apps;
                 }
             }
-            catch { /* fall through to text parse */ }
+            catch (Exception ex) { AppLogger.Log.Debug(ex, "[IosService] parse fallback to text"); }
         }
 
         // Text fallback: lines like "com.foo.bar:" with indented version/name beneath.
@@ -418,7 +422,9 @@ public class IosService : IIosService
             // AFC listings often omit trailing slash markers for directories.
             // Prefer navigability for dotless entries; opening a false-positive
             // file simply returns an empty/error listing instead of blocking browse.
-            var isDir = hadTrailingSlash || !name.Contains('.');
+            // Only mark as directory if there is a trailing slash marker.
+            // Extensionless files (README, Makefile, LICENSE) are common on iOS app containers.
+            var isDir = hadTrailingSlash;
 
             files.Add(new DeviceFile
             {
@@ -449,6 +455,7 @@ public class IosService : IIosService
 
     public async Task<bool> PullFileAsync(string udid, string remotePath, string localPath)
     {
+        if (!IsSafePath(remotePath)) { AppLogger.Log.Warn($"[IosService] Unsafe path rejected: {remotePath}"); return false; }
         try
         {
             var result = await RunAsync(udid, $"afc pull {Quote(remotePath)} {Quote(localPath)}", 60000).ConfigureAwait(false);
@@ -459,6 +466,7 @@ public class IosService : IIosService
 
     public async Task<bool> PushFileAsync(string udid, string localPath, string remotePath)
     {
+        if (!IsSafePath(remotePath)) { AppLogger.Log.Warn($"[IosService] Unsafe path rejected: {remotePath}"); return false; }
         try
         {
             var result = await RunAsync(udid, $"afc push {Quote(localPath)} {Quote(remotePath)}", 60000).ConfigureAwait(false);
@@ -469,9 +477,16 @@ public class IosService : IIosService
 
     public async Task<bool> DeleteFileAsync(string udid, string path)
     {
+        if (!IsSafePath(path)) { AppLogger.Log.Warn($"[IosService] Unsafe path rejected: {path}"); return false; }
         try
         {
             var result = await RunAsync(udid, $"afc rm {Quote(path)}", InfoTimeoutMs).ConfigureAwait(false);
+            if (!result.Success)
+            {
+                // afc rm only deletes files; try rmdir for directories
+                var rmdirResult = await RunAsync(udid, $"afc rmdir {Quote(path)}", InfoTimeoutMs).ConfigureAwait(false);
+                return rmdirResult.Success;
+            }
             return result.Success;
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] DeleteFileAsync failed"); return false; }
@@ -596,12 +611,20 @@ public class IosService : IIosService
     /// Use the Springboard launch path (DVT) on devices with Developer Mode enabled
     /// if URL launching is needed.
     /// </summary>
-    public Task<bool> OpenUrlAsync(string udid, string url)
+    public async Task<bool> OpenUrlAsync(string udid, string url)
     {
-        AppLogger.Log.Warn($"[IosService] OpenUrlAsync not supported by pymobiledevice3 (url={url})");
-        return Task.FromResult(false);
-    }
+        try
+        {
+            // Try pymobiledevice3 developer dvt launch for URL opening (requires Developer Mode)
+            var result = await RunAsync(udid, $"developer dvt launch {Quote(url)}", InfoTimeoutMs).ConfigureAwait(false);
+            if (result.Success) return true;
 
+            // Fallback: try apps open-url (available in newer pymobiledevice3 versions)
+            var result2 = await RunAsync(udid, $"apps open-url {Quote(url)}", InfoTimeoutMs).ConfigureAwait(false);
+            return result2.Success;
+        }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, $"[IosService] OpenUrlAsync failed for {url}"); return false; }
+    }
     /// <summary>
     /// Resolves an app's container directory via `apps query`.
     /// Returns Container path string or "" on failure.
@@ -624,5 +647,16 @@ public class IosService : IIosService
             return containerPath;
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] GetAppContainerPathAsync failed"); return ""; }
+    }
+
+    private static bool IsSafePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        if (path.Contains("..")) return false;
+        if (path.Contains("|") || path.Contains("&&") || path.Contains("||")) return false;
+        if (path.Contains("\n") || path.Contains("\r")) return false;
+        if (path.Contains(";") || path.Contains("`")) return false;
+        if (path.Contains("$")) return false;
+        return true;
     }
 }

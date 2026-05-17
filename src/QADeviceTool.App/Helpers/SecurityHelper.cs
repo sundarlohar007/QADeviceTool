@@ -13,7 +13,7 @@ public static class SecurityHelper
 
         var bytes = Encoding.UTF8.GetBytes(serial);
         var hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash)[..8].ToLower();
+        return Convert.ToHexString(hash)[..16].ToLower();
     }
 
     public static string GetSafeSessionName(string? customName, string deviceHash, string platform)

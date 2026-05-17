@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Threading;
@@ -11,13 +12,13 @@ namespace LogPro.ViewModels;
 /// <summary>
 /// Main ViewModel — manages navigation and top-level state.
 /// </summary>
-public partial class MainViewModel : ObservableObject
+public partial class MainViewModel : ObservableObject, IDisposable
 {
-    private readonly AdbService _adbService;
-    private readonly IosService _iosService;
-    private readonly ScrcpyService _scrcpyService;
-    private readonly SessionService _sessionService;
-    private readonly DeviceMonitorService _deviceMonitor;
+    private readonly IAdbService _adbService;
+    private readonly IIosService _iosService;
+    private readonly IScrcpyService _scrcpyService;
+    private readonly ISessionService _sessionService;
+    private readonly IDeviceMonitorService _deviceMonitor;
     private readonly DependencyChecker _dependencyChecker;
     private readonly Dispatcher _dispatcher;
 
@@ -162,12 +163,14 @@ public partial class MainViewModel : ObservableObject
     public void Navigate(string destination)
     {
         var normalized = destination?.ToLowerInvariant() ?? "";
+        if (CurrentView is VitalsViewModel vvm) vvm.OnNavigatedFrom();
         SelectedNavItem = normalized;
+        AppLogger.Log.Debug($"[MainVM] Navigating to {normalized}");
         CurrentView = normalized switch
         {
             "dashboard" => DashboardVM,
             "sessions" => SessionVM,
-            "device" => DeviceVM,
+            "device" or "devices" => DeviceVM,
             "apps" => AppManagementVM,
             "shell" => ShellVM,
             "deeplink" => DeepLinkVM,
@@ -178,6 +181,7 @@ public partial class MainViewModel : ObservableObject
             "settings" => SettingsVM,
             _ => DashboardVM
         };
+        if (CurrentView is VitalsViewModel vvm2) vvm2.OnNavigatedTo();
     }
 
     public void Cleanup()
@@ -186,4 +190,11 @@ public partial class MainViewModel : ObservableObject
         _scrcpyService.StopMirroring();
         _deviceMonitor.Dispose();
     }
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        GC.SuppressFinalize(this);
+    }
 }
+

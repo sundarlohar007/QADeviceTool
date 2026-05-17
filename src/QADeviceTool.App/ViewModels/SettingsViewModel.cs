@@ -20,8 +20,8 @@ public class LogRetentionOption
 public partial class SettingsViewModel : ObservableObject
 {
     private readonly DependencyChecker _dependencyChecker;
-    private readonly SessionService _sessionService;
-    private readonly AdbService _adbService;
+    private readonly ISessionService _sessionService;
+    private readonly IAdbService _adbService;
     private readonly Dispatcher _dispatcher;
 
     [ObservableProperty]
@@ -69,7 +69,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading;
 
-    public SettingsViewModel(DependencyChecker dependencyChecker, SessionService sessionService, AdbService adbService)
+    public SettingsViewModel(DependencyChecker dependencyChecker, ISessionService sessionService, AdbService adbService)
     {
         _dependencyChecker = dependencyChecker;
         _sessionService = sessionService;
@@ -129,6 +129,22 @@ public partial class SettingsViewModel : ObservableObject
             PreferencesService.ClearAllData();
             ClearDataStatus = "All data has been cleared. Please restart the application.";
         }
+    }
+
+    [RelayCommand]
+    private void OpenLogsFolder()
+    {
+        try
+        {
+            var logsDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "QAQCDeviceTool", "logs");
+            if (System.IO.Directory.Exists(logsDir))
+                System.Diagnostics.Process.Start("explorer.exe", logsDir);
+            else
+                ClearDataStatus = "Logs directory not found.";
+        }
+        catch (Exception ex) { ClearDataStatus = $"Failed to open logs: {ex.Message}"; }
     }
 
     [RelayCommand]
@@ -265,4 +281,25 @@ public partial class SettingsViewModel : ObservableObject
         IsDarkTheme = false;
         IsLightTheme = true;
     }
+
+    [RelayCommand]
+    private void ExportMyData()
+    {
+        try
+        {
+            var appDataDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "QAQCDeviceTool");
+            if (System.IO.Directory.Exists(appDataDir))
+            {
+                System.Diagnostics.Process.Start("explorer.exe", appDataDir);
+                ClearDataStatus = "App data folder opened in Explorer.";
+            }
+            else
+                ClearDataStatus = "App data folder not found.";
+        }
+        catch (Exception ex) { ClearDataStatus = $"Export failed: {ex.Message}"; }
+    }
+
+    public string ClearDataStatus { get; set; } = string.Empty;
 }

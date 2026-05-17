@@ -8,8 +8,8 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <conv:LogLevelColorMultiConverter x:Key="LogColor" />
         <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="#1A1A1F" />
-            <Setter Property="BorderBrush" Value="#252530" />
+            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="12" />
         </Style>
@@ -22,10 +22,10 @@
             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Bold" />
-            <Setter Property="Foreground" Value="#E5E2E1" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
         </Style>
         <Style x:Key="GreenBtn" TargetType="Button">
-            <Setter Property="Background" Value="#00D4F0" />
+            <Setter Property="Background" Value="{DynamicResource BrushCyan}" />
             <Setter Property="Foreground" Value="#001F25" />
             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
             <Setter Property="FontSize" Value="12" />
@@ -49,8 +49,8 @@
         </Style>
         <Style x:Key="GhostBtn" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#BAC9CD" />
-            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="FontWeight" Value="Medium" />
@@ -64,8 +64,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" />
-                                <Setter Property="Foreground" Value="#8CEBFF" />
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -77,12 +77,12 @@
             <Setter Property="BorderBrush" Value="#7F1D1D" />
         </Style>
         <Style x:Key="DarkInput" TargetType="TextBox">
-            <Setter Property="Background" Value="#0E0E0E" />
-            <Setter Property="Foreground" Value="#E5E2E1" />
-            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="Background" Value="{DynamicResource BrushBase}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="10,8" />
-            <Setter Property="CaretBrush" Value="#8CEBFF" />
+            <Setter Property="CaretBrush" Value="{DynamicResource BrushPrimaryLight}" />
             <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Template">
@@ -92,14 +92,14 @@
                             <ScrollViewer x:Name="PART_ContentHost" />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" /></Trigger>
+                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" /></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
     </UserControl.Resources>
-    <Grid Background="#060606">
+    <Grid Background="{DynamicResource BrushVoid}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -110,8 +110,8 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock Text="Sessions" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="#E5E2E1" />
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#BAC9CD" FontSize="12" Margin="0,4,0,0" />
+                <TextBlock Text="Sessions" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <Border Background="#003848" CornerRadius="6" Padding="8,4" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="{Binding IsScreenRecording, Converter={StaticResource BoolToVis}}">
@@ -122,8 +122,8 @@
                 </Border>
                 <Button Style="{StaticResource GhostBtn}" Margin="0,0,8,0" Command="{Binding TakeSnapshotCommand}" Content="Snapshot" />
                 <Button Style="{StaticResource GhostBtn}" Margin="0,0,8,0" Command="{Binding ToggleScreenRecordCommand}" Content="Rec Screen" />
-                <Button Style="{StaticResource DangerBtn}" Margin="0,0,8,0" Command="{Binding StopCaptureCommand}" Content="Stop" />
-                <Button Style="{StaticResource GreenBtn}" Command="{Binding StartCaptureCommand}" Content="Start Capture" />
+                <Button Style="{StaticResource DangerBtn}" Margin="0,0,8,0" Command="{Binding StopCaptureCommand}" IsEnabled="{Binding IsCapturing}" Content="Stop" />
+                <Button Style="{StaticResource GreenBtn}" Command="{Binding StartCaptureCommand}" IsEnabled="{Binding IsCapturing, Converter={x:Static conv:InverseBoolConverter.Instance}}" Content="Start Capture" />
             </StackPanel>
         </Grid>
         <Grid Grid.Row="1" Margin="24,0,24,24">
@@ -136,14 +136,14 @@
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="SESSIONS" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
                     <StackPanel DockPanel.Dock="Top" Margin="12">
-                        <TextBlock Text="DEVICE" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="#859397" Margin="0,0,0,4" />
+                        <TextBlock Text="DEVICE" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
                         <ComboBox ItemsSource="{Binding AvailableDevices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Margin="0,0,0,12" />
-                        <TextBlock Text="SESSION NAME" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="#859397" Margin="0,0,0,4" />
+                        <TextBlock Text="SESSION NAME" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
                         <TextBox Style="{StaticResource DarkInput}" Text="{Binding NewSessionName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
                         <Button Style="{StaticResource GreenBtn}" Command="{Binding CreateSessionCommand}" Content="+ New Session" HorizontalAlignment="Stretch" />
                     </StackPanel>
@@ -155,7 +155,7 @@
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="ListBoxItem">
-                                            <Border x:Name="b" Background="#252530" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                            <Border x:Name="b" Background="{DynamicResource BrushBorder}" CornerRadius="8" Padding="{TemplateBinding Padding}">
                                                 <ContentPresenter />
                                             </Border>
                                             <ControlTemplate.Triggers>
@@ -170,8 +170,8 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel>
-                                    <TextBlock Text="{Binding Name}" FontFamily="{StaticResource FontBody}" FontSize="12" FontWeight="SemiBold" Foreground="#E5E2E1" />
-                                    <TextBlock Text="{Binding DurationText}" FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="#859397" />
+                                    <TextBlock Text="{Binding Name}" FontFamily="{StaticResource FontBody}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+                                    <TextBlock Text="{Binding DurationText}" FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="{DynamicResource BrushTextMuted}" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -187,7 +187,7 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                                 <TextBlock Text="LIVE OUTPUT" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -199,7 +199,7 @@
                             </StackPanel>
                         </Grid>
                     </Border>
-                    <ListBox x:Name="LogList" ItemsSource="{Binding LogEntriesView}" Background="#060606" BorderThickness="0" Foreground="#E5E2E1" FontFamily="{StaticResource FontMono}" FontSize="11" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                    <ListBox x:Name="LogList" ItemsSource="{Binding LogEntriesView}" Background="{DynamicResource BrushVoid}" BorderThickness="0" Foreground="{DynamicResource BrushTextPrimary}" FontFamily="{StaticResource FontMono}" FontSize="11" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="8,2" />
