@@ -5,7 +5,7 @@
         xmlns:vm="clr-namespace:LogPro.ViewModels"
         xmlns:views="clr-namespace:LogPro.Views"
         xmlns:conv="clr-namespace:LogPro.Converters"
-        Title="LogPro"
+        Title="QADeviceTool"
         Width="1280" Height="800"
         MinWidth="960" MinHeight="600"
         WindowStartupLocation="CenterScreen"
@@ -13,7 +13,7 @@
         WindowStyle="None"
         AllowsTransparency="True"
         ResizeMode="CanResize"
-        Icon="Assets/LogProIcon.ico">
+        Icon="QAQCDeviceIcon.ico">
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="4" CornerRadius="0" GlassFrameThickness="0" UseAeroCaptionButtons="False" />
