@@ -298,7 +298,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            try { _adbProcess?.Dispose(); } 
+            try { _adbProcess?.Dispose(); } catch { /* best effort */ }
             _adbProcess = null;
             _runningOnSerial = null;
             IsRunning = false;
@@ -313,7 +313,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         var serialAtStop = _runningOnSerial;
 
         // Cancel waiter, kill local adb process tree, then kill on-device monkey.
-        try { _runCts?.Cancel(); } 
+        try { _runCts?.Cancel(); } catch { /* best effort */ }
         try
         {
             if (_adbProcess != null && !_adbProcess.HasExited)
