@@ -231,6 +231,7 @@
 
                 <!-- CONTENT AREA -->
                 <Border Grid.Column="1" Background="{StaticResource BrushVoid}">
+                    <!-- DIAG: direct view test -->
                     <ContentPresenter Content="{Binding CurrentView}" />
                 </Border>
             </Grid>
