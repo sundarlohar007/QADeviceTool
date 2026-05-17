@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Threading;
@@ -11,13 +12,13 @@ namespace LogPro.ViewModels;
 /// <summary>
 /// Dashboard — overview of devices, tool statuses, and quick actions.
 /// </summary>
-public partial class DashboardViewModel : ObservableObject
+public partial class DashboardViewModel : ObservableObject, IDisposable
 {
-    private readonly AdbService _adbService;
-    private readonly IosService _iosService;
-    private readonly ScrcpyService _scrcpyService;
-    private readonly SessionService _sessionService;
-    private readonly DeviceMonitorService _deviceMonitor;
+    private readonly IAdbService _adbService;
+    private readonly IIosService _iosService;
+    private readonly IScrcpyService _scrcpyService;
+    private readonly ISessionService _sessionService;
+    private readonly IDeviceMonitorService _deviceMonitor;
     private readonly DependencyChecker _dependencyChecker;
     private readonly Dispatcher _dispatcher;
 
@@ -64,11 +65,11 @@ public partial class DashboardViewModel : ObservableObject
     private string _wirelessStatus = string.Empty;
 
     public DashboardViewModel(
-        AdbService adbService,
-        IosService iosService,
-        ScrcpyService scrcpyService,
-        SessionService sessionService,
-        DeviceMonitorService deviceMonitor,
+        IAdbService adbService,
+        IIosService iosService,
+        IScrcpyService scrcpyService,
+        ISessionService sessionService,
+        IDeviceMonitorService deviceMonitor,
         DependencyChecker dependencyChecker)
     {
         _adbService = adbService;
@@ -92,7 +93,7 @@ public partial class DashboardViewModel : ObservableObject
                     _dispatcher.BeginInvoke(DispatcherPriority.Background, () => TargetPackageName = keyword);
                 }
             }
-            catch { }
+            
 
             try
             {
@@ -112,7 +113,7 @@ public partial class DashboardViewModel : ObservableObject
             PreferencesService.Current.TargetPackageName = value?.Trim() ?? string.Empty;
             PreferencesService.Save();
         }
-        catch { }
+        
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
@@ -330,4 +331,11 @@ public partial class DashboardViewModel : ObservableObject
 
         await _deviceMonitor.PollDevicesAsync();
     }
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        GC.SuppressFinalize(this);
+    }
 }
+

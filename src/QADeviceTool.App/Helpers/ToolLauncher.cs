@@ -63,7 +63,8 @@ public static class ToolLauncher
         {
             var logger = Services.AppLogger.Log;
             var workDir = ResolveWorkDir(fullExePath);
-            logger.Info($"[ToolLauncher] Launching: {fullExePath} {arguments}");
+            var logArgs = PreferencesService.Current.SecureMode ? SanitizeForLog(arguments) : arguments;
+            logger.Info($"[ToolLauncher] Launching: {fullExePath} {logArgs}");
             logger.Debug($"[ToolLauncher] WorkingDirectory: {workDir}");
 
             using var process = new Process();
@@ -139,13 +140,13 @@ public static class ToolLauncher
         {
             result.Success = false;
             result.Error = ex.Message;
-            try { Services.AppLogger.Log.Error(ex, $"[ToolLauncher] Exception launching {fullExePath}"); } catch {}
+            try { Services.AppLogger.Log.Error(ex, $"[ToolLauncher] Exception launching {fullExePath}"); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[ToolLauncher] Exception during startup"); }
         }
 
         return result;
     }
 
-    public static Process? StartLongRunning(string exeName, string arguments, Action<string>? errorCallback = null)
+    public static Process? StartLongRunning(string exeName, string arguments, Action<string>? errorCallback = null, bool drainStdout = true)
     {
         var fullExePath = ResolveExecutablePath(exeName);
 
@@ -153,7 +154,8 @@ public static class ToolLauncher
         {
             var logger = Services.AppLogger.Log;
             var workDir = ResolveWorkDir(fullExePath);
-            logger.Info($"[ToolLauncher] StartLongRunning: {fullExePath} {arguments}");
+            var logArgs2 = PreferencesService.Current.SecureMode ? SanitizeForLog(arguments) : arguments;
+            logger.Info($"[ToolLauncher] StartLongRunning: {fullExePath} {logArgs2}");
             logger.Debug($"[ToolLauncher] WorkingDirectory: {workDir}");
 
             var process = new Process();
@@ -173,6 +175,13 @@ public static class ToolLauncher
             process.Start();
             Services.ProcessManagerService.TrackProcess(process);
 
+            // Drain stdout in background to prevent pipe buffer deadlock (4KB on Windows).
+            // Callers that attach own OutputDataReceived handler (SessionService) pass drainStdout: false.
+            if (drainStdout)
+            {
+                process.BeginOutputReadLine();
+            }
+
             // Drain stderr in background to prevent buffer deadlock.
             _ = Task.Run(async () =>
             {
@@ -184,7 +193,7 @@ public static class ToolLauncher
                         logger.Warn($"[ToolLauncher] STDERR(long): {line}");
                     }
                 }
-                catch { /* stream ended */ }
+                catch (Exception ex) { AppLogger.Log.Debug(ex, "[ToolLauncher] stderr stream ended"); }
             });
 
             logger.Info($"[ToolLauncher] Started LongRunning PID: {process.Id} (stderr draining)");
@@ -192,8 +201,19 @@ public static class ToolLauncher
         }
         catch (Exception ex)
         {
-            try { Services.AppLogger.Log.Error(ex, $"[ToolLauncher] Exception in StartLongRunning for {fullExePath}"); } catch {}
+            try { Services.AppLogger.Log.Error(ex, $"[ToolLauncher] Exception in StartLongRunning for {fullExePath}"); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[ToolLauncher] Exception during startup"); }
             return null;
         }
+    }
+
+    /// <summary>Sanitizes command arguments for logging when Secure Mode is enabled.</summary>
+    private static string SanitizeForLog(string arguments)
+    {
+        if (string.IsNullOrEmpty(arguments)) return arguments;
+        // Redact device serials: -s {serial} -> -s [REDACTED]
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(arguments, @"-s\s+\S+", "-s [REDACTED]");
+        // Redact file paths containing /sdcard/ or /data/
+        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"(/sdcard/|/data/)\S+", "${1}[PATH]");
+        return sanitized;
     }
 }

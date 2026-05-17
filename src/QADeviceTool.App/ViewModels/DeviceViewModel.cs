@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Threading;
@@ -11,13 +12,13 @@ namespace LogPro.ViewModels;
 /// <summary>
 /// Device details and per-device actions.
 /// </summary>
-public partial class DeviceViewModel : ObservableObject
+public partial class DeviceViewModel : ObservableObject, IDisposable
 {
-    private readonly AdbService _adbService;
-    private readonly IosService _iosService;
-    private readonly ScrcpyService _scrcpyService;
-    private readonly DeviceMonitorService _deviceMonitor;
-    private readonly SessionService _sessionService;
+    private readonly IAdbService _adbService;
+    private readonly IIosService _iosService;
+    private readonly IScrcpyService _scrcpyService;
+    private readonly IDeviceMonitorService _deviceMonitor;
+    private readonly ISessionService _sessionService;
     private readonly Dispatcher _dispatcher;
 
     [ObservableProperty]
@@ -42,10 +43,10 @@ public partial class DeviceViewModel : ObservableObject
     private string _deviceTag = string.Empty;
 
     public DeviceViewModel(
-        AdbService adbService,
-        IosService iosService,
-        ScrcpyService scrcpyService,
-        DeviceMonitorService deviceMonitor,
+        IAdbService adbService,
+        IIosService iosService,
+        IScrcpyService scrcpyService,
+        IDeviceMonitorService deviceMonitor,
         SessionService sessionService)
     {
         _adbService = adbService;
@@ -200,6 +201,7 @@ public partial class DeviceViewModel : ObservableObject
             return;
         }
 
+        // Security warning: tcpip opens the device to all machines on the network         var confirm = System.Windows.MessageBox.Show(             "Enabling wireless ADB will open your device to TCP connections on port 5555. Any machine on the same network can connect to and control this device. Are you sure you want to continue?",             "Security Warning — Wireless ADB",             System.Windows.MessageBoxButton.YesNo,             System.Windows.MessageBoxImage.Warning);         if (confirm != System.Windows.MessageBoxResult.Yes)         {             StatusMessage = "Wireless ADB cancelled.";             return;         } 
         StatusMessage = "Enabling wireless ADB mode...";
 
         try
@@ -270,4 +272,11 @@ public partial class DeviceViewModel : ObservableObject
             StatusMessage = $"[!] Disconnect error: {ex.Message}";
         }
     }
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        GC.SuppressFinalize(this);
+    }
 }
+

@@ -16,6 +16,7 @@ public static class ProcessManagerService
             {
                 var id = process.Id;
                 process.EnableRaisingEvents = true;
+
                 process.Exited += (s, e) =>
                 {
                     _trackedProcesses.TryRemove(id, out _);
@@ -44,7 +45,7 @@ public static class ProcessManagerService
                     AppLogger.Log.Info($"Killing tracked process {process.ProcessName} (ID: {process.Id})");
                     process.Kill(true); // Kill process tree
                 }
-                process.Dispose();
+                    // Let owning code dispose its own references — only Kill here
             }
             catch (Exception ex)
             {

@@ -20,12 +20,12 @@ namespace LogPro.ViewModels;
 /// Sessions view — one-click capture, live log viewer with auto-scroll,
 /// session-scoped snapshots, save logs, auto-capture on connect.
 /// </summary>
-public partial class SessionViewModel : ObservableObject
+public partial class SessionViewModel : ObservableObject, IDisposable
 {
-    private readonly SessionService _sessionService;
-    private readonly AdbService _adbService;
-    private readonly IosService _iosService;
-    private readonly DeviceMonitorService _deviceMonitor;
+    private readonly ISessionService _sessionService;
+    private readonly IAdbService _adbService;
+    private readonly IIosService _iosService;
+    private readonly IDeviceMonitorService _deviceMonitor;
     private readonly Dispatcher _dispatcher;
 
     // ── Log Viewer Properties ──
@@ -107,7 +107,7 @@ public partial class SessionViewModel : ObservableObject
     [ObservableProperty]
     private LogcatFormat _selectedLogFormat = LogcatFormat.ThreadTime;
 
-    public SessionViewModel(SessionService sessionService, AdbService adbService, IosService iosService, DeviceMonitorService deviceMonitor)
+    public SessionViewModel(ISessionService sessionService, IAdbService adbService, IIosService iosService, DeviceMonitorService deviceMonitor)
     {
         _sessionService = sessionService;
         _adbService = adbService;
@@ -201,6 +201,11 @@ public partial class SessionViewModel : ObservableObject
 
         _dispatcher.BeginInvoke(async () =>
         {
+            // Prevent re-entrant auto-capture from rapid DeviceConnected events
+            lock (_autoCaptureLock)
+            {
+                if (!_autoCaptureInProgress.Add(device.Serial)) return;
+            }
             try
             {
                 // Don't start a second capture if one is already active for this device
@@ -234,11 +239,12 @@ public partial class SessionViewModel : ObservableObject
             {
                 StatusMessage = $"[!] Auto-capture error: {ex.Message}";
             }
+            finally
+            {
+                _autoCaptureInProgress.Remove(device.Serial);
+            }
         });
     }
-
-    /// <summary>
-    /// Immediately stop logging when a device is unplugged.
     /// </summary>
     private void OnDeviceDisconnected(DeviceInfo device)
     {
@@ -259,7 +265,7 @@ public partial class SessionViewModel : ObservableObject
                     OnPropertyChanged(nameof(SelectedSession));
                 }
             }
-            catch { }
+            catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Operation failed"); }
         });
     }
 
@@ -272,7 +278,7 @@ public partial class SessionViewModel : ObservableObject
             foreach (var s in saved)
                 Sessions.Add(s);
         }
-        catch { }
+        catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Operation failed"); }
     }
 
     [RelayCommand]
@@ -350,13 +356,7 @@ public partial class SessionViewModel : ObservableObject
 
             LogEntries.AddRange(entries);
 
-            if (LogEntries.Count > 200000)
-            {
-                var removeCount = LogEntries.Count - 150000;
-                var keep = LogEntries.Skip(removeCount).ToList();
-                LogEntries.Clear();
-                LogEntries.AddRange(keep);
-            }
+            if (LogEntries.Count > 200000)                 TrimLogEntries(150000);
 
             ScrollToEndRequested?.Invoke();
         });
@@ -381,7 +381,7 @@ public partial class SessionViewModel : ObservableObject
                     }
                 }
             }
-            catch { /* keep raw message */ }
+            catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Parse failed, keeping raw message"); }
         }
         return entry;
     }
@@ -422,7 +422,7 @@ public partial class SessionViewModel : ObservableObject
                     }
                 }
             }
-            catch { /* keep raw message */ }
+            catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Parse failed, keeping raw message"); }
         }
 
         LogEntries.Add(entry);
@@ -563,10 +563,13 @@ public partial class SessionViewModel : ObservableObject
                 StatusMessage = "[!] No active session to save.";
                 return;
             }
-
-            var logContent = string.Join(Environment.NewLine,
-                LogEntries.Select(e => e.RawLine));
-            var path = await _sessionService.SaveLogToFileAsync(SelectedSession, logContent);
+            if (!File.Exists(SelectedSession.LogFilePath))
+            {
+                StatusMessage = "[!] Log file not found on disk.";
+                return;
+            }
+            var rawContent = await File.ReadAllTextAsync(SelectedSession.LogFilePath);
+            var path = await _sessionService.SaveLogToFileAsync(SelectedSession, rawContent);
             StatusMessage = $"Log saved: {System.IO.Path.GetFileName(path)}";
         }
         catch (Exception ex)
@@ -748,7 +751,7 @@ public partial class SessionViewModel : ObservableObject
             var infoName = $"device_info_{timestamp:yyyyMMdd_HHmmss}.txt";
             var infoPath = Path.Combine(saveDir, infoName);
             var infoContent = new System.Text.StringBuilder();
-            infoContent.AppendLine($"=== LOGPRO BUG REPORT ===");
+            infoContent.AppendLine($"=== QADeviceTool BUG REPORT ===");
             infoContent.AppendLine($"Generated: {timestamp:yyyy-MM-dd HH:mm:ss}");
             infoContent.AppendLine($"Device: {device.DisplayName}");
             infoContent.AppendLine($"Serial (hashed): {deviceHash}");
@@ -775,8 +778,8 @@ public partial class SessionViewModel : ObservableObject
                     ["BATTERY"] = "shell dumpsys battery",
                     ["CPU"] = "shell dumpsys cpuinfo",
                     ["DISK"] = "shell dumpsys diskstats",
-                    ["WIFI"] = "shell dumpsys wifi",
-                    ["PACKAGE"] = "shell dumpsys package",
+
+                    // PACKAGE section removed — leaks all installed app details including competitor apps
                     ["WINDOW"] = "shell dumpsys window",
                     ["NOTIFICATION"] = "shell dumpsys notification",
                 };
@@ -817,7 +820,7 @@ public partial class SessionViewModel : ObservableObject
                         infoContent.AppendLine(tombstones);
                     }
                 }
-                catch { /* tombstone dir may not exist */ }
+                catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Tombstone dir access failed"); }
 
                 // ANR traces
                 try
@@ -831,7 +834,7 @@ public partial class SessionViewModel : ObservableObject
                         infoContent.AppendLine(anr);
                     }
                 }
-                catch { /* anr dir may not exist */ }
+                catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] ANR dir access failed"); }
             }
             else
             {
@@ -843,7 +846,7 @@ public partial class SessionViewModel : ObservableObject
                 infoContent.AppendLine($"Name: {iosDetails.Name}");
                 infoContent.AppendLine($"Model: {iosDetails.Model}");
                 infoContent.AppendLine($"OS: {iosDetails.OsVersion}");
-                infoContent.AppendLine($"Serial: {iosDetails.Serial}");
+                infoContent.AppendLine($"Serial: {SecurityHelper.HashSerial(iosDetails.Serial)}");
 
                 // iOS Diagnostics (pymobiledevice3)
                 try
@@ -901,7 +904,7 @@ public partial class SessionViewModel : ObservableObject
             // Clean up temp files
             foreach (var file in tempFiles)
             {
-                try { if (File.Exists(file)) File.Delete(file); } catch { }
+                try { if (File.Exists(file)) File.Delete(file); } catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Operation failed"); }
             }
 
             StatusMessage = $"Bug Report: {zipName} ({tempFiles.Count} artifacts)";
@@ -1010,7 +1013,7 @@ public partial class SessionViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"[!] Error opening folder: {ex.Message}";
-            System.Diagnostics.Debug.WriteLine($"OpenSessionFolder error: {ex}");
+            Services.AppLogger.Log.Debug(ex, "[SessionViewModel] OpenSessionFolder error");
         }
     }
 
@@ -1032,6 +1035,7 @@ public partial class SessionViewModel : ObservableObject
         }
         else
         {
+            // Screen recording can consume ~400MB at 1080p for 3-min max duration
             await StartScreenRecordAsync();
         }
     }
@@ -1117,13 +1121,7 @@ public partial class SessionViewModel : ObservableObject
     {
         try
         {
-            var entries = LogEntriesView.Cast<LogEntry>().ToList();
-            if (entries.Count == 0)
-            {
-                StatusMessage = "[!] No logs to copy.";
-                return;
-            }
-
+            var entries = LogEntriesView.Cast<LogEntry>().TakeLast(10000).ToList();             if (entries.Count == 0)             {                 StatusMessage = "[!] No logs to copy.";                 return;             }             var totalCount = LogEntriesView.Cast<LogEntry>().Count();             if (totalCount > entries.Count)                 StatusMessage = $"Copied last {entries.Count} of {totalCount} log entries to clipboard.";             else
             var text = IsRawMode
                 ? string.Join(Environment.NewLine, entries.Select(e => e.RawLine))
                 : string.Join(Environment.NewLine, entries.Select(e => $"[{e.Timestamp}] [{e.Level}] {e.Message}"));
@@ -1297,12 +1295,7 @@ public partial class SessionViewModel : ObservableObject
                 LogEntries.Clear();
                 LogEntries.AddRange(parsed);
 
-                if (LogEntries.Count > 200000)
-                {
-                    var removeCount = LogEntries.Count - 150000;
-                    var keep = LogEntries.Skip(removeCount).ToList();
-                    LogEntries.Clear();
-                    LogEntries.AddRange(keep);
+                if (LogEntries.Count > 200000)                     TrimLogEntries(150000);
                 }
 
                 StatusMessage = $"Loaded {LogEntries.Count} log entries.";
@@ -1318,4 +1311,20 @@ public partial class SessionViewModel : ObservableObject
             _isLoadingSession = false;
         }
     }
+
+    private void TrimLogEntries(int maxEntries)
+    {
+        if (LogEntries.Count <= maxEntries) return;
+        var removeCount = LogEntries.Count - maxEntries;
+        LogEntries.RemoveRange(0, removeCount);
+    }
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+            _deviceMonitor.DeviceConnected -= OnDeviceConnected;
+            _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        GC.SuppressFinalize(this);
+    }
 }
+

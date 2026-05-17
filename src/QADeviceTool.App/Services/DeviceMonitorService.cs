@@ -20,6 +20,7 @@ public class DeviceMonitorService : IDeviceMonitorService
 
     private readonly ConcurrentDictionary<string, int> _missedPollCount = new(StringComparer.Ordinal);
     private const int MissedPollThreshold = 3;
+    private bool _isFirstPoll = true;
 
     public event Action<List<DeviceInfo>>? DevicesChanged;
     public event Action<DeviceInfo>? DeviceConnected;
@@ -64,8 +65,11 @@ public class DeviceMonitorService : IDeviceMonitorService
 
             try
             {
-                var androidDevices = await _adbService.GetConnectedDevicesAsync().ConfigureAwait(false);
-                newDevices.AddRange(androidDevices);
+            // Poll Android and iOS in parallel
+            var androidTask = _adbService.GetConnectedDevicesAsync();
+            var iosTask = _iosService.GetConnectedDevicesAsync();
+            await Task.WhenAll(androidTask, iosTask).ConfigureAwait(false);
+            try { newDevices.AddRange(androidTask.Result); } catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to get Android devices"); }
             }
             catch (Exception ex)
             {
@@ -74,7 +78,7 @@ public class DeviceMonitorService : IDeviceMonitorService
 
             try
             {
-                var iosDevices = await _iosService.GetConnectedDevicesAsync().ConfigureAwait(false);
+            try { newDevices.AddRange(iosTask.Result); } catch (Exception ex) { AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get iOS devices"); }
                 newDevices.AddRange(iosDevices);
             }
             catch (Exception ex)
@@ -133,7 +137,7 @@ public class DeviceMonitorService : IDeviceMonitorService
             foreach (var device in disconnected)
                 DeviceDisconnected?.Invoke(device);
 
-            if (connected.Count > 0 || disconnected.Count > 0)
+            if (connected.Count > 0 || disconnected.Count > 0 || changedProperties)
                 DevicesChanged?.Invoke(newDevices);
         }
         finally

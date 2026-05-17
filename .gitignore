@@ -1,66 +1,31 @@
-# Build Logs
-build.log
-build_error.txt
-build_err.log
-build_err.txt
-build_output.log
-installer_exe_errors.txt
-*.log
-
-# WiX Toolset Output
-.wix/
-
-# Visual Studio
-.vs/
+# Build output
+bin/
+obj/
+dist/
+publish/
 *.user
 *.suo
-*.userosscache
-*.sln.docstates
+*.cache
+*.vs/
 
-# Build Results
-[Oo]bj/
-[Bb]in/
-publish/
-publish_test*/
-
-# Packaging Outputs
-/QAQCDeviceTool-*-Setup.exe
-/QAQCDeviceTool-*-Portable.zip
-*.wixpdb
-
-
-# Temporary / scratch folders
-New folder/
-logs/
-
-# Visual Studio Code
-.vscode/
-
-# Rider
+# IDE
+.vs/
 .idea/
+*.swp
 
-# Windows image file caches
-Thumbs.db
-ehthumbs.db
-ehthumbs_vista.db
-*.stackdump
+# CI Logs
+CI LOGS/
 
-# Windows Desktop Services Store
+# OS files
 .DS_Store
+Thumbs.db
 
-# Misc scratch files
-afchelp.txt
-crash.log
-git_tracked*.txt
-
-# Installer staging
-installer/app/
-innosetup.exe
-
-# Tool outputs / caches
+# Environment
+.env
+*.env.local
+# GSD graphify cache
 graphify-out/
-StartUpLogs/
-.opencode/node_modules/
 
-# Backups
-*.bak
+# Build artifacts
+*.zip
+*.msi

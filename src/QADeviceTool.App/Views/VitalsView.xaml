@@ -5,8 +5,8 @@
              xmlns:conv="clr-namespace:LogPro.Converters">
     <UserControl.Resources>
         <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="#1A1A1F" />
-            <Setter Property="BorderBrush" Value="#252530" />
+            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="12" />
         </Style>
@@ -19,12 +19,12 @@
             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Bold" />
-            <Setter Property="Foreground" Value="#E5E2E1" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
         </Style>
         <Style x:Key="GhostBtn" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#BAC9CD" />
-            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Medium" />
@@ -38,8 +38,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" />
-                                <Setter Property="Foreground" Value="#8CEBFF" />
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -47,9 +47,9 @@
             </Setter>
         </Style>
         <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
-            <Setter Property="Background" Value="#00D4F0" />
+            <Setter Property="Background" Value="{DynamicResource BrushCyan}" />
             <Setter Property="Foreground" Value="#001F25" />
-            <Setter Property="BorderBrush" Value="#00D4F0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushCyan}" />
             <Setter Property="FontWeight" Value="Bold" />
         </Style>
         <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
@@ -57,12 +57,12 @@
             <Setter Property="BorderBrush" Value="#7F1D1D" />
         </Style>
         <Style x:Key="DarkInput" TargetType="TextBox">
-            <Setter Property="Background" Value="#0E0E0E" />
-            <Setter Property="Foreground" Value="#E5E2E1" />
-            <Setter Property="BorderBrush" Value="#3C494C" />
+            <Setter Property="Background" Value="{DynamicResource BrushBase}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="10,8" />
-            <Setter Property="CaretBrush" Value="#8CEBFF" />
+            <Setter Property="CaretBrush" Value="{DynamicResource BrushPrimaryLight}" />
             <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Template">
@@ -72,7 +72,7 @@
                             <ScrollViewer x:Name="PART_ContentHost" />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#8CEBFF" /></Trigger>
+                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" /></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -88,7 +88,7 @@
             <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
         </Style>
     </UserControl.Resources>
-    <Grid Background="#060606">
+    <Grid Background="{DynamicResource BrushVoid}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -99,8 +99,8 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock Text="Vitals" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="#E5E2E1" />
-                <TextBlock Text="Live CPU and memory monitoring" Foreground="#BAC9CD" FontSize="12" Margin="0,4,0,0" />
+                <TextBlock Text="Vitals" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+                <TextBlock Text="Live CPU and memory monitoring" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="220" Margin="0,0,12,0" />
@@ -132,22 +132,22 @@
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE950;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE950;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="MEMORY INFO" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
-                    <TextBox Style="{StaticResource MonoBlock}" Text="{Binding MemInfoOutput, Mode=OneWay}" Background="#060606" BorderThickness="0" />
+                    <TextBox Style="{StaticResource MonoBlock}" Text="{Binding MemInfoOutput, Mode=OneWay}" Background="{DynamicResource BrushVoid}" BorderThickness="0" />
                 </DockPanel>
             </Border>
             <Border Grid.Column="2" Style="{StaticResource Card}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#8CEBFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="TOP PROCESSES" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
-                    <TextBox Style="{StaticResource MonoBlock}" Text="{Binding TopProcessesOutput, Mode=OneWay}" Background="#060606" BorderThickness="0" />
+                    <TextBox Style="{StaticResource MonoBlock}" Text="{Binding TopProcessesOutput, Mode=OneWay}" Background="{DynamicResource BrushVoid}" BorderThickness="0" />
                 </DockPanel>
             </Border>
         </Grid>

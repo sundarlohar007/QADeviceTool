@@ -11,12 +11,12 @@ using LogPro.Services;
 
 namespace LogPro.ViewModels;
 
-public partial class AppManagementViewModel : ObservableObject
+public partial class AppManagementViewModel : ObservableObject, IDisposable
 {
-    private readonly AdbService _adbService;
-    private readonly IosService _iosService;
-    private readonly DeviceMonitorService _deviceMonitor;
-    private readonly SessionService _sessionService;
+    private readonly IAdbService _adbService;
+    private readonly IIosService _iosService;
+    private readonly IDeviceMonitorService _deviceMonitor;
+    private readonly ISessionService _sessionService;
     private readonly Dispatcher _dispatcher;
 
     [ObservableProperty]
@@ -39,11 +39,12 @@ public partial class AppManagementViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isLoading;
+    private readonly System.Text.StringBuilder _outputBuilder = new();
 
     public AppManagementViewModel(
-        AdbService adbService, 
-        IosService iosService, 
-        DeviceMonitorService deviceMonitor,
+        IAdbService adbService, 
+        IIosService iosService, 
+        IDeviceMonitorService deviceMonitor,
         SessionService sessionService)
     {
         _adbService = adbService;
@@ -192,7 +193,7 @@ public partial class AppManagementViewModel : ObservableObject
                     var trimmed = line.Trim();
                     _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
                     {
-                        ConsoleOutput += trimmed + Environment.NewLine;
+                        _outputBuilder.Append(trimmed + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
                         StatusMessage = $"[Installing] {trimmed}";
                     });
                 }
@@ -210,7 +211,7 @@ public partial class AppManagementViewModel : ObservableObject
                 var activeSession = _sessionService.GetActiveSessionForDevice(SelectedDevice.Serial);
                 if (activeSession != null)
                 {
-                    ConsoleOutput += "(Paused log capture for install)" + Environment.NewLine;
+                    _outputBuilder.Append("(Paused log capture for install)" + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
                     _sessionService.StopCapture(activeSession);
                     await Task.Delay(1500);
                 }
@@ -220,11 +221,11 @@ public partial class AppManagementViewModel : ObservableObject
                 if (activeSession != null)
                 {
                     await _sessionService.StartCaptureAsync(activeSession);
-                    ConsoleOutput += "(Resumed log capture)" + Environment.NewLine;
+                    _outputBuilder.Append("(Resumed log capture)" + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
                 }
             }
 
-            ConsoleOutput += Environment.NewLine + (result.success ? "SUCCESS: " : "FAILED: ") + result.message + Environment.NewLine;
+            _outputBuilder.Append(Environment.NewLine + (result.success ? "SUCCESS: " : "FAILED: ") + result.message + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
             StatusMessage = result.success ? result.message : $"[!] Install failed: {result.message}";
 
             if (result.success)
@@ -232,7 +233,7 @@ public partial class AppManagementViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            ConsoleOutput += Environment.NewLine + $"ERROR: {ex.Message}" + Environment.NewLine;
+            _outputBuilder.Append(Environment.NewLine + $"ERROR: {ex.Message}" + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
             StatusMessage = $"[!] Install error: {ex.Message}";
         }
         finally
@@ -265,7 +266,7 @@ public partial class AppManagementViewModel : ObservableObject
                 ? await _adbService.UninstallAppAsync(SelectedDevice.Serial, pkg)
                 : await _iosService.UninstallAppAsync(SelectedDevice.Serial, pkg);
 
-            ConsoleOutput += (success ? "SUCCESS: " : "FAILED: ") + $"Uninstall {pkg}" + Environment.NewLine;
+            _outputBuilder.Append((success ? "SUCCESS: " : "FAILED: ") + $"Uninstall {pkg}" + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
 
             if (success)
             {
@@ -402,4 +403,11 @@ public partial class AppManagementViewModel : ObservableObject
 
         await LoadAppsAsync(SelectedDevice);
     }
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        GC.SuppressFinalize(this);
+    }
 }
+

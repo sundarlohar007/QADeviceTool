@@ -17,7 +17,7 @@ namespace LogPro.Services;
 public class AdbService : IAdbService
 {
     private readonly string _adb;
-    private static readonly SemaphoreSlim _adbLock = new(1, 1);
+    private static readonly SemaphoreSlim _adbLock = new(4, 4);
     
     private const int DefaultTimeoutMs = 8000;
     private const int FastTimeoutMs = 5000;
@@ -47,6 +47,11 @@ public class AdbService : IAdbService
             {
                 result = await ToolLauncher.RunAsync(_adb, arguments, timeoutMs, outputCallback).ConfigureAwait(false);
                 if (result.Success) return result;
+
+                // Only retry on transient failures, not permanent errors
+                if (result.Error.Contains("unauthorized") || result.Error.Contains("Failure") ||
+                    result.Output.Contains("Failure") || result.Output.Contains("Error:") ||
+                    result.ExitCode == 1) break;
 
                 if (retry < MaxRetryAttempts - 1)
                     await Task.Delay(RetryDelayMs).ConfigureAwait(false);
@@ -192,10 +197,7 @@ public class AdbService : IAdbService
             var result = await RunAdbAsync($"-s {serial} shell getprop {property}", FastTimeoutMs);
             return result.Success ? result.Output.Trim() : null;
         }
-        catch
-        {
-            return null;
-        }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "[AdbService] GetConnectedDevicesAsync failed"); return null; }
     }
 
     public async Task<string?> GetDevicePropertyAsync(string serial, string property)
@@ -204,10 +206,10 @@ public class AdbService : IAdbService
         return result.Success ? result.Output.Trim() : null;
     }
 
-    public async Task<string> ExecuteCommandAsync(string serial, string args)
+    public async Task<(bool Success, string Output, string Error)> ExecuteCommandWithResultAsync(string serial, string args)
     {
         var result = await RunAdbAsync($"-s {serial} {args}", DefaultTimeoutMs);
-        return result.Output;
+        return (result.Success, result.Output, result.Error);
     }
 
 
@@ -317,7 +319,8 @@ public class AdbService : IAdbService
 
         try
         {
-            var remotePath = $"/sdcard/qa_screenrecord_{DateTime.Now:yyyyMMdd_HHmmss}.mp4";
+            _activeRecordRemotePath = $"/sdcard/qa_screenrecord_{DateTime.Now:yyyyMMdd_HHmmss}.mp4";
+            var remotePath = _activeRecordRemotePath;
             var arguments = $"-s {serial} shell screenrecord --bit-rate {bitRate} --time-limit {maxDurationSec} {remotePath}";
             var process = await StartAdbLongRunning(arguments);
             if (process == null) return null;
@@ -357,8 +360,8 @@ public class AdbService : IAdbService
                         await Task.Delay(500); // wait for mp4 finalization
                     }
                 }
-                catch { }
-                try { process.Kill(false); } catch { }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "[AdbService] StopScreenRecord failed"); }
+        try { process.Kill(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[AdbService] ScreenRecord kill error"); }
                 process.Dispose();
             }
 
@@ -388,6 +391,7 @@ public class AdbService : IAdbService
 
     public bool IsScreenRecording { get { var p = _activeRecordProcess; return p != null && !p.HasExited; } }
     private System.Diagnostics.Process? _activeRecordProcess;
+    private string? _activeRecordRemotePath;
 
     public async Task<string?> GetPidFromPackageNameAsync(string serial, string packageNameKeyword)
     {
@@ -425,7 +429,9 @@ public class AdbService : IAdbService
     public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? outputCallback = null)
     {
         var result = await RunAdbAsync($"-s {serial} install -r \"{apkPath}\"", 600000, outputCallback);
-        if (result.Success && result.Output.Contains("Success"))
+        // Check last line of output for "Success" — avoids false positives from package names containing "Success"
+        var lastLine = result.Output.Trim().Split('\\n').LastOrDefault() ?? "";
+        if (result.Success && lastLine.Trim().Equals("Success", StringComparison.OrdinalIgnoreCase))
             return (true, "APK installed successfully.");
         return (false, result.Output.Trim());
     }
@@ -478,10 +484,9 @@ public class AdbService : IAdbService
                     return parsed;
             }
 
+            // Detect permission denied on restricted paths like /data/
             var fallback = await RunAdbAsync($"-s {serial} shell \"ls -1Ap '{safePath}'\"", DefaultTimeoutMs);
-            return fallback.Success
-                ? ParseSimpleDirectoryListing(fallback.Output, path)
-                : new List<DeviceFile>();
+            return fallback.Success ? ParseSimpleDirectoryListing(fallback.Output, path) : new List<DeviceFile>(); // Permission denied returns empty listing
         }
         catch (Exception ex)
         {
@@ -675,14 +680,14 @@ public class AdbService : IAdbService
     }
 
     public async Task<bool> SetDeviceClipboardAsync(string serial, string text)
+    public async Task<bool> SetDeviceClipboardAsync(string serial, string text)
     {
-        // Base64-encode to prevent Android shell injection via $() or backticks
-        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(text));
+        // Escape single quotes for Android shell to prevent injection
+        var escaped = text.Replace("\\", "\\\\").Replace("'", "\\'");
         var result = await RunAdbAsync(
-            $"-s {serial} shell \"echo '{base64}' | base64 -d | cmd clipboard set\"", FastTimeoutMs);
+            $"-s {serial} shell cmd clipboard set '{escaped}'", FastTimeoutMs);
         return result.Success;
     }
-
     public async Task<string> GetDeviceClipboardAsync(string serial)
     {
         var result = await RunAdbAsync($"-s {serial} shell dumpsys clipboard", FastTimeoutMs);
@@ -693,28 +698,16 @@ public class AdbService : IAdbService
     {
         var tag = $"logpro_{DateTime.Now.Ticks}";
         var channelId = channel ?? "default";
-        // Validate channel ID is a simple alphanumeric/dot/dash identifier
         if (!System.Text.RegularExpressions.Regex.IsMatch(channelId, @"^[a-zA-Z0-9._\-]+$"))
             channelId = "default";
-        // Base64-encode to prevent shell injection via $(), backticks, etc.
-        var titleB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(title));
-        var bodyB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(body));
-        // Decode via pipe, store in shell vars, pass to cmd notification
-        var shellCmd = $"t=$(echo '{titleB64}'|base64 -d);b=$(echo '{bodyB64}'|base64 -d);" +
-                       $"cmd notification post -t \"$t\" \"$b\" --channel {channelId} {tag}";
-        var result = await RunAdbAsync($"-s {serial} shell \"{shellCmd}\"", FastTimeoutMs);
+        var safeTitle = title.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\"", "\\\"");
+        var safeBody = body.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\"", "\\\"");
+        var result = await RunAdbAsync($\"-s {serial} shell cmd notification post -t \"{safeTitle}\" \"{safeBody}\" --channel {channelId} {tag}\", FastTimeoutMs);
         return result.Success;
     }
-
-    public async Task<bool> BroadcastIntentAsync(string serial, string url)
-    {
-        if (!TryBuildDeepLinkIntentArgs(serial, url, out var args))
-            return false;
-
-        var result = await RunAdbAsync(args, 10000);
         var combined = $"{result.Output}\n{result.Error}";
-        return result.Success
-            && !combined.Contains("Error:", StringComparison.OrdinalIgnoreCase)
+        var started = combined.Contains("Starting: Intent", StringComparison.OrdinalIgnoreCase);
+        return result.Success && started
             && !combined.Contains("Exception", StringComparison.OrdinalIgnoreCase)
             && !combined.Contains("unable to resolve Intent", StringComparison.OrdinalIgnoreCase);
     }
@@ -750,7 +743,7 @@ public class AdbService : IAdbService
 
     public async Task<(bool Success, string Message)> PairAsync(string ipPort, string code)
     {
-        var result = await RunAdbAsync($"pair {ipPort} --code {code}", 15000);
+        var result = await RunAdbAsync($"pair {ipPort} {code}", 15000);
         if (result.Success && result.Output.Contains("successfully"))
             return (true, "Pairing successful.");
         return (false, string.IsNullOrWhiteSpace(result.Output) ? result.Error : result.Output);

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Threading;
@@ -8,11 +9,11 @@ using LogPro.Services;
 
 namespace LogPro.ViewModels;
 
-public partial class DeepLinkViewModel : ObservableObject
+public partial class DeepLinkViewModel : ObservableObject, IDisposable
 {
-    private readonly AdbService _adbService;
-    private readonly IosService _iosService;
-    private readonly DeviceMonitorService _deviceMonitor;
+    private readonly IAdbService _adbService;
+    private readonly IIosService _iosService;
+    private readonly IDeviceMonitorService _deviceMonitor;
     private readonly Dispatcher _dispatcher;
 
     [ObservableProperty]
@@ -30,7 +31,7 @@ public partial class DeepLinkViewModel : ObservableObject
     [ObservableProperty]
     private bool _isRouting;
 
-    public DeepLinkViewModel(AdbService adbService, IosService iosService, DeviceMonitorService deviceMonitor)
+    public DeepLinkViewModel(IAdbService adbService, IIosService iosService, DeviceMonitorService deviceMonitor)
     {
         _adbService = adbService;
         _iosService = iosService;
@@ -125,4 +126,11 @@ public partial class DeepLinkViewModel : ObservableObject
             IsRouting = false;
         }
     }
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        GC.SuppressFinalize(this);
+    }
 }
+

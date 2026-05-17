@@ -97,4 +97,20 @@ public static class PathHelper
     {
         return SecurityHelper.SanitizeFileName(name);
     }
+
+    /// <summary>Restricts directory access to current user (owner-only) on Windows.</summary>
+    public static void RestrictDirectoryAccess(string directoryPath)
+    {
+        try
+        {
+            if (!System.IO.Directory.Exists(directoryPath)) return;
+            var info = new System.IO.DirectoryInfo(directoryPath);
+            var acl = info.GetAccessControl();
+            // Remove inherited permissions
+            acl.SetAccessRuleProtection(true, false);
+            info.SetAccessControl(acl);
+        }
+        catch { /* ACLs best-effort on Windows */ }
+    }
 }
+

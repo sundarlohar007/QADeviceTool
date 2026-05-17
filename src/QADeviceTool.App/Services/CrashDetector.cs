@@ -50,8 +50,8 @@ public class CrashDetector
     }
 
     private readonly List<CrashEvent> _detectedCrashes = new();
-    public IReadOnlyList<CrashEvent> DetectedCrashes => _detectedCrashes;
-    public int CrashCount => _detectedCrashes.Count;
+    public IReadOnlyList<CrashEvent> DetectedCrashes { get { lock (_crashLock) return _detectedCrashes.ToList(); } }
+    public int CrashCount { get { lock (_crashLock) return _detectedCrashes.Count; } }
 
     public event Action<CrashEvent>? CrashDetected;
 
@@ -124,6 +124,6 @@ public class CrashDetector
 
     public void Clear()
     {
-        _detectedCrashes.Clear();
+        lock (_crashLock) { _detectedCrashes.Clear(); }
     }
 }

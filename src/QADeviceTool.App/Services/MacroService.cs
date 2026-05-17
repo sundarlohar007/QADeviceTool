@@ -73,7 +73,7 @@ public class MacroService
                     while (await process.StandardError.ReadLineAsync() is { } line)
                         Services.AppLogger.Log.Warn($"[MacroService] getevent stderr: {line}");
                 }
-                catch { /* stream ended */ }
+                catch (Exception ex) { AppLogger.Log.Debug(ex, "[MacroService] Recording stream ended"); }
             });
 
             await Task.Delay(250).ConfigureAwait(false);
@@ -150,7 +150,7 @@ public class MacroService
                     DelayMs = (int)Math.Max(0, delayMs)
                 });
             }
-            catch { /* skip unparseable lines */ }
+            catch (Exception ex) { AppLogger.Log.Debug(ex, "[MacroService] Skipping unparseable line"); }
         }
 
         return new MacroFile
@@ -167,25 +167,46 @@ public class MacroService
     /// Replays a macro via sendevent (raw evdev replay).
     /// </summary>
     public async Task ReplayMacroAsync(string serial, MacroFile macro, string? inputDevice = null,
-        float speedMultiplier = 1.0f, CancellationToken token = default)
+        
+{
+        
+    if (macro.Events.Count == 0) return;
+        
+    var device = inputDevice ?? macro.InputDevice ?? "/dev/input/event2";
+        
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+        
+    var expectedElapsed = 0L;
+        
+    foreach (var evt in macro.Events)
+        
     {
-        if (macro.Events.Count == 0) return;
-
-        // Auto-detect touch input device if not specified
-        var device = inputDevice ?? macro.InputDevice ?? "/dev/input/event2"; // fallback only
-
-        foreach (var evt in macro.Events)
+        
+        token.ThrowIfCancellationRequested();
+        
+        var cmd = $"sendevent {device} {evt.Type} {evt.Code} {evt.Value}";
+        
+        await _adbService.ExecuteCommandAsync(serial, $"shell {cmd}");
+        
+        var delay = (int)(evt.DelayMs / speedMultiplier);
+        
+        if (delay > 0)
+        
         {
-            token.ThrowIfCancellationRequested();
-
-            var cmd = $"sendevent {device} {evt.Type} {evt.Code} {evt.Value}";
-            await _adbService.ExecuteCommandAsync(serial, $"shell {cmd}");
-
-            var delay = (int)(evt.DelayMs / speedMultiplier);
-            if (delay > 0)
-                await Task.Delay(delay, token);
+        
+            expectedElapsed += delay;
+        
+            var remaining = (int)(expectedElapsed - sw.ElapsedMilliseconds);
+        
+            if (remaining > 0)
+        
+                await Task.Delay(remaining, token);
+        
         }
+        
     }
+        
+}
 
     /// <summary>
     /// Replays high-level input commands (tap/swipe) for simpler macros.
@@ -202,7 +223,7 @@ public class MacroService
                 "tap" => $"shell input tap {step.X} {step.Y}",
                 "swipe" => $"shell input swipe {step.X1} {step.Y1} {step.X2} {step.Y2} {step.DurationMs}",
                 "keyevent" => $"shell input keyevent {step.KeyCode}",
-                "text" => $"shell \"echo '{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(step.Text))}' | base64 -d | input text\"",
+                "text" => $"shell input text '{ShellEscape(step.Text)}'",
                 _ => null
             };
 
@@ -222,7 +243,7 @@ public class MacroService
             var json = await File.ReadAllTextAsync(filePath);
             return JsonSerializer.Deserialize<MacroFile>(json);
         }
-        catch { return null; }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "[MacroService] Replay failed"); return null; }
     }
 
     public static async Task SaveMacroAsync(MacroFile macro, string filePath)
@@ -274,4 +295,27 @@ public class SimpleMacroStep
     [JsonPropertyName("key")] public int KeyCode { get; set; }
     [JsonPropertyName("text")] public string Text { get; set; } = string.Empty;
     [JsonPropertyName("delay")] public int DelayMs { get; set; } = 500;
+
+    /// <summary>Auto-detects the touchscreen input device path via getevent -pl.</summary>
+    public static async Task<string> DetectTouchDeviceAsync(AdbService adb, string serial)
+    {
+        try
+        {
+            var result = await adb.ExecuteCommandAsync(serial, "shell getevent -pl");
+            if (string.IsNullOrEmpty(result)) return "/dev/input/event2";
+            // Look for ABS_MT_POSITION_X capability — indicates touchscreen
+            var lines = result.Split('\\n');
+            string? currentDevice = null;
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+                if (trimmed.StartsWith("add device"))
+                    currentDevice = trimmed.Split(' ').LastOrDefault()?.Trim(':') ?? currentDevice;
+                if (trimmed.Contains("ABS_MT_POSITION_X") && currentDevice != null)
+                    return currentDevice;
+            }
+        }
+        catch { /* fallback to default */ }
+        return "/dev/input/event2";
+    }
 }

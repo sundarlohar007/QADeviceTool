@@ -52,19 +52,3 @@ public class InverseBoolConverter : IValueConverter
         return false;
     }
 }
-
-public class BooleanToPlayPauseConverter : IValueConverter
-{
-    public static readonly BooleanToPlayPauseConverter Instance = new();
-
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        if (value is bool b) return b ? "⏸ Pause" : "▶ Play";
-        return "▶ Play";
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
-}

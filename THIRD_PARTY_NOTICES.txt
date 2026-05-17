@@ -1,0 +1,29 @@
+THIRD PARTY NOTICES — QADeviceTool
+
+This tool bundles or invokes the following third-party components:
+
+1. ADB (Android Debug Bridge)
+   License: Apache 2.0
+   https://developer.android.com/studio/releases/platform-tools
+   NOTICE: Part of Android SDK Platform Tools. See Android SDK License Agreement.
+
+2. scrcpy (Screen Copy)
+   License: Apache 2.0
+   https://github.com/Genymobile/scrcpy
+   NOTICE: Copyright (C) 2018 Genymobile. Licensed under Apache 2.0.
+
+3. pymobiledevice3
+   License: GPL-3.0
+   https://github.com/doronz88/pymobiledevice3
+   NOTE: Invoked as a subprocess, NOT bundled. Process-isolation model preserves
+   independent licensing. Users must install pymobiledevice3 separately.
+
+4. CommunityToolkit.Mvvm
+   License: MIT
+   https://github.com/CommunityToolkit/dotnet
+
+5. NLog
+   License: BSD-3-Clause
+   https://github.com/NLog/NLog
+
+6. Other NuGet packages — see nuget-packages.txt for full list.

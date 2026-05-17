@@ -1,10 +1,10 @@
-; QADeviceTool Installer Script
+; LogPro Installer Script
 ; Inno Setup Script
 
 #define MyAppName "QADeviceTool"
-#define MyAppVersion "3.1.0"
+#define MyAppVersion "3.2.0"
 #define MyAppPublisher "QADeviceTool"
-#define MyAppURL "https://QADeviceTool.example.com"
+#define MyAppURL "https://github.com/sundarlohar007/QADeviceTool"
 #define MyAppExeName "QADeviceTool.exe"
 
 [Setup]
@@ -18,7 +18,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-OutputDir=..\publish
+OutputDir=..\\dist
 OutputBaseFilename=QADeviceTool_v{#MyAppVersion}
 Compression=zip
 SolidCompression=yes
@@ -56,5 +56,5 @@ begin
   Exec('cmd.exe', '/c taskkill /F /IM scrcpy.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('cmd.exe', '/c taskkill /F /IM scrcpy-server.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('cmd.exe', '/c taskkill /F /IM pymobiledevice3.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec('cmd.exe', '/c taskkill /F /IM QADeviceTool.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('cmd.exe', '/c taskkill /F /IM LogPro.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;

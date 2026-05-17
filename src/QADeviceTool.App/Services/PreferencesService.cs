@@ -13,6 +13,8 @@ public class AppPreferences
     public Dictionary<string, DevicePreference> DevicePreferences { get; set; } = new();
     public int LogRetentionDays { get; set; } = 7;
     public string? ThemePreference { get; set; }
+    public bool SecureMode { get; set; } = false;
+    public bool PrivacyNoticeAccepted { get; set; } = false;
 }
 
 public class DevicePreference
@@ -110,6 +112,7 @@ public static class PreferencesService
             if (Directory.Exists(logsDir))
             {
                 Directory.Delete(logsDir, true);
+            var sessionsDir = Path.Combine(appDataDir, "sessions");             if (Directory.Exists(sessionsDir))             {                 Directory.Delete(sessionsDir, true);             } 
             }
 
             Current = new AppPreferences();
@@ -138,7 +141,7 @@ public static class PreferencesService
             if (!Directory.Exists(logsDir)) return;
 
             var cutoffDate = DateTime.Now.AddDays(-retentionDays);
-            var logFiles = Directory.GetFiles(logsDir, "*.log");
+            var logFiles = Directory.GetFiles(logsDir, "*.txt").Concat(Directory.GetFiles(logsDir, "*.log")).ToArray();
 
             int deletedCount = 0;
             foreach (var file in logFiles)

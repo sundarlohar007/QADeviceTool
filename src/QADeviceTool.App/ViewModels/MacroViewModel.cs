@@ -12,11 +12,11 @@ using LogPro.Services;
 
 namespace LogPro.ViewModels;
 
-public partial class MacroViewModel : ObservableObject
+public partial class MacroViewModel : ObservableObject, IDisposable
 {
     private readonly MacroService _macroService;
-    private readonly AdbService _adbService;
-    private readonly DeviceMonitorService _deviceMonitor;
+    private readonly IAdbService _adbService;
+    private readonly IDeviceMonitorService _deviceMonitor;
     private readonly Dispatcher _dispatcher;
 
     [ObservableProperty]
@@ -51,7 +51,7 @@ public partial class MacroViewModel : ObservableObject
     private CancellationTokenSource? _playCts;
     private string _macroDir;
 
-    public MacroViewModel(MacroService macroService, AdbService adbService, DeviceMonitorService deviceMonitor)
+    public MacroViewModel(MacroService macroService, IAdbService adbService, DeviceMonitorService deviceMonitor)
     {
         _macroService = macroService;
         _adbService = adbService;
@@ -60,7 +60,7 @@ public partial class MacroViewModel : ObservableObject
 
         _macroDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LogPro", "Macros");
+            "QAQCDeviceTool", "Macros");
         Directory.CreateDirectory(_macroDir);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
@@ -112,7 +112,7 @@ public partial class MacroViewModel : ObservableObject
 
         _recordOutputPath = Path.Combine(_macroDir, $"recording_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
         // Kill previous recording process if double-invoked
-        if (_recordProcess != null) { try { _recordProcess.Kill(); _recordProcess.Dispose(); } catch { } }
+        if (_recordProcess != null) { try { _recordProcess.Kill(); _recordProcess.Dispose(); }  }
         _recordProcess = await _macroService.StartRecordingAsync(SelectedDevice.Serial, _recordOutputPath);
 
         if (_recordProcess == null)
@@ -136,8 +136,8 @@ public partial class MacroViewModel : ObservableObject
                     _recordProcess.Kill(entireProcessTree: true);
                 _recordProcess.WaitForExit(1500);
             }
-            catch { }
-            try { _recordProcess.Dispose(); } catch { }
+            
+            try { _recordProcess.Dispose(); } 
             _recordProcess = null;
         }
 
@@ -248,7 +248,7 @@ public partial class MacroViewModel : ObservableObject
                     });
                 }
             }
-            catch { /* skip invalid files */ }
+            catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[MacroViewModel] Skipping invalid file"); }
         }
     }
 
@@ -272,8 +272,9 @@ public partial class MacroViewModel : ObservableObject
             {
                 await Task.Delay(100);
             }
-            catch
+            catch (Exception ex)
             {
+                Services.AppLogger.Log.Debug(ex, "[MacroViewModel] Operation failed");
                 return;
             }
         }
@@ -290,4 +291,11 @@ public class MacroFileItem
     public int EventCount { get; set; }
     public MacroFile Macro { get; set; } = new();
     public string DisplayInfo => $"{Name} ({EventCount} events)";
+
+    public void Dispose()
+    {
+            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        GC.SuppressFinalize(this);
+    }
 }
+

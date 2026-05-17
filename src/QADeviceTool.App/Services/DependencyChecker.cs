@@ -79,9 +79,10 @@ public class DependencyChecker
                 }
             }
         }
-        catch
-        {
-            status.IsInstalled = true;
+        catch (Exception ex)
+            {
+                AppLogger.Log.Warn(ex, $"[DependencyChecker] Tool resolution failed for {toolName}");
+                status.IsInstalled = true;
             status.Version = "Unknown";
             status.StatusMessage = "Could not verify driver status. If devices connect, drivers are fine.";
         }

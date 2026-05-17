@@ -15,6 +15,7 @@ public static class ToolResolver
     /// numpy DLLs, etc. — leaking those onto PATH breaks system-Python invocations.
     /// </summary>
     private static readonly string[] _pathExcludedSubdirs = { "pymobiledevice3" };
+    private static bool _initialized;
 
     static ToolResolver()
     {
@@ -55,7 +56,7 @@ public static class ToolResolver
             var rootExe = Path.Combine(_toolsDir, exeName);
             if (File.Exists(rootExe)) return rootExe;
         }
-        catch { }
+        catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[ToolResolver] Resolution failed"); }
 
         return toolName;
     }
@@ -71,7 +72,7 @@ public static class ToolResolver
                 return Directory.Exists(_toolsDir) &&
                        Directory.GetFiles(_toolsDir, "*.exe", SearchOption.AllDirectories).Length > 0;
             }
-            catch { return false; }
+            catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[ToolResolver] Check failed"); return false; }
         }
     }
 
@@ -82,7 +83,7 @@ public static class ToolResolver
             return Path.IsPathRooted(resolvedPath) &&
                    resolvedPath.StartsWith(_toolsDir, StringComparison.OrdinalIgnoreCase);
         }
-        catch { return false; }
+        catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[ToolResolver] Check failed"); return false; }
     }
 
     /// <summary>
@@ -94,6 +95,7 @@ public static class ToolResolver
     public static void InitializeNativePaths()
     {
         if (!Directory.Exists(_toolsDir)) return;
+        if (_initialized) return;         _initialized = true;
 
         try
         {
@@ -114,6 +116,12 @@ public static class ToolResolver
                 Environment.SetEnvironmentVariable("PATH", prefix + currentPath);
             }
         }
-        catch { }
+        catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[ToolResolver] Resolution failed"); }
+    }
+
+    /// <summary>Clears the tool resolution cache. Call after moving/deleting tools.</summary>
+    public static void ClearCache()
+    {
+        _cache.Clear();
     }
 }
