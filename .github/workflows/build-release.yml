@@ -14,8 +14,8 @@ on:
         required: false
 
 env:
-  SOLUTION: QADeviceTool.sln
-  PROJECT: src/QADeviceTool.App/QADeviceTool.App.csproj
+  SOLUTION: LogPro.sln
+  PROJECT: src/LogPro.App/LogPro.App.csproj
   TEST_PROJECT: src/LogPro.Tests/LogPro.Tests.csproj
   SETUP_SCRIPT: publish/setup.iss
 
@@ -124,7 +124,7 @@ jobs:
         run: |
           $ver = "${{ needs.build.outputs.version }}"
           New-Item -ItemType Directory -Force -Path dist
-          $zipName = "QADeviceTool_v${ver}_portable.zip"
+          $zipName = "LogPro_v${ver}_portable.zip"
           Compress-Archive -Path publish/app/* -DestinationPath dist/$zipName
           Write-Host "Created: dist/$zipName"
 
@@ -162,7 +162,7 @@ jobs:
         shell: bash
         run: |
           PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          echo "## QADeviceTool v${{ needs.build.outputs.version }}" > CHANGELOG.md
+          echo "## LogPro v${{ needs.build.outputs.version }}" > CHANGELOG.md
           echo "" >> CHANGELOG.md
           if [ -n "$PREV" ]; then
             git log "$PREV..HEAD" --pretty=format:"- %s" --no-merges >> CHANGELOG.md
