@@ -17,7 +17,7 @@ jobs:
     runs-on: windows-latest
 
     env:
-      Solution_Path: QADeviceTool.sln
+      Solution_Path: LogPro.sln
       Test_Project_Path: src\LogPro.Tests\LogPro.Tests.csproj
 
     steps:
@@ -48,4 +48,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: LogPro-${{ matrix.configuration }}
-        path: src\QADeviceTool.App\bin\${{ matrix.configuration }}\net8.0-windows\
+        path: src\LogPro.App\bin\${{ matrix.configuration }}\net8.0-windows\
