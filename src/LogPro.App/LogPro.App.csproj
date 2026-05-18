@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ApplicationIcon>Assets\LogProIcon.ico</ApplicationIcon>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>LogPro</AssemblyName>
+    <RootNamespace>LogPro</RootNamespace>
+    <Version>3.1.0</Version>
+    <Company>LogPro</Company>
+    <Product>LogPro</Product>
+    <Description>Professional device log capture and management tool for QA testing.</Description>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    
+    <!-- Performance Optimizations -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    
+    <!-- Test Support -->
+    <InternalsVisibleTo>LogPro.Tests</InternalsVisibleTo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\LogProIcon.ico" />
+    <Resource Include="Assets\Fonts\Inter-Variable.ttf" />
+    <Resource Include="Assets\Fonts\SpaceGrotesk-Variable.ttf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="NLog" Version="6.1.0" />
+  </ItemGroup>
+
+  <!-- Copy bundled tools (scrcpy, platform-tools, pymobiledevice3) to output.
+       Excludes PyInstaller intermediates, source files, dist-info, __pycache__, and the
+       numpy site-package (pymobiledevice3 doesn't need numpy at runtime; PyInstaller
+       collects it transitively through urllib3/cryptography in some builds). -->
+  <ItemGroup>
+    <Content Include="tools\**\*"
+             Exclude="tools\pymobiledevice3\build\**;tools\pymobiledevice3\*.spec;tools\pymobiledevice3\*.py;tools\pymobiledevice3\**\*.dist-info\**;tools\pymobiledevice3\**\__pycache__\**;tools\pymobiledevice3\pymobiledevice3\_internal\numpy\**;tools\pymobiledevice3\pymobiledevice3\_internal\**\numpy\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>tools\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <!-- Include Themes folder - copy to output for runtime loading -->
+  <ItemGroup>
+    <Content Include="Themes\**\*.xaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

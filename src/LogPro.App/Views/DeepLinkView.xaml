@@ -1,0 +1,128 @@
+<UserControl x:Class="LogPro.Views.DeepLinkView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:LogPro.ViewModels"
+             xmlns:conv="clr-namespace:LogPro.Converters">
+    <UserControl.Resources>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FrostBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="CardHdr" TargetType="Border">
+            <Setter Property="Background" Value="#201F1F" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="CornerRadius" Value="12,12,0,0" />
+        </Style>
+        <Style x:Key="HdrText" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+        </Style>
+        <Style x:Key="GhostBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
+            <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
+            <Setter Property="Background" Value="{DynamicResource BrushCyan}" />
+            <Setter Property="Foreground" Value="#001F25" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushCyan}" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+        <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
+            <Setter Property="Foreground" Value="{DynamicResource BrushRed}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushRedDim}" />
+        </Style>
+        <Style x:Key="DarkInput" TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource BrushBase}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="CaretBrush" Value="{DynamicResource BrushPrimaryLight}" />
+            <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="MonoBlock" TargetType="TextBox" BasedOn="{StaticResource DarkInput}">
+            <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
+        </Style>
+    </UserControl.Resources>
+    <Grid Background="{DynamicResource BrushVoid}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Grid.Row="0" Margin="24,24,24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Deep Link" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+                <TextBlock Text="Fire intent URLs to test deep linking" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
+            </StackPanel>
+            <ComboBox Grid.Column="1" ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="220" VerticalAlignment="Center" />
+        </Grid>
+        <Border Grid.Row="1" Style="{StaticResource Card}" Margin="24,0,24,24">
+            <DockPanel>
+                <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="DEEP LINK URL" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+                <StackPanel Margin="16">
+                    <TextBlock Text="TARGET URL" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
+                    <TextBox Style="{StaticResource DarkInput}" Text="{Binding TargetUrl, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource FontMono}" Margin="0,0,0,12" />
+                    <Button Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Left" Command="{Binding FireIntentCommand}" IsEnabled="{Binding IsRouting, Converter={x:Static conv:InverseBoolConverter.Instance}}" Content="Fire Intent" />
+                    <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushPrimaryLight}" FontSize="11" Margin="0,16,0,8" TextWrapping="Wrap" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>
