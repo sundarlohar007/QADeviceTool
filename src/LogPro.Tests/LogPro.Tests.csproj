@@ -25,7 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\QADeviceTool.App\QADeviceTool.App.csproj" />
+    <ProjectReference Include="..\LogPro.App\LogPro.App.csproj" />
   </ItemGroup>
 
   <ItemGroup>
