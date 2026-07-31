@@ -1,8 +1,8 @@
 # LogPro / QADeviceTool — Modernization, Enhancement & Full-Rework Blueprint
 
 > **Author:** Engineering audit (Kiro)
-> **Date:** 2026-07-31
-> **Scope:** Forward-looking transformation plan — architecture rework, technology updates, performance & security hardening, UX modernization, feature enhancements, new capabilities, and a phased roadmap aligned with the current (2026) desktop / device-QA industry.
+> **Date:** 2026-07-31 (rev. 3 — adds minimalist UI design language & zero-confusion UX spec; rev. 2 added UI-framework migration + engine-agnostic game-testing suite)
+> **Scope:** Forward-looking transformation plan — migrating off Windows-only WPF to a cross-platform stack, architecture rework, technology updates, performance & security hardening, UX modernization, and a game-tester-focused feature program (engine-agnostic performance profiling, full iOS/Android instrumentation via `pymobiledevice3` + `adb`), with a phased roadmap aligned with the current (2026) device-QA industry.
 > **Relationship to existing docs:** This document is *strategic and forward-looking*. It complements — and does not repeat — the tactical, line-by-line defect registry in [`AUDIT-FINDINGS.md`](./AUDIT-FINDINGS.md) (~162 catalogued bugs across 12 categories) and the wave-based fix schedule in [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md). Where a theme here maps to specific bug IDs, they are cross-referenced.
 
 ---
@@ -14,19 +14,22 @@
 3. [Current-State Assessment](#3-current-state-assessment)
 4. [Critical Risks & Structural Debt](#4-critical-risks--structural-debt)
 5. [Technology Update & Modernization](#5-technology-update--modernization)
-6. [Architecture Rework (Target State)](#6-architecture-rework-target-state)
-7. [Performance & Optimization](#7-performance--optimization)
-8. [Security, Privacy & Compliance](#8-security-privacy--compliance)
-9. [Testing, Quality & CI/CD](#9-testing-quality--cicd)
-10. [UX / UI Modernization](#10-ux--ui-modernization)
-11. [Enhancements to Existing Features](#11-enhancements-to-existing-features)
-12. [New Features (Industry-Aligned)](#12-new-features-industry-aligned)
-13. [Cross-Platform Strategy](#13-cross-platform-strategy)
-14. [Full-Rework Target Architecture](#14-full-rework-target-architecture)
-15. [Phased Roadmap](#15-phased-roadmap)
-16. [Prioritization Matrix](#16-prioritization-matrix)
-17. [Success Metrics / KPIs](#17-success-metrics--kpis)
-18. [Risks, Assumptions & Open Questions](#18-risks-assumptions--open-questions)
+6. [UI Framework Decision — Migrating Off WPF](#6-ui-framework-decision--migrating-off-wpf)
+7. [Architecture Rework (Target State)](#7-architecture-rework-target-state)
+8. [Performance & Optimization](#8-performance--optimization)
+9. [Security, Privacy & Compliance](#9-security-privacy--compliance)
+10. [Testing, Quality & CI/CD](#10-testing-quality--cicd)
+11. [UX / UI Modernization](#11-ux--ui-modernization)
+12. [Engine-Agnostic Game-Testing Suite](#12-engine-agnostic-game-testing-suite)
+13. [Full iOS & Android Instrumentation (pymobiledevice3 + ADB at Full Potential)](#13-full-ios--android-instrumentation-pymobiledevice3--adb-at-full-potential)
+14. [Enhancements to Existing Features](#14-enhancements-to-existing-features)
+15. [New Features (Industry-Aligned)](#15-new-features-industry-aligned)
+16. [Cross-Platform Rollout & Migration Plan](#16-cross-platform-rollout--migration-plan)
+17. [Full-Rework Target Architecture](#17-full-rework-target-architecture)
+18. [Phased Roadmap](#18-phased-roadmap)
+19. [Prioritization Matrix](#19-prioritization-matrix)
+20. [Success Metrics / KPIs](#20-success-metrics--kpis)
+21. [Risks, Assumptions & Open Questions](#21-risks-assumptions--open-questions)
 
 ---
 
@@ -36,18 +39,17 @@
 
 The product is feature-rich and clearly the result of significant iteration (currently v3.2.0). It has a working CI pipeline, an installer + portable distribution, a test project, and — notably — an unusually thorough self-audit already exists in `.planning/`.
 
-However, the codebase carries meaningful structural debt and is approaching a hard technology deadline:
+Two strategic decisions now anchor this revision of the blueprint:
 
-- **Time-critical:** The app targets **.NET 8**, which reaches **end of support on November 10, 2026** — approximately three months from this writing. .NET 9 shares the same EOS date. The industry-current LTS target is **.NET 10** (supported through November 2028). ([Microsoft support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core), [.NET 8/9 EOS announcement](https://devblogs.microsoft.com/dotnet/dotnet-8-9-end-of-support/))
-- **No dependency-injection container.** The entire service + view-model object graph is hand-assembled with `new` inside a single `MainViewModel` constructor, which doubles as a God/mediator object. This blocks testability, complicates lifecycle management, and leaks event subscriptions.
-- **God classes.** `SessionViewModel` is 1,354 lines and mixes capture, filtering, crash detection, recording, export, and AI concerns. `AdbService` (787) and `IosService` (651) are similarly overloaded.
-- **Concurrency & correctness gaps.** Documentation describes an ADB serialization semaphore that (per the code-level deep dive) does not consistently exist; device-shell command construction relies on per-call allowlists with known bypass paths; several async methods perform blocking I/O.
-- **Brand / identity inconsistency.** Namespaces, assembly name, product name, and app-data folders are split across "LogPro", "QADeviceTool", and "QAQCDeviceTool".
+- **Migrate off Windows-only WPF to Avalonia UI on .NET 10 LTS.** This is the "current-industry, runs-on-every-machine" answer: Avalonia is a WPF-inspired, XAML-based cross-platform UI framework that renders its own UI (SkiaSharp) and runs on **Windows, macOS, and Linux** (with experimental mobile/browser targets). It preserves the large existing C# codebase, and — critically for this product — a **macOS build unlocks the iOS testing features that Windows tooling cannot provide.** ([Avalonia positioning](https://avaloniaui.net/blog/what-is-wpf), [WPF modernization 2026](https://platform.uno/articles/wpf-modernization-in-2026-a-source-backed-decision-guide/))
+- **Reposition the product around engine-agnostic game performance testing.** Mobile games are built on many engines — Unity, Unreal, Godot, Cocos, and **proprietary in-house engines that are never published**. The tool therefore must **never depend on engine SDKs, in-app hooks, or profiler integrations.** Instead it reads **OS-level signals** that exist for *any* running app: Android `SurfaceFlinger`/`gfxinfo`/Perfetto frame timelines, `/proc`, thermal and battery services; iOS `pymobiledevice3` developer (DVT) services — `sysmon`, core-profile/FPS, energy, network, condition inducer, simulated location. This is the same approach industry profilers such as GameBench use, and it is the only approach that works uniformly across secret, unavailable engines. ([Android jank/FPS](https://developer.android.com/topic/performance/vitals/tracking_jank), [Perfetto FrameTimeline](https://perfetto.dev/docs/data-sources/frametimeline), [GameBench FPS](https://docs.gamebench.net/docs/web-dashboard/the-performance-pane/), [pymobiledevice3 developer services](https://github.com/doronz88/pymobiledevice3))
 
-This blueprint proposes a **two-track strategy**:
+Alongside these, the earlier findings still hold and are time-critical:
 
-- **Track A — Stabilize & Modernize In-Place (0–3 months):** Retarget to .NET 10 LTS, introduce a DI container, break up God classes, fix the concurrency/security/perf themes, unify branding, and raise test coverage. This preserves the working WPF product while removing the support-deadline risk and the worst debt.
-- **Track B — Full Rework Toward a Modern Device-QA Platform (3–12 months):** Re-architect around a clean layered/plugin model with a device-abstraction layer, add cloud/team features, automation-framework integrations (Appium/ADB-over-network), richer analytics and reporting, and evaluate a cross-platform UI (Avalonia/Uno) to escape the Windows-only constraint that limits macOS-based iOS testing.
+- **.NET 8 (current target) and .NET 9 both reach end of support on 2026-11-10** — ~3 months out. **.NET 10 is the LTS target** (supported to Nov 2028). The Avalonia migration and the runtime retarget happen together. ([.NET 8/9 EOS](https://devblogs.microsoft.com/dotnet/dotnet-8-9-end-of-support/), [Announcing .NET 10](https://devblogs.microsoft.com/dotnet/announcing-dotnet-10/))
+- **No DI container; God objects** (`SessionViewModel` 1,354 LOC, `MainViewModel`, `AdbService` 787, `IosService` 651); **broken IDisposable lifecycle**; **phantom ADB serialization semaphore**; **command-construction injection gaps**; **brand/app-data fragmentation** (LogPro / QADeviceTool / QAQCDeviceTool).
+
+**The plan is a UI-agnostic engine first, then a cross-platform UI on top of it.** By extracting all device/session/instrumentation logic into pure .NET libraries (zero WPF references), the same engine powers (a) the new Avalonia desktop app on Windows/macOS/Linux and (b) a headless CLI for CI. The WPF app keeps running during the migration to avoid a big-bang rewrite.
 
 ---
 
@@ -67,6 +69,7 @@ A desktop companion for manual + exploratory QA of mobile games: connect a devic
 | Packaging | Inno Setup installer + portable zip |
 | CI | GitHub Actions (build/test/publish, installer, portable, release) |
 | Tests | xUnit + FluentAssertions + Moq (services/models/helpers only) |
+| Platform reach | **Windows only** |
 
 ### 2.3 Feature surface (12 views / view-models)
 Dashboard, Sessions (log capture), Devices (info + mirroring), App Management (install/uninstall/control), File Explorer, Shell (adb/pymd3 terminal), Deep Link, Vitals (live memory/CPU), Macros (record/replay), Stress Test (monkey), Settings, plus a Command Palette (Ctrl+K).
@@ -81,20 +84,18 @@ Dashboard, Sessions (log capture), Devices (info + mirroring), App Management (i
 
 ### 3.1 Strengths (what to preserve)
 - **Genuinely useful, differentiated feature set** for game QA (dual app-specific logging, PID tracking through crashes, bug-report zips, macro replay, monkey GUI).
-- **Robust external-process plumbing** in `ToolLauncher`/`ToolResolver`: stdout/stderr draining to avoid pipe deadlock, process tracking + kill-on-exit via `ProcessManagerService`, per-binary working directories, dynamic path resolution from `AppContext.BaseDirectory`.
+- **Robust external-process plumbing** in `ToolLauncher`/`ToolResolver`: stdout/stderr draining to avoid pipe deadlock, process tracking + kill-on-exit via `ProcessManagerService`, per-binary working directories, dynamic path resolution from `AppContext.BaseDirectory`. **This layer is UI-agnostic already and ports directly to Avalonia/CLI.**
 - **Resilience touches**: device-monitor missed-poll debounce (3 polls before disconnect), parallel Android+iOS polling, atomic preferences save (temp + move), early startup diagnostics log.
-- **Interface seams already exist** for the five core services (`IAdbService`, `IIosService`, `IScrcpyService`, `IDeviceMonitorService`, `ISessionService`) — a strong foundation for DI.
+- **Interface seams already exist** for the five core services — a strong foundation for DI and for the capability abstraction.
 - **Security-aware in places**: `SecureMode` log redaction, serial hashing, path allowlists, GPL-compliance documentation for pymobiledevice3.
 - **Mature process artifacts**: working CI, installer, changelog, and an extensive existing self-audit.
 
 ### 3.2 Weaknesses (what to fix)
-- **No DI container**; hand-wired composition root; static ambient singletons (`PreferencesService`, `ThemeService`, `AppLogger`, `DialogService`, `ProcessManagerService`).
-- **God objects** (`MainViewModel`, `SessionViewModel`) and **duplicated device-list/selection logic** across nearly every view-model.
-- **Broken lifecycle**: `IDisposable` is declared widely but child view-models are never disposed; event subscriptions leak.
-- **Heavyweight theme switch** recreates the entire `MainWindow` rather than swapping resource dictionaries in place.
-- **Concurrency documentation ≠ implementation** (the "phantom semaphore"), blocking I/O in `async` methods, and stringly-typed navigation with dead switch arms.
-- **Identity fragmentation** across LogPro / QADeviceTool / QAQCDeviceTool.
-- **Windows-only**, which structurally limits full iOS support (many iOS features are gated behind macOS-only tooling).
+- **Windows-only** — structurally caps iOS support (developer-mode DVT services, screen recording, sysmon are far more reliable from macOS).
+- **UI and engine are entangled** — WPF types leak into services (`DialogService` uses `MessageBox`, `ThemeService` recreates `MainWindow`, VMs capture `Application.Current.Dispatcher`). Must be untangled before any UI migration.
+- **No DI container**; hand-wired composition root; static ambient singletons.
+- **God objects** and **duplicated device-list/selection logic** across nearly every view-model.
+- **Broken lifecycle**, **heavyweight theme switch**, **concurrency docs ≠ implementation**, **stringly-typed navigation**, **identity fragmentation**.
 
 ---
 
@@ -104,372 +105,495 @@ Ranked by business/technical risk. (Tactical bug IDs from `AUDIT-FINDINGS.md` re
 
 | # | Risk | Impact | Evidence / refs |
 |---|---|---|---|
-| R1 | **.NET 8 EOS on 2026-11-10** | No security patches; compliance/audit failures; blocked from new tooling | Runtime = `net8.0-windows`; [Microsoft EOS notice](https://devblogs.microsoft.com/dotnet/dotnet-8-9-end-of-support/) |
-| R2 | **No DI / God composition root** | Untestable VMs, leaks, fragile startup, high change cost | `MainViewModel` ctor wires everything |
-| R3 | **Device-shell command construction** relies on per-call allowlists with known bypass gaps | Potential injection into device shell via file paths / macro text / raw command passthrough | [TOOL-18, TOOL-19, FEAT-34], `ExecuteCommandAsync` passthrough |
-| R4 | **Concurrency: documented ADB/iOS serialization not consistently implemented** | USB transport contention, device "offline" flapping, stalls during polling | [BUG-02, TOOL-01, TOOL-02], deep-dive found no lock in `AdbService` |
-| R5 | **Memory/perf: O(n²) string building, full-file loads, Reset-based collection churn** | UI freezes, OOM on large logs, dropped log lines | [BUG-07/14, FEAT-25/29/30/31/32] |
-| R6 | **Lifecycle leaks (no real Dispose chain)** | Ghost polls, memory growth, actions on detached VMs, especially across theme switch | [MISS-05, FEAT-35, FEAT-36] |
-| R7 | **Privacy: logs/bug-reports can leak serials, package inventory, deep-link secrets** | Data-leak risk for studios testing unreleased titles | [SEC-01/04/06, FEAT-22/23, TOOL-13] |
-| R8 | **Identity fragmentation** (namespaces, app-data folders, branding) | Lost/duplicated user data, support confusion, unprofessional | README/CHANGELOG vs `QAQCDeviceTool` app-data folder |
-| R9 | **Windows-only iOS limitations** | Half the mobile market only partially supported | `.continue-here.md` constraint notes |
-| R10 | **GPL-3.0 dependency (pymobiledevice3) bundled** | Source-disclosure obligations if linked/bundled improperly | [LEGAL-02]; mitigated via process isolation, must stay isolated |
+| R1 | **.NET 8 EOS on 2026-11-10** | No security patches; blocked from new tooling | Runtime = `net8.0-windows`; [Microsoft EOS notice](https://devblogs.microsoft.com/dotnet/dotnet-8-9-end-of-support/) |
+| R2 | **Windows-only limits iOS reach & market** | Half the mobile market only partially supported; no macOS lab | `.continue-here.md` constraints |
+| R3 | **UI/engine entanglement** | Blocks cross-platform migration and CLI reuse | WPF refs in services, static UI singletons |
+| R4 | **No DI / God composition root** | Untestable VMs, leaks, fragile startup | `MainViewModel` ctor wires everything |
+| R5 | **Device-shell command construction** relies on per-call allowlists with bypass gaps | Injection into device shell (paths / macro text / raw passthrough) | [TOOL-18/19, FEAT-34] |
+| R6 | **Concurrency: documented ADB/iOS serialization not consistently implemented** | USB contention, "offline" flapping, stalls | [BUG-02, TOOL-01/02] |
+| R7 | **Memory/perf: O(n²) string building, full-file loads, Reset churn** | UI freezes, OOM on large logs, dropped lines | [BUG-07/14, FEAT-25/29/30/31/32] |
+| R8 | **Lifecycle leaks (no real Dispose chain)** | Ghost polls, memory growth, theme-switch regressions | [MISS-05, FEAT-35/36] |
+| R9 | **Privacy: logs/bug-reports leak serials, app inventory, deep-link secrets** | Data-leak risk for unreleased titles | [SEC-01/04/06, FEAT-22/23] |
+| R10 | **Identity fragmentation** (namespaces, app-data folders, branding) | Lost/duplicated user data, support confusion | `QAQCDeviceTool` vs `LogPro` folders |
+| R11 | **GPL-3.0 dependency (pymobiledevice3) bundled** | Source-disclosure obligations if mis-linked | [LEGAL-02]; keep process-isolated |
 
 ---
 
 ## 5. Technology Update & Modernization
 
-### 5.1 Runtime: retarget to .NET 10 LTS (highest priority)
-- **Change** `net8.0-windows` → `net10.0-windows` and republish self-contained `win-x64` (add `win-arm64` — see 5.5).
-- **Why:** .NET 8 and 9 both hit end of support 2026-11-10; .NET 10 is LTS through Nov 2028 and brings runtime/GC/JIT performance gains and updated WPF fixes. ([Announcing .NET 10](https://devblogs.microsoft.com/dotnet/announcing-dotnet-10/))
-- **Effort:** Low-to-moderate. WPF on .NET 10 is largely a drop-in retarget; validate third-party packages, trimming/R2R settings, and single-file behavior.
-- **Bonus:** Enables modern language features (collection expressions, primary constructors already usable, `System.Text.Json` source-gen improvements, `TimeProvider` for testable timers).
+### 5.1 Runtime: retarget to .NET 10 LTS (do this with the UI migration)
+- **Change** `net8.0-windows` → **`net10.0`** (engine libraries, platform-neutral) and platform TFMs only where OS APIs are needed. Publish self-contained for `win-x64`, `win-arm64`, `osx-x64`, `osx-arm64`, `linux-x64`.
+- **Why:** .NET 8/9 hit EOS 2026-11-10; .NET 10 is LTS to Nov 2028 with runtime/GC/JIT gains and C# 14. ([Announcing .NET 10](https://devblogs.microsoft.com/dotnet/announcing-dotnet-10/))
 
-### 5.2 Dependency updates & hygiene
-- **CommunityToolkit.Mvvm** — currently 8.4.0; keep on the latest 8.4.x (the current stable line per [CommunityToolkit/dotnet](https://github.com/CommunityToolkit/dotnet)).
-- **NLog 6.1.0** — evaluate staying on NLog vs. standardizing on **`Microsoft.Extensions.Logging`** as the abstraction (with NLog or Serilog as the sink). This aligns with the DI work in §6 and enables structured logging.
-- Add **Central Package Management** (`Directory.Packages.props`) so versions are pinned in one place across app + tests.
-- Enable **`Deterministic`**, **`ContinuousIntegrationBuild`**, and **NuGet audit** (`<NuGetAudit>true</NuGetAudit>`) to surface vulnerable transitive packages in CI.
-- Test stack: bump `Microsoft.NET.Test.Sdk`, `xunit`, `coverlet`; consider migrating assertions to the maintained line (FluentAssertions licensing changed in recent versions — evaluate **Shouldly** or built-in assertions as an alternative to avoid license surprises).
+### 5.2 Target tech stack (what to change / update)
 
-### 5.3 Adopt `Microsoft.Extensions.*` foundation
-- `Microsoft.Extensions.Hosting` + `DependencyInjection` + `Logging` + `Configuration` + `Options`.
-- This gives a real composition root, typed options (replace static `PreferencesService`), structured logging, and a graceful startup/shutdown pipeline. (See §6.)
+| Concern | From (today) | To (target) | Why |
+|---|---|---|---|
+| **UI framework** | WPF (`net8.0-windows`, Windows-only) | **Avalonia UI 11.x on .NET 10** | Cross-platform (Win/macOS/Linux), WPF-like XAML, self-rendered UI; macOS unlocks iOS features ([Avalonia](https://avaloniaui.net/blog/what-is-wpf)) |
+| **Runtime** | .NET 8 | **.NET 10 LTS** | Support deadline + perf |
+| **MVVM** | CommunityToolkit.Mvvm 8.4.0 | Same (works on Avalonia) | Portable; no rewrite of VM patterns |
+| **DI / host** | none (manual `new`) | **`Microsoft.Extensions.Hosting` + DI + Options + Configuration** | Testability, lifecycle, typed settings |
+| **Logging** | NLog (static `AppLogger`) | **`Microsoft.Extensions.Logging`** abstraction + Serilog/NLog sink (structured) | Injectable, structured, queryable |
+| **Dialogs/UI services** | WPF `MessageBox` in service layer | Avalonia dialog service behind `IDialogService`/`IUiDispatcher` | Removes UI-from-engine coupling |
+| **Charts/visualization** | none | **LiveChartsCore** or **ScottPlot** (Avalonia-compatible) | FPS/CPU/mem/thermal time-series graphs |
+| **Screen mirroring** | scrcpy (Android) | scrcpy (cross-platform already: Win/macOS/Linux) | No change needed; works on all hosts |
+| **iOS tooling** | pymobiledevice3 (bundled, isolated) | pymobiledevice3 (same, isolated) + expose DVT services | Cross-platform Python tool; unlock full potential (§13) |
+| **Android tooling** | adb, scrcpy | adb, scrcpy + **Perfetto** trace processor (optional) | Engine-agnostic frame/CPU tracing |
+| **Packaging** | Inno Setup + portable | Per-OS: MSIX/Inno (Win), `.app`/notarized DMG (macOS), AppImage/deb (Linux) | Native install UX per platform |
+| **Tests** | xUnit + FluentAssertions + Moq | xUnit + Moq/NSubstitute (+ evaluate Shouldly for licensing) | VM tests unlocked by DI |
+| **Package mgmt** | per-project versions | **Central Package Management** (`Directory.Packages.props`) | One source of truth |
 
-### 5.4 Bundled native tool strategy
-- **Version-pin and auto-update** `adb`/`platform-tools` and `scrcpy`; today they are committed binaries with no update path. Add a manifest (tool name, version, sha256, source URL) and a first-run/periodic integrity + update check.
-- **pymobiledevice3**: keep the **process-isolation** model (critical for GPL compliance per [LEGAL-02]). Track upstream CLI changes (the deep dive flagged version-sensitive flags: `--no-color` position, `crash pull` args) behind a small capability/version-probe layer.
-- Consider replacing the PyInstaller bundle friction with a documented "managed dependency" install flow (like adb), reducing AV false-positives and binary bloat.
+### 5.3 Dependency hygiene
+- Central Package Management; enable `Deterministic`, `ContinuousIntegrationBuild`, `<NuGetAudit>true</NuGetAudit>`, Dependabot, SBOM on release, Authenticode/notarization signing.
+- Keep CommunityToolkit.Mvvm on the current stable 8.4.x line ([CommunityToolkit/dotnet](https://github.com/CommunityToolkit/dotnet)).
 
-### 5.5 Build/packaging modernization
-- Add **`win-arm64`** RID (Windows on ARM is now mainstream for dev/test laptops).
-- Evaluate **MSIX** packaging alongside Inno Setup for cleaner install/update/uninstall and enterprise deployment; keep portable zip.
-- Turn on **ReadyToRun** (already on) and evaluate **partial trimming** for the managed assemblies (native tools stay excluded, as they are today).
-- Add **code signing** (Authenticode / trusted signing) to reduce SmartScreen friction — important for a tool that spawns adb and mirrors screens.
-
----
-
-## 6. Architecture Rework (Target State)
-
-### 6.1 Introduce a DI container (foundational)
-Replace the hand-wired `MainViewModel` composition root with `Microsoft.Extensions.DependencyInjection`:
-
-```
-Program/App startup:
-  services.AddSingleton<IAdbService, AdbService>();
-  services.AddSingleton<IIosService, IosService>();
-  services.AddSingleton<IScrcpyService, ScrcpyService>();
-  services.AddSingleton<IDeviceMonitorService, DeviceMonitorService>();
-  services.AddSingleton<ISessionService, SessionService>();
-  services.AddSingleton<IPreferencesService, PreferencesService>();   // de-static
-  services.AddSingleton<IDialogService, DialogService>();             // de-static
-  services.AddSingleton<IThemeService, ThemeService>();               // de-static
-  services.AddSingleton<IDeviceStore, DeviceStore>();                 // NEW (see 6.3)
-  services.AddTransient<MainViewModel>();
-  services.AddTransient<SessionViewModel>();  // + all child VMs
-  services.AddSingleton<MainWindow>();
-```
-
-- **De-static** `PreferencesService`, `ThemeService`, `DialogService`, `AppLogger` into injectable services behind interfaces. Keep thin static shims temporarily if needed for migration.
-- **Add interfaces** for the remaining concretes used by VMs (`MacroService`, `CrashDetector`, `LogAnalyzerService`, `DependencyChecker`).
-- **Note the existing constraint** in `.continue-here.md`: "No DI container — do not add without refactoring the entire startup pipeline." That refactor is exactly what this section authorizes and scopes.
-
-### 6.2 Kill the God objects
-- **`MainViewModel`** → shrink to navigation + shell state. Move device-selection fan-out into a shared store (6.3). Use a navigation service (6.4).
-- **`SessionViewModel` (1,354 LOC)** → split by responsibility:
-  - `LogCaptureViewModel` (start/stop, status, batching)
-  - `LogViewerViewModel` (filtering, search, bookmarks, color coding)
-  - `CrashPanelViewModel` (crash detection UI)
-  - `EvidenceViewModel` (screenshot, recording, bug-report zip)
-  - `SessionExportService` (CSV/JSON/raw copy — move export logic out of the VM)
-- **`AdbService` / `IosService`** → decompose into focused capability services (DeviceInfo, Logcat/Syslog, Files, Apps, Input/Macro, Media) behind a common device-capability abstraction (6.3).
-
-### 6.3 Introduce a Device Abstraction Layer + shared Device Store
-Two of the largest sources of duplication and coupling are (a) every VM independently subscribing to `DevicesChanged` and rebuilding its own list, and (b) `AdbService`/`IosService` exposing parallel-but-different APIs.
-
-- **`IDevice` capability model:** define capability interfaces (`ILogSource`, `IScreenCapture`, `IScreenRecorder`, `IFileSystem`, `IAppManager`, `IInputInjector`, `IScreenMirror`). Android and iOS backends implement the subset they support; the UI queries capabilities instead of branching on `Platform == "iOS"` everywhere.
-- **`IDeviceStore` (single source of truth):** one observable collection of connected devices + the selected device. VMs bind to it; no per-VM `DevicesChanged` subscriptions, no manual fan-out from `MainViewModel`. This directly resolves [FEAT-36] (N×M event flood) and much of the lifecycle-leak problem.
-- **Marshalling:** the store (or a small `IUiDispatcher` abstraction wrapping `Application.Current.Dispatcher`) centralizes UI-thread marshalling so VMs stop each capturing the dispatcher and become unit-testable off the UI thread.
-
-### 6.4 Navigation & messaging
-- Replace the stringly-typed `Navigate(string)` switch (and the duplicated `navMap` in code-behind, with its dead `"StressTest"`/`"devices"` arms) with a **typed navigation service** (`INavigationService.NavigateTo<TViewModel>()`) and a view-locator registered in DI.
-- Use CommunityToolkit's **`WeakReferenceMessenger`** for cross-VM events (crash detected, device selected, capture started) instead of direct references and code-behind reaching into VM internals (as the command palette does today).
-
-### 6.5 Concurrency model
-- Replace the ambiguous/absent ADB semaphore with an **explicit transport policy**: allow bounded concurrency for read commands (ADB server multiplexes fine), but **serialize state-changing operations** (`tcpip`, `pair`, `connect`) behind a dedicated lock. Document the actual behavior so code and comments agree. [BUG-02, TOOL-01/02]
-- Make all `async` methods truly async (no blocking `File.ReadAllLines`, no `async` without `await`). Use `TimeProvider` for timers to make debounce/flush logic testable.
-
-### 6.6 Lifecycle
-- Implement a real **Dispose chain**: `MainViewModel.Dispose()` disposes all child VMs; each VM unsubscribes from the store/messenger and stops its timers. Adopt navigation lifecycle hooks (`OnNavigatedTo/From`) to start/stop expensive pollers (Vitals). [MISS-05, BUG-05, FEAT-35]
-- Replace the window-recreating theme switch with **in-place `ResourceDictionary` swap** using `DynamicResource` everywhere (removes the `IsThemeSwitching` hack and the "theme kills sessions" regression). [NEW-02, NEW-05, NEW-06]
+### 5.4 Bundled native-tool strategy
+- **Version-pin + integrity-check + auto-update** `adb`/`platform-tools`, `scrcpy`, and (optionally) `perfetto`/`traceconv` per host OS. Ship a manifest (name, version, sha256, source URL) and probe on first run.
+- **pymobiledevice3** stays **process-isolated** (GPL-3.0 compliance, [LEGAL-02]); wrap CLI behind a version/capability probe because DVT flags evolve across iOS versions.
 
 ---
 
-## 7. Performance & Optimization
+## 6. UI Framework Decision — Migrating Off WPF
+
+The direct answer to "change WPF to something current that works on every machine."
+
+### 6.1 Decision: Avalonia UI on .NET 10 (primary recommendation)
+**Recommended primary target: Avalonia UI.** It is the pragmatic, current-industry choice that (a) runs on Windows, macOS, and Linux from one codebase, (b) uses XAML + MVVM very close to WPF so the existing view-models and CommunityToolkit patterns port with minimal churn, and (c) preserves the ~11k lines of C# device/session logic. Avalonia renders its own UI with SkiaSharp for pixel-consistent results and is production-proven (e.g., UniGetUI shipped an Avalonia + NativeAOT migration, roughly halving installer size and reducing memory/GPU overhead). ([UniGetUI Avalonia migration](https://www.ntcompatible.com/story/unigetui-v202623-releases-nativeaot-cuts-download-size-by/))
+
+**Why not the others (for this specific tool):**
+
+| Option | Verdict | Reasoning |
+|---|---|---|
+| **Avalonia** | ✅ **Recommended** | Desktop-first, WPF-like XAML, Win/macOS/Linux, biggest code reuse, unlocks macOS for iOS |
+| **Uno Platform** | ◑ Consider later | Adds browser/mobile reach; higher complexity than needed for a desktop tester tool ([5 frameworks for WPF modernization](https://platform.uno/articles/5-best-frameworks-for-wpf-modernization-in-2026/)) |
+| **.NET MAUI** | ✗ Not ideal | Mobile-first; weaker desktop story; XAML dialect differs from WPF (more rewrite) ([MAUI vs Avalonia vs Uno](https://startdebugging.net/2026/05/maui-vs-avalonia-vs-uno-in-2026/)) |
+| **Electron / Tauri / Flutter** | ✗ Reject | Throws away the entire C# engine; re-implement all adb/pymobiledevice3 orchestration in JS/Rust/Dart |
+| **Stay WPF** | ✗ Rejected | Windows-only; blocks macOS iOS testing; the core reason for this program |
+
+### 6.2 Precondition: extract a UI-agnostic engine (this is 80% of the work)
+The migration is *not* mainly a XAML rewrite — it's **decoupling**. Before/while adopting Avalonia:
+1. Move all services, models, capability logic, and orchestration into pure-`net10.0` libraries with **zero UI references** (`LogPro.Core`, `LogPro.Devices.Android`, `LogPro.Devices.Ios`, `LogPro.Instrumentation`).
+2. Remove WPF from the engine: replace `MessageBox`/`Clipboard`/`Dispatcher`/`Application.Current` usages with interfaces (`IDialogService`, `IClipboard`, `IUiDispatcher`) implemented per-UI.
+3. Keep the WPF app compiling against the extracted engine during migration (parallel-run), then stand up the Avalonia app against the same engine.
+4. View-models are largely portable as-is (CommunityToolkit works on Avalonia); XAML views are re-authored in Avalonia XAML (syntax is close but not identical — bindings, styles, and control names differ).
+
+### 6.3 What concretely changes vs. stays
+- **Stays (ports directly):** models, all services, `ToolLauncher`/`ToolResolver`/`ProcessManagerService`, adb & pymobiledevice3 orchestration, scrcpy launching (scrcpy is itself cross-platform), most view-models, converters' logic.
+- **Rewritten:** XAML views (WPF → Avalonia XAML), theming/resource dictionaries, dialog/clipboard/dispatcher adapters, tray/hotkey/window integration, packaging per OS.
+- **New per-OS glue:** file dialogs, notifications, single-instance handling, deep-link/URL handlers, and native tool paths per RID.
+
+---
+
+## 7. Architecture Rework (Target State)
+
+### 7.1 DI container (foundational)
+Adopt `Microsoft.Extensions.DependencyInjection`; register all services + VMs; **de-static** `PreferencesService`, `ThemeService`, `DialogService`, `AppLogger`, `ProcessManagerService` behind interfaces; add interfaces for `MacroService`, `CrashDetector`, `LogAnalyzerService`, `DependencyChecker`. This is the enabler for testability, cross-platform, and the CLI.
+
+### 7.2 Kill the God objects
+- Shrink `MainViewModel` to navigation + shell state.
+- Split `SessionViewModel` (1,354) → `LogCaptureViewModel`, `LogViewerViewModel`, `CrashPanelViewModel`, `EvidenceViewModel`, plus a `SessionExportService`.
+- Decompose `AdbService`/`IosService` into focused capability services (DeviceInfo, Logs, Files, Apps, Input, Media, **Instrumentation**).
+
+### 7.3 Device Abstraction Layer + shared Device Store (also the game-testing foundation)
+Define capability interfaces so the UI queries capabilities instead of branching on platform:
+`ILogSource`, `IScreenCapture`, `IScreenRecorder`, `IFileSystem`, `IAppManager`, `IInputInjector`, `IScreenMirror`, and — new — **`IPerformanceProfiler`**, **`IConditionInducer`** (thermal/network), **`ILocationSimulator`**. Android and iOS backends implement the subset they support.
+
+A single **`IDeviceStore`** (one observable device list + selected device) replaces per-VM `DevicesChanged` subscriptions and the manual fan-out; an **`IUiDispatcher`** centralizes UI-thread marshalling (and is trivially portable to Avalonia). [FEAT-36, R8]
+
+### 7.4 Navigation, messaging, concurrency, lifecycle
+- Typed navigation service + view locator (replace stringly-typed switch + duplicated `navMap`).
+- `WeakReferenceMessenger` for cross-VM events (crash detected, device selected, capture started).
+- Explicit transport concurrency policy (serialize state-changing adb ops; bounded concurrency for reads); make async truly async; `TimeProvider` for testable timers.
+- Real Dispose chain + navigation lifecycle hooks (start/stop pollers); in-place `ResourceDictionary` theme swap (kills the window-recreation hack).
+
+---
+
+## 8. Performance & Optimization
 
 | Area | Problem | Fix |
 |---|---|---|
-| Console/log text | `string +=` in loops → O(n²), UI jank | `StringBuilder` + throttled (100 ms) flush, or bind an `ObservableCollection`/virtualized list. [BUG-07/14, FEAT-31/32/42] |
-| Large log files | `File.ReadAllLines`/`ReadAllText` → OOM on 50–100 MB+ logs | Stream with `StreamReader`; tail-read for preview; `Utf8JsonWriter` streaming for JSON export. [BUG-17, FEAT-29/30] |
-| Live log collection | `Clear()` + `AddRange()` fires double `Reset`, multi-second freeze + selection loss | In-place `RemoveRange`; batch notifications; incremental filtering of only new entries. [FEAT-25, NEW-10] |
-| Device detail fetch | Sequential getprop/dumpsys per device, worst-case tens of seconds | Batch into a single shell round-trip; parallelize where safe. [TOOL-16] (partially done per changelog — verify) |
-| Polling | Sequential Android→iOS; blocks on slow USB | `Task.WhenAll` parallel poll; fire property-change updates (battery/auth) not just connect/disconnect. [TOOL-14/15] |
-| Clipboard copy | Materializes entire filtered view (~20 MB string) | Cap to last N; warn on truncation. [FEAT-39] |
-| Rendering | Ensure `VirtualizingStackPanel` + `Recycling` on all log/app/file lists; freeze brushes; enable UI virtualization for 100k+ rows | WPF virtualization + `Freezable.Freeze()` |
-| Startup | Self-contained + R2R already; measure cold start | Add startup timing telemetry; lazy-init non-critical services via DI |
+| Console/log text | `string +=` in loops → O(n²), UI jank | `StringBuilder` + throttled (100 ms) flush; virtualized list. [BUG-07/14, FEAT-31/32/42] |
+| Large log files | `File.ReadAllLines/Text` → OOM on 50–100 MB+ | Stream via `StreamReader`; tail-read preview; `Utf8JsonWriter` streaming export. [BUG-17, FEAT-29/30] |
+| Live log collection | `Clear()`+`AddRange()` double `Reset` → freeze + selection loss | In-place `RemoveRange`; batch notifications; incremental filtering. [FEAT-25, NEW-10] |
+| Device detail fetch | Sequential getprop/dumpsys | Batch to a single shell round-trip; parallelize safely. [TOOL-16] |
+| Polling | Sequential Android→iOS | `Task.WhenAll`; emit property-change (battery/auth), not just connect/disconnect. [TOOL-14/15] |
+| Rendering | Ensure `VirtualizingStackPanel` recycling on all lists; freeze brushes | 100k+ row lists stay smooth |
+| Startup | Self-contained + R2R | Add startup timing telemetry; lazy-init non-critical services via DI |
+| Instrumentation sampling | High-frequency FPS/CPU sampling can itself cause overhead | Ring buffers, background sampling threads, adaptive interval; never sample on UI thread |
 
-**Method:** add lightweight **BenchmarkDotNet** micro-benchmarks for the hot paths (log parsing, filtering, export) and a **repeatable perf smoke test** (capture 1M-line synthetic log) to catch regressions in CI.
-
----
-
-## 8. Security, Privacy & Compliance
-
-This tool tests **unreleased games**, so data minimization is a first-class requirement.
-
-- **Command-injection hardening (device shell):** move from blocklists to strict **allowlists** for all path/package/URL arguments; validate iOS AFC paths (currently unvalidated); escape or reject macro `input text`; stop passing raw command strings through `ExecuteCommandAsync` without validation. [TOOL-18/19, FEAT-34, R3]
-- **Log/PII redaction by default:** make `SecureMode` the default; centralize a `SanitizeForLog` that redacts serials, file paths, and deep-link query params before *any* sink writes them. [SEC-01, TOOL-13]
-- **Bug-report minimization:** hash iOS serials (Android already hashed), drop full `dumpsys package` inventory, scope to the target package only. [FEAT-22/23, SEC-04]
-- **Data lifecycle:** implement retention (delete sessions/screenshots/recordings older than N days on startup), and a real "Delete my data" / "Export my data" in Settings. [SEC-02/03, COMP-01/02/04]
-- **At-rest protection:** offer optional encryption of session artifacts (DPAPI per-user) and owner-only ACLs on session directories. [SEC-13]
-- **Wireless ADB safety:** confirm/warn before `adb tcpip` (opens the device to the LAN). [SEC-07]
-- **Serial storage:** never key `settings.json` on raw serials; hash consistently (`SecurityHelper`, 16+ hex chars). [SEC-06/12]
-- **Supply chain:** enable NuGet audit + Dependabot; sign releases; publish an SBOM.
-- **Licensing:** keep pymobiledevice3 **process-isolated** (GPL-3.0); ship complete `THIRD_PARTY_NOTICES` incl. scrcpy Apache NOTICE; audit transitive NuGet licenses. [LEGAL-01..05]
-- **Threat model doc:** add a short `SECURITY.md` describing the trust boundary (local user, USB-attached devices, spawned native tools) and a vulnerability-reporting process.
+Add **BenchmarkDotNet** micro-benchmarks for hot paths (log parse/filter/export, trace parsing) and a repeatable perf smoke test (1M-line synthetic log) in CI.
 
 ---
 
-## 9. Testing, Quality & CI/CD
+## 9. Security, Privacy & Compliance
 
-**Current:** xUnit tests exist for services/models/helpers, but **zero view-model coverage** (VMs were untestable pre-DI). CI builds + tests on Windows.
+Testing **unreleased games** makes data minimization first-class.
 
-**Target:**
-- **Unlock VM tests** via DI + interfaces (mock services with Moq/NSubstitute). Cover navigation, device selection, capture start/stop, export, and error branches.
-- **Coverage gate:** wire `coverlet` output into CI with a ratcheting threshold (start where you are; forbid regressions). Publish coverage to the PR.
-- **Golden-file/parser tests:** the log parsers, `getevent` macro parser, and pymd3 output parsers are fragile; add fixture-driven tests with real captured output samples (already partly present — expand).
-- **Process/integration tests:** a fake "adb" shim (a small stub exe) to exercise `ToolLauncher`/`AdbService` behavior (timeouts, non-zero exit, stderr) deterministically without a real device.
-- **Static analysis:** enable `TreatWarningsAsErrors` incrementally, `Nullable` is already on, add `.editorconfig` + Roslyn analyzers (`Microsoft.CodeAnalysis.NetAnalyzers`), and consider `dotnet format` + a formatting check in CI.
-- **CI cleanup:** two overlapping workflows exist (`build-release.yml`, `dotnet-desktop.yml`). Consolidate; add analyzer/format/coverage/security-audit stages; cache NuGet; run tests with results published.
-- **Release quality:** attach SBOM + checksums to releases; auto-generate changelog is already present.
-
----
-
-## 10. UX / UI Modernization
-
-- **Fluent theming:** WPF on .NET 10 supports a modern Fluent look; adopt consistent `DynamicResource`-driven light/dark themes so the shell *and* content respond to theme changes (today the shell stays dark due to hardcoded colors). ([WPF modernization 2026](https://platform.uno/articles/wpf-modernization-in-2026-a-source-backed-decision-guide/)) [NEW-05/06]
-- **Consistent component library:** unify buttons, cards, inputs, combo boxes (dark-theme combo is currently broken) into a styled control set / resource dictionary.
-- **Interaction safety:** bind `IsEnabled`/`CanExecute` so Start/Stop, Mirror/Stop, Uninstall, Delete, Push/Pull, Play/Stop only enable in valid states; add confirmations for destructive actions. [UX-01/02/04/10/11/12]
-- **Feedback:** global busy/progress indicators for async ops; toast/status confirmations for saves; live status dots that reflect real connection state. [UX-03/09/14]
-- **Empty states & onboarding:** helpful empty-state illustrations + a first-run guided setup (enable USB debugging, trust computer, driver check). [UX-17]
-- **Command palette & shortcuts:** fix corrupted glyphs (use Segoe MDL2/Fluent icons), wire all shortcuts (Ctrl+1..n), and add arrow-key navigation. [UX-07/08]
-- **Accessibility:** AutomationPeers/`AutomationProperties`, keyboard-only navigation, high-contrast theme, and screen-reader labels — currently unaddressed.
-- **Layout:** responsive/resizable panels, dockable log viewer, and per-view density options for testers on small laptops.
+- **Command-injection hardening:** strict allowlists for all path/package/URL args; validate iOS AFC paths; escape/reject macro `input text`; stop raw `ExecuteCommandAsync` passthrough. [TOOL-18/19, FEAT-34, R5]
+- **Redaction by default:** `SecureMode` on by default; centralize `SanitizeForLog` (serials, paths, deep-link query params) before *any* sink. [SEC-01, TOOL-13]
+- **Bug-report minimization:** hash iOS serials, drop full package inventory, scope to target package. [FEAT-22/23, SEC-04]
+- **Screenshot/video redaction:** blur/region-mask tools before any artifact leaves the machine (critical for pre-release content).
+- **Data lifecycle:** retention (auto-delete old sessions/media), real export/delete-my-data in Settings, optional DPAPI at-rest encryption + owner-only ACLs. [SEC-02/03/13, COMP-01/02/04]
+- **Wireless ADB & location spoofing safety:** confirm/warn before `adb tcpip` and before enabling simulated GPS (leaves device in a modified state).
+- **Supply chain & licensing:** NuGet audit + Dependabot; signed/notarized releases; SBOM; keep pymobiledevice3 process-isolated (GPL-3.0); complete `THIRD_PARTY_NOTICES` (scrcpy Apache NOTICE, perfetto). [LEGAL-01..05]
+- Add `SECURITY.md` (trust boundary: local user, USB devices, spawned native tools) + vuln-reporting process.
 
 ---
 
-## 11. Enhancements to Existing Features
+## 10. Testing, Quality & CI/CD
 
-- **Live log viewer:** debounced search, incremental filtering, regex + level + tag filters, sticky bookmarks, column layout, and a "follow/tail" toggle that survives batches without selection loss. [FEAT-01/03]
-- **Sessions:** highlight the actively-capturing session; guard delete while capturing; add a session-restart separator; "copy raw file" export that copies the on-disk log rather than truncated in-memory data. [FEAT-02/04/05, FEAT-27]
-- **Bug report:** minimized, structured (JSON + human summary), correct product branding, configurable sections, and attach a short device/app snapshot instead of full inventory. [FEAT-23/24]
-- **Macros:** auto-detect the touchscreen input device (event node varies per OEM), fix text input on stock Android (avoid `base64`), record multi-touch, and compensate replay drift precisely. [FEAT-18/19/33/34]
-- **Stress test (monkey):** periodic metric sampling (min/max/avg CPU/mem), richer time-series report, defensive monkey flags, percentage-sum validation, event-count clamping, and an explicit "not supported on iOS" guard. [FEAT-12/13/14, MISS-01/02/03]
-- **Vitals:** GPU/jank (`gfxinfo`) metrics, start/stop on navigation, charts over time rather than instantaneous numbers. [FEAT-20, BUG-05]
-- **iOS parity where the platform allows:** implement AFC pull, fix `afc ls` file/dir detection, directory delete via `rmdir`, and surface actionable "enable Developer Mode" guidance. [FEAT-10/11, TOOL-09/10/11/17]
-- **Screen recording:** free-space check + duration/size warnings; store the remote path instead of glob-searching on stop. [FEAT-38, TOOL-20]
+- **Unlock VM tests** via DI + interfaces (mock services). Cover navigation, device selection, capture start/stop, export, error branches, and instrumentation parsers.
+- **Golden-file parser tests:** log parsers, `getevent` macro parser, `gfxinfo`/`SurfaceFlinger`/Perfetto output, pymobiledevice3 `sysmon`/DVT output — all fragile, all fixture-driven.
+- **Fake-tool integration tests:** stub `adb`/`pymobiledevice3` executables to exercise `ToolLauncher` timeouts, non-zero exits, stderr deterministically.
+- **Cross-platform CI matrix:** build/test on Windows, macOS, Linux runners once on Avalonia; publish coverage with a ratcheting gate.
+- **Static analysis:** `.editorconfig`, `Microsoft.CodeAnalysis.NetAnalyzers`, `dotnet format` check, incremental `TreatWarningsAsErrors`.
+- **CI cleanup:** consolidate the two overlapping workflows; cache NuGet; attach SBOM + checksums to releases.
 
 ---
 
-## 12. New Features (Industry-Aligned)
+## 11. UX / UI Modernization
 
-Modern device-QA tooling (device farms, Appium ecosystems, vendor consoles) sets expectations the tool can meet incrementally:
+> **North-star:** *A beautiful, calm, minimalist tool that a first-time tester can operate with zero training — it is always obvious what to press, what will happen, and what to do next.* Explicitly **not** a cyberpunk / neon / "hacker terminal" aesthetic. The visual language is quiet and professional so the **device screen, logs, and performance data are the heroes** — the chrome recedes.
 
-### 12.1 Multi-device & fleet
-- **Multi-device dashboard**: capture from several devices at once, side-by-side log/vitals, and a fleet health view. (The service layer already keys captures per device.)
-- **Device groups / labels** and saved device profiles (notes already exist per device).
+### 11.1 Design principles (the rules every screen follows)
+1. **Clarity over cleverness.** Plain labels ("Start capture", "Record screen"), never jargon-only icons. Every icon pairs with a text label or a tooltip.
+2. **One primary action per screen.** Exactly one visually dominant button (the thing you most likely came to do); everything else is secondary/tertiary. No wall of equally-loud buttons.
+3. **Progressive disclosure.** Show the 3–4 things a tester needs first; tuck advanced options behind "Advanced ▸" or a settings drawer. The default path is short.
+4. **Never leave the user guessing.** Every action gives immediate feedback (state change, toast, progress). Disabled controls explain *why* they're disabled via tooltip ("Connect a device to start").
+5. **Forgiving by default.** Destructive actions confirm; long actions can be cancelled; nothing silently fails.
+6. **Calm, minimal, spacious.** Generous whitespace, few colors, restrained motion. Color is used sparingly and only to carry meaning (status, severity), never decoration.
+7. **Consistency.** The same control looks and behaves the same everywhere; one component library, one spacing scale, one type scale.
 
-### 12.2 Automation & integration
-- **Appium / automation bridge:** launch and attach to Appium sessions; capture logs/video correlated to a test run; expose a local control API (named pipe / localhost HTTP) so CI or an automation harness can start/stop capture and pull artifacts.
-- **Issue-tracker integrations:** one-click "file bug" to **Jira / Azure DevOps / GitHub Issues / TestRail** with the bug-report zip, redacted logs, screenshot, and device metadata attached.
-- **CI hooks:** a headless/CLI mode (`QADeviceTool capture --serial ... --package ... --out ...`) so the same engine runs in pipelines, not just the GUI.
+### 11.2 Visual language (minimalist — the opposite of cyberpunk)
+- **Aesthetic:** clean, soft, "quiet productivity tool" — think a modern, uncluttered desktop app: lots of neutral surface, subtle 1px dividers, gentle rounded corners (8–12px), soft shadows for elevation. **No** neon glows, gradients-on-everything, glitch effects, matrix greens, scanlines, or dark-with-cyan-accents.
+- **Color system — neutral base + one calm accent:**
+  - **Neutrals carry the UI:** near-white / very-light-gray surfaces in light mode; deep-charcoal (not pure black) surfaces in dark mode. Text uses layered neutrals (primary / secondary / tertiary) rather than pure black-on-white for softer contrast.
+  - **A single, calm brand accent** (e.g., a muted indigo/teal — chosen with the team) used only for the primary action, selection, and focus. Not spread across the whole screen.
+  - **Semantic colors reserved for meaning only:** success (green), warning (amber), error (red), info (blue). These appear in status dots, log-level tags, and pass/fail chips — nowhere decorative.
+- **Typography:** one clean, highly-legible UI sans-serif (e.g., Inter, already bundled) with a small, strict **type scale** (e.g., 12 / 14 / 16 / 20 / 28). Monospace only where it earns its place: log/console text and metric readouts. Weight (not color) creates hierarchy.
+- **Spacing & grid:** an **8px spacing scale** (4/8/16/24/32) applied consistently; comfortable line-height for logs; content max-widths so text never sprawls edge-to-edge.
+- **Elevation:** flat by default; subtle shadow/tint only to separate overlays (dialogs, popovers, the perf HUD) from content.
+- **Iconography:** one consistent, thin-stroke icon set (Fluent/Lucide-style), always with labels. Replaces today's broken/cyber glyphs. [UX-07]
+- **Motion:** short, subtle, purposeful (120–200ms ease) for state changes and panel transitions; a "reduce motion" setting honors OS preference. No flashy animation.
+- **Light & dark themes**, both fully theme-aware for **shell *and* content** via `DynamicResource` (today the shell stays dark). Light is the default; dark is a first-class equal, not a "hacker mode". [NEW-05/06]
 
-### 12.3 Evidence & analysis
-- **Annotated screenshots** (draw/blur before attaching — blur is important for unreleased content).
-- **Screen recording with markers/timestamps** synced to log events; auto-clip around detected crashes.
-- **AI-assisted log triage:** local/offline-first crash clustering and "explain this stack trace / ANR" summaries; group duplicate crashes; suggest likely root cause. (There is already an "Analyze with AI" command hook to build on — ensure it is privacy-respecting and opt-in.)
-- **Log analytics:** error-rate timelines, top exceptions, memory-leak trend detection, frame-drop hotspots.
+### 11.3 Information architecture & navigation (so nothing is hidden)
+- **Persistent left sidebar** with labeled sections (icon **+** word): Dashboard, Sessions, Devices, Performance, Apps, Files, Automation, Settings. The current section is clearly highlighted.
+- **Global top bar:** the **active device selector** (always visible, so the tester always knows which device they're acting on), a global search/command palette (Ctrl/Cmd+K), and connection/health status.
+- **Breadcrumbs** in drill-down areas (Files, Sessions) so users always know where they are and can step back.
+- **Everything reachable in ≤2 clicks** from the sidebar; no feature buried more than one level deep.
 
-### 12.4 Team & cloud (opt-in)
-- **Shared session library** with retention + access control; upload redacted artifacts to a team store (S3/Azure Blob) with signed links.
-- **Reporting:** export a polished HTML/PDF test-session report (timeline, crashes, vitals, evidence) for stakeholders.
-- **Templates & checklists:** test-plan templates (the repo already has a `TEST_PLAN.md`) surfaced in-app as guided runs.
+### 11.4 Guided, self-explanatory UX (zero-confusion mechanics)
+- **First-run guided setup wizard:** step-by-step "connect your device" — enable USB debugging / trust computer / developer mode, with a live checklist, inline help, and **one-click remediation** for each dependency (adb, driver, scrcpy, pymobiledevice3, iOS tunnel). [UX-17]
+- **Helpful empty states:** every screen with no data shows a friendly illustration, a one-line explanation, and the single button to get started ("No devices yet — connect a device over USB").
+- **Primary/secondary button hierarchy:** the main action is a filled accent button; secondary actions are outlined; tertiary are text-only. Users can tell at a glance what the "main" thing is.
+- **Contextual affordances:** actions live next to the thing they act on (a session row's Stop/Export buttons appear on that row), not in a distant toolbar.
+- **State-driven controls** ([UX-01/02/04/10/11/12]): Start/Stop, Mirror, Record, Uninstall, Delete, Push/Pull, Play/Stop are enabled only when valid; when disabled they show a tooltip explaining the precondition. A capture in progress shows a clear "● Recording" state.
+- **Confirmations for destructive/irreversible actions** (delete session, uninstall app, wipe data, enable wireless ADB, spoof GPS) — with a plain-language summary of what will happen and a clear cancel.
+- **Inline validation:** forms (deep links, macro params, thresholds) validate as you type with human-readable messages, not error codes.
+- **Consistent feedback system:** a lightweight, non-blocking **toast** confirms success ("Screenshot saved"), a **global busy indicator** covers long operations with progress + cancel, and **live status dots** reflect real device/connection state. [UX-03/09/14]
+- **Undo where possible** (e.g., recently deleted session) instead of only confirm dialogs.
 
-### 12.5 Reliability & self-service
-- **Built-in dependency doctor:** verify adb/scrcpy/pymd3 versions, USB driver, developer mode, and offer one-click remediation.
-- **Auto-update** for the app and bundled tools.
-- **Crash reporting for the tool itself** (structured crash dump + optional opt-in telemetry). [ERR-03]
+### 11.5 Power-user layer (kept out of the beginner's way)
+- **Command palette (Ctrl/Cmd+K):** fuzzy-search every action and device; the fastest path for pros — but never required for beginners.
+- **Keyboard shortcuts:** Ctrl/Cmd+1..n for sections, arrow-key list navigation, documented in a discoverable "Shortcuts" sheet (press `?`). [UX-07/08]
+- **Adjustable density** (comfortable / compact) for small laptops; **resizable/dockable panels** (e.g., logs side-by-side with the perf HUD) with sensible defaults that non-power-users never need to touch.
+
+### 11.6 Component library (one source of truth)
+A single Avalonia component set + design tokens (colors, spacing, radii, type) so the whole app is consistent and theme-swaps cleanly: buttons (primary/secondary/tertiary/danger), inputs (fixing today's broken dark-theme combo box), cards, tabs, tables/virtualized lists, status chips, toasts, dialogs, the perf HUD, and empty states. Tokens live in one place so rebranding = editing tokens, not screens.
+
+### 11.7 Accessibility (part of "no one is confused")
+- WCAG-minded contrast in **both** themes; a **high-contrast** theme option.
+- Full **keyboard-only** operability with visible focus rings; logical tab order.
+- **Screen-reader** support via automation peers/labels on every control.
+- Respects OS settings for **reduced motion**, text scaling, and theme.
+
+### 11.8 Acceptance criteria for "so good no one is confused"
+- A brand-new tester completes "connect a device → start a capture → take a screenshot → export a bug bundle" **without documentation** in a quick usability test.
+- On every screen, the intended primary action is identifiable in **under 3 seconds**.
+- **Zero dead-ends:** no disabled control without an explanation; no empty screen without a next step; no destructive action without confirmation + (where feasible) undo.
+- The UI passes a "squint test": with eyes half-closed the single most important action still stands out.
 
 ---
 
-## 13. Cross-Platform Strategy
+## 12. Engine-Agnostic Game-Testing Suite
 
-The single biggest structural limiter is **Windows-only**: full iOS support (screen recording, some diagnostics, developer shell) is constrained by the availability/quality of Windows iOS tooling. macOS is the natural home for iOS testing.
+**The core new value proposition.** Because target games run on many engines — including proprietary in-house engines that are never published — the tool must obtain everything from **OS-level instrumentation that requires no engine cooperation, no SDK, and no app modification.** Every capability below is engine-blind: it reads the same OS surfaces whether the game is Unity, Unreal, Godot, Cocos, or a studio's secret engine.
 
-Options (2026 landscape):
+### 12.1 Real-time performance HUD & profiler (engine-agnostic)
+A GameBench-style live overlay + recorded session covering the metrics testers actually judge games on ([GameBench performance pane](https://docs.gamebench.net/docs/web-dashboard/the-performance-pane/)):
 
-| Path | Reach | XAML reuse | Effort | Notes |
-|---|---|---|---|---|
-| **Stay WPF + .NET 10** | Windows only | 100% | Low | Correct for Track A; modernize in place with Fluent theming. ([platform.uno guide](https://platform.uno/articles/wpf-modernization-in-2026-a-source-backed-decision-guide/)) |
-| **Avalonia** | Win/macOS/Linux (+mobile/web experimental) | High (WPF-like XAML) | Medium-High | Renders its own UI via SkiaSharp; strong fit to escape Windows-only and enable a macOS build for real iOS testing. ([Avalonia vs MAUI](https://startdebugging.net/2026/05/maui-vs-avalonia-vs-uno-in-2026/)) |
-| **Uno Platform** | Win/macOS/Linux/mobile/**web** | High (closest XAML) | High | Choose if browser reach matters. |
-| **.NET MAUI** | Native iOS/Android + desktop | Low (not WPF XAML) | High | Best when you need first-party native mobile; weaker desktop story. |
+| Metric | Android source (engine-agnostic) | iOS source (engine-agnostic) |
+|---|---|---|
+| **FPS / frame time** | `dumpsys SurfaceFlinger --latency <layer>`, `dumpsys gfxinfo <pkg> framestats`, Perfetto **FrameTimeline** | pymobiledevice3 DVT **core-profile / opengl** FPS session |
+| **Jank / dropped frames** | `gfxinfo` janky-frame %, Perfetto frame classification (16ms=60fps, 11ms=90fps, 8ms=120fps budgets) | DVT frame timing |
+| **CPU (per-process & total)** | `/proc/<pid>/stat`, `dumpsys cpuinfo`, `top` | pymobiledevice3 **sysmon** (process monitor) |
+| **GPU utilization** | vendor sysfs / `gfxinfo` where exposed | DVT GPU counters where available |
+| **Memory (PSS/RSS/graphics)** | `dumpsys meminfo <pkg>`, `/proc` | sysmon memory |
+| **Power / energy drain** | `dumpsys batterystats`, `batteryproperties`, coulomb counter | DVT **energy** / power telemetry |
+| **Thermal state** | `dumpsys thermalservice`, thermal sysfs, throttle events | DVT thermal state |
+| **Network I/O** | `/proc/net`, `dumpsys netstats` per-uid | DVT **network** monitor |
 
-**Recommendation:** Keep the WPF build for Track A. In parallel, invest in the **service/engine layer being UI-agnostic** (pure .NET, no WPF references) so that a future **Avalonia** front-end can target Windows *and macOS* with maximum reuse. A macOS build unlocks the iOS features that Windows tooling cannot provide. This is the single highest-leverage rework decision.
+- **Live HUD:** floating, always-on-top mini-window with FPS, frame-time graph, CPU/mem/thermal, and a jank counter — visible while the tester plays. ([Android jank targets](https://developer.android.com/topic/performance/vitals/tracking_jank), [Perfetto FrameTimeline](https://perfetto.dev/docs/data-sources/frametimeline))
+- **Recorded sessions:** time-series charts (LiveCharts/ScottPlot) with FPS stability %, 1%/0.1% low FPS, jank events, thermal-throttle markers, memory-growth trend, and battery drain rate.
+- **Slow-session detection** aligned with platform norms (frame > 50 ms ≈ 20 FPS, and 34 ms ≈ 30 FPS) for casual vs. action titles. ([Android slow sessions for games](https://developer.android.com/topic/performance/vitals/slow-session))
+
+### 12.2 Device-tier matrix testing
+Testers must validate low/mid/high-end tiers. Provide **device profiles** (chipset, RAM, refresh rate, OS) and a **run-across-tiers** view that captures the same session on several attached devices and produces a **comparison report** (FPS/jank/thermal side-by-side). ([device-tier testing](https://yrkan.com/blog/mobile-game-testing/))
+
+### 12.3 Condition simulation (real-world reproduction)
+- **Network conditioning:** latency, jitter, packet loss, bandwidth caps for online/multiplayer games — Android via `tc`/proxy or emulated network profiles; iOS via pymobiledevice3 **condition inducer**. Presets: 3G/4G/5G/Wi-Fi/edge, "airplane mid-match", "lossy metro".
+- **Thermal conditioning:** induce thermal pressure states (iOS condition inducer) and observe throttling behavior.
+- **Battery/charging states:** simulate low-battery/charging to test power-saver frame-rate caps.
+
+### 12.4 Location simulation (location-based games)
+GPS spoofing to a fixed point or a scripted route/path for geolocation games — Android mock-location provider; iOS via pymobiledevice3 **simulated location** (DVT). Includes a route editor + speed control, with a mandatory "reset location" safety action. ([pymobiledevice3 simulated location](https://github.com/doronz88/pymobiledevice3), [iOS location spoofing example](https://gist.github.com/lucasrod/52b8375d0b8a8212092c2440f0400fa3))
+
+### 12.5 Gameplay automation for QA (engine-agnostic)
+- **Macro record/replay** (already present) upgraded: multi-touch, gesture library (tap/swipe/pinch/rotate), loop-with-count for grinding/soak tests, and drift-corrected timing.
+- **Soak / endurance runs:** replay a macro for N hours while sampling memory/thermal/FPS to catch leaks and long-session degradation; auto-flag memory growth and FPS decay.
+- **Image-anchored steps (optional):** trigger next action when a template image appears on screen (engine-agnostic, purely visual) so scripts survive minor UI changes without engine hooks.
+
+### 12.6 Crash, ANR & stability
+- **Live crash/ANR detection** from logcat/syslog (already present) → cluster duplicates, extract stack/tombstone snippets, and correlate to the moment on the recorded video/perf timeline.
+- **iOS crash-log pull + symbolication guidance**; Android tombstone/ANR trace pull.
+- **Stability score per session** (crashes + ANRs + jank + thermal throttles).
+
+### 12.7 Evidence capture (game-appropriate)
+- **Marker-synced screen recording:** record gameplay with timestamped markers auto-dropped on crashes, jank spikes, and thermal throttles; auto-clip a few seconds around each event.
+- **Annotated + redacted screenshots** (draw/blur) — blur is essential for unreleased assets.
+- **One-click evidence bundle:** video + perf report + logs + device metadata + repro steps, minimized/redacted, ready to attach to a bug.
+
+### 12.8 Functional game-QA aids
+- **IAP / store-flow logging** (capture purchase/receipt log lines; sandbox account notes).
+- **Localization testing:** switch device locale/language, capture per-locale screenshots for layout/overflow review, and flag missing-string patterns via log rules.
+- **Save/resume & interruption testing:** scripted interruptions (call/notification/backgrounding/lock) with state-capture before/after.
+- **Deep-link testing** (already present) extended with a link library and batch runner.
+
+### 12.9 Reporting
+- **Session report (HTML/PDF):** performance charts, stability score, crashes with snippets, evidence thumbnails, device/tier metadata, and pass/fail vs. configurable thresholds (e.g., "≥30 FPS avg, ≤5% jank, no ANRs").
+- **Cross-device comparison report** for tier matrices.
+- **Trend dashboards** across builds (regressions in FPS/jank/crashes over time).
+
+> **Design guardrail:** none of §12 requires the game engine's cooperation. If a capability *would* require an engine SDK or in-app hook, it is explicitly out of scope, because in-house engines are unavailable. Everything is sourced from `adb`/OS surfaces or `pymobiledevice3` DVT services.
 
 ---
 
-## 14. Full-Rework Target Architecture
+## 13. Full iOS & Android Instrumentation (pymobiledevice3 + ADB at Full Potential)
+
+Today the tool uses a fraction of what these tools expose. This section maps the **full potential** to concrete features.
+
+### 13.1 iOS via pymobiledevice3 — unlock developer (DVT) services
+pymobiledevice3 is a pure-Python implementation that ships a CLI + Python API and runs on Windows/Linux/macOS; it exposes lockdown, AFC, crash logs, DDI/developer disk image, tunnels, and **developer (DVT) services**. ([pymobiledevice3 repo](https://github.com/doronz88/pymobiledevice3), [device-operator skill list](https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/SKILL.md))
+
+| Capability | pymobiledevice3 service | Status today → target |
+|---|---|---|
+| Device list / info | usbmux, lockdown | ✅ have → keep |
+| Syslog capture | syslog | ✅ have → add filtering by process |
+| App install/list/uninstall | installation proxy | ✅ have → keep |
+| File browse (AFC) | afc | ◑ partial → fix ls dir-detection, add pull, rmdir [TOOL-09/10/11] |
+| Crash logs | crash reports | ◑ → pull + list + symbolication guidance |
+| **Screenshot** | DVT screenshot | ◑ deprecated path → move to DVT |
+| **Screen recording** | DVT / QuickTime stream | ✗ returns null today → implement |
+| **Performance (CPU/mem per process)** | **sysmon** | ✗ → **new: live process monitor** |
+| **FPS / GPU** | DVT core-profile / opengl | ✗ → **new: iOS FPS profiling** |
+| **Energy / power** | DVT energy | ✗ → **new: power telemetry** |
+| **Network monitor** | DVT network | ✗ → **new: per-app network** |
+| **Condition inducer** (thermal/network) | DVT condition inducer | ✗ → **new: condition simulation** |
+| **Simulated location** | DVT simulated location | ✗ → **new: GPS spoofing / routes** |
+| Developer mode / DDI mount | amfi / DDI | ◑ → guided enable + auto-mount |
+| iOS 17+ tunnel (RemoteXPC) | tunneld / remote | ✗ → **required** for DVT on iOS 17+; run the tunnel daemon (needs elevated privileges) |
+
+**Notes:** iOS 17+ requires establishing a **tunnel (RemoteXPC)** before most DVT services work; the app must manage the tunnel daemon lifecycle (and elevated-privilege prompt) transparently. Developer Mode must be enabled on the device. macOS is the most reliable host for these services, reinforcing the Avalonia+macOS direction.
+
+### 13.2 Android via ADB — go beyond logcat
+| Capability | ADB / OS source | Status → target |
+|---|---|---|
+| Device list/info/props | `adb devices`, getprop | ✅ have |
+| Logcat capture (app-filtered by PID) | `adb logcat` | ✅ have → keep |
+| Install/uninstall/control | `pm`, `am` | ✅ have |
+| File browse/push/pull | `adb`/`content` | ✅ have → harden paths |
+| Screenshot / screen record | `screencap`, `screenrecord` | ✅ have → add free-space checks [FEAT-38] |
+| Screen mirror | scrcpy | ✅ have |
+| Macros | `getevent`/`sendevent`/`input` | ✅ have → multi-touch, safe text [FEAT-33/34] |
+| Monkey stress | `monkey` | ✅ have → richer sampling [MISS-01/02/03] |
+| **FPS / frame timeline** | `dumpsys SurfaceFlinger --latency`, `gfxinfo framestats`, **Perfetto** | ◑ vitals → **new: full FPS/jank profiler** |
+| **Jank %** | `gfxinfo` | ✗ → **new** ([gfxinfo janky frames](https://stackoverflow.com/questions/45236131/total-frames-and-janky-frames-in-dumpsys-gfxinfo-report)) |
+| **Thermal** | `dumpsys thermalservice`, sysfs | ✗ → **new** |
+| **Power / battery** | `dumpsys batterystats`, coulomb counter | ◑ → **new: drain rate over session** |
+| **Per-uid network** | `dumpsys netstats`, `/proc/net` | ✗ → **new** |
+| **System trace** | **Perfetto** (`perfetto`/`traceconv`) | ✗ → **new: capture + parse frame/CPU trace** |
+| **GameManager / game mode** | `cmd game` | ✗ → **new: read/observe game mode & interventions** |
+| Mock location | mock-location provider | ✗ → **new: GPS spoofing** |
+| Network conditioning | `tc` / proxy | ✗ → **new: condition simulation** |
+| Locale switch | `am`/settings | ✗ → **new: localization testing** |
+
+**Perfetto** is the modern, engine-agnostic way to get authoritative frame timelines and CPU scheduling on Android; the app can trigger a trace, pull it, and parse the FrameTimeline for jank without any engine involvement. ([Perfetto FrameTimeline](https://perfetto.dev/docs/data-sources/frametimeline))
+
+---
+
+## 14. Enhancements to Existing Features
+
+- **Live log viewer:** debounced search, incremental filtering, regex + level + tag filters, sticky bookmarks, "follow/tail" that survives batches without selection loss. [FEAT-01/03]
+- **Sessions:** highlight the active capture; guard delete while capturing; restart separators; "copy raw file" export. [FEAT-02/04/05, FEAT-27]
+- **Bug report:** minimized, structured, correctly branded, target-package scoped. [FEAT-23/24]
+- **Macros:** auto-detect touchscreen node, safe text input, multi-touch, precise drift compensation. [FEAT-18/19/33/34]
+- **Stress test (monkey):** periodic metric sampling, time-series report, defensive flags, percentage/clamp validation, iOS "not supported" guard. [FEAT-12/13/14, MISS-01/02/03]
+- **Vitals → full profiler:** GPU/jank via `gfxinfo`, start/stop on navigation, time-series charts. [FEAT-20, BUG-05]
+- **iOS parity:** AFC pull, `afc ls` dir detection, `rmdir`, actionable Developer-Mode guidance. [FEAT-10/11, TOOL-09/10/11/17]
+- **Screen recording:** free-space + duration/size checks; store remote path instead of glob-searching. [FEAT-38, TOOL-20]
+
+---
+
+## 15. New Features (Industry-Aligned)
+
+Beyond the game-testing suite (§12) and instrumentation (§13):
+
+- **Multi-device fleet:** simultaneous capture, side-by-side logs/vitals, fleet health, device groups/labels, saved profiles.
+- **Automation & CI:** **headless CLI** (`qadevicetool capture --serial … --package … --out …`, `profile`, `report`) reusing the engine; a local control API (named pipe/localhost HTTP) so Appium/CI harnesses can start/stop capture and pull artifacts; **Appium bridge** to correlate logs/video/perf to automated test runs.
+- **Issue-tracker integrations:** one-click bug filing to **Jira / Azure DevOps / GitHub Issues / TestRail** with redacted evidence bundle attached.
+- **AI-assisted triage (opt-in, privacy-respecting):** crash clustering, "explain this stack/ANR", duplicate grouping, likely-root-cause hints — local-first given unreleased-content sensitivity.
+- **Team/cloud (opt-in):** shared session library with retention + access control; signed-link artifact upload; polished HTML/PDF stakeholder reports.
+- **Reliability & self-service:** dependency doctor (adb/scrcpy/pymd3/Perfetto versions, USB driver, Developer Mode, iOS tunnel) with one-click remediation; app + tool auto-update; the tool's own crash reporting (opt-in). [ERR-03]
+
+---
+
+## 16. Cross-Platform Rollout & Migration Plan
+
+The migration off WPF is staged to avoid a big-bang rewrite and to keep shipping.
+
+1. **Engine extraction (parallel-run):** carve out `LogPro.Core` + platform/instrumentation libraries with zero UI refs; keep the WPF app building against them. (Delivers value immediately: enables the CLI and unit tests even before Avalonia.)
+2. **CLI/headless host:** ship `qadevicetool` CLI on the extracted engine — usable in CI on Windows/macOS/Linux runners.
+3. **Avalonia app (Windows first):** re-author views in Avalonia XAML against the same engine + view-models; reach parity with the WPF app on Windows.
+4. **macOS build:** validate the Avalonia app on macOS; light up the iOS DVT features (tunnel, sysmon, FPS, energy, condition inducer, simulated location, screen recording) that are most reliable there.
+5. **Linux build:** validate for Android-only labs.
+6. **Retire WPF** once Avalonia reaches parity and is stable across the matrix.
+
+**Effort reality check:** the bulk of effort is decoupling (§6.2) + re-authoring XAML views + per-OS packaging/glue. View-models and the entire engine port with minimal change.
+
+---
+
+## 17. Full-Rework Target Architecture
 
 ```
-+-------------------------------------------------------------+
-|  Presentation (WPF today; Avalonia-ready)                   |
-|   Views (XAML) + ViewModels (CommunityToolkit.Mvvm)         |
-|   Navigation service · WeakReferenceMessenger · UiDispatcher|
-+-------------------------------------------------------------+
-|  Application layer (UI-agnostic, testable)                  |
-|   Session orchestration · Export · Reporting · AI triage    |
-|   DeviceStore (single source of truth) · Capabilities query |
-+-------------------------------------------------------------+
-|  Domain / Device Abstraction                                |
-|   IDevice + capability interfaces:                          |
-|   ILogSource · IScreenCapture · IScreenRecorder ·           |
-|   IFileSystem · IAppManager · IInputInjector · IScreenMirror|
-+-------------------------------------------------------------+
-|  Platform backends (plugins)                                |
-|   Android (adb, scrcpy)      iOS (pymobiledevice3, isolated)|
-|   + future: cloud device providers, Appium bridge          |
-+-------------------------------------------------------------+
-|  Infrastructure                                             |
-|   ToolLauncher/ToolResolver · ProcessManager ·              |
-|   Preferences(Options) · Logging(MEL+sink) · Storage        |
-+-------------------------------------------------------------+
-|  Host: Microsoft.Extensions.Hosting + DI + Configuration    |
-+-------------------------------------------------------------+
++-----------------------------------------------------------------------+
+|  Presentation — Avalonia UI (Win/macOS/Linux)   [+ WPF during migration]|
+|   Avalonia XAML Views + ViewModels (CommunityToolkit.Mvvm)              |
+|   Navigation service · WeakReferenceMessenger · IUiDispatcher          |
++-----------------------------------------------------------------------+
+|  Alternate front-end: Headless CLI (same engine, for CI)               |
++-----------------------------------------------------------------------+
+|  Application layer (UI-agnostic, testable)                             |
+|   Session orchestration · Performance profiling · Condition/Location    |
+|   Reporting · AI triage · Export · DeviceStore (single source of truth) |
++-----------------------------------------------------------------------+
+|  Domain / Device Abstraction (capabilities)                            |
+|   ILogSource · IScreenCapture · IScreenRecorder · IFileSystem ·         |
+|   IAppManager · IInputInjector · IScreenMirror ·                        |
+|   IPerformanceProfiler · IConditionInducer · ILocationSimulator        |
++-----------------------------------------------------------------------+
+|  Platform backends (plugins)                                           |
+|   Android (adb, scrcpy, Perfetto)   iOS (pymobiledevice3, isolated,     |
+|                                        DVT + tunnel)                    |
+|   + future: cloud device providers, Appium bridge                      |
++-----------------------------------------------------------------------+
+|  Infrastructure                                                        |
+|   ToolLauncher/ToolResolver · ProcessManager · Preferences(Options) ·   |
+|   Logging(MEL + sink) · Storage · per-OS adapters (dialogs/clipboard)   |
++-----------------------------------------------------------------------+
+|  Host: Microsoft.Extensions.Hosting + DI + Configuration  (.NET 10 LTS) |
++-----------------------------------------------------------------------+
 ```
 
-**Key principles:**
-1. **UI-agnostic engine** — everything below Presentation has zero WPF references (enables Avalonia/macOS + a CLI/headless host).
-2. **Capabilities over platform branches** — the UI asks "can this device record its screen?" not "is this iOS?".
-3. **Single device store** — no duplicated device lists or event fan-out.
-4. **Everything injectable** — no static singletons; testable by construction.
-5. **Plugin backends** — Android/iOS/cloud providers register capabilities; adding a provider doesn't touch the UI.
+**Principles:** UI-agnostic engine (zero WPF/Avalonia refs below Presentation) · capabilities over platform branches · single device store · everything injectable · plugin backends · engine-agnostic instrumentation only.
 
 ---
 
-## 15. Phased Roadmap
+## 18. Phased Roadmap
 
-### Track A — Stabilize & Modernize In-Place
+### Track A — Stabilize & De-couple (Month 0–3)
+- **Phase 0 (Wk 1–2):** Retarget to **.NET 10 LTS**; unify branding/app-data; consolidate CI (+analyzers/format/audit/coverage). [R1, R10]
+- **Phase 1 (Wk 2–5):** Introduce DI/host; de-static core services; real Dispose chain; `IDeviceStore` + `IUiDispatcher`; **remove WPF from the engine** (dialog/clipboard/dispatcher interfaces). [R3, R4, R8]
+- **Phase 2 (Wk 4–8):** Concurrency policy + injection hardening + privacy defaults; burn down P0/P1 from `AUDIT-FINDINGS.md`. [R5, R6, R9]
+- **Phase 3 (Wk 6–10):** Perf (streaming/virtualization/StringBuilder); split God classes; UX safety + theming; VM + parser + fake-tool tests. [R7]
 
-**Phase 0 — Identity & deadline (Week 1–2)**
-- Retarget to **.NET 10 LTS**; verify build/tests/publish; add `win-arm64`. [R1]
-- Unify branding & app-data folders (LogPro/QADeviceTool/QAQCDeviceTool → one), with a one-time data-migration. [R8]
-- Consolidate CI workflows; add analyzers, format check, NuGet audit, coverage publish.
-
-**Phase 1 — DI & lifecycle (Week 2–5)**
-- Introduce `Microsoft.Extensions.Hosting`/DI; de-static core services; wire interfaces to all VMs. [R2]
-- Implement the real Dispose chain + navigation lifecycle; in-place theme swap. [R6]
-- Land the `IDeviceStore` + `IUiDispatcher`; remove per-VM `DevicesChanged` subscriptions. [R6]
-
-**Phase 2 — Correctness, concurrency, security (Week 4–8, overlaps)**
-- Fix concurrency model (explicit transport policy); make async truly async. [R4]
-- Harden command construction (allowlists, iOS path validation, macro text). [R3]
-- Default `SecureMode`; minimize bug reports; add retention + data export/delete. [R7]
-- Burn down the P0/P1 items from `AUDIT-FINDINGS.md` (deadlocks, pair syntax, install/deep-link detection, O(n²), leaks).
-
-**Phase 3 — Perf, UX, tests (Week 6–10, overlaps)**
-- Streaming exports + tail reads + virtualization; StringBuilder/throttled output. [R5]
-- UX safety bindings, busy indicators, theming, empty states, palette fixes.
-- VM unit tests + parser golden files + adb-shim integration tests; coverage gate.
-
-### Track B — Full Rework Toward a Platform
-
-**Phase 4 — Engine extraction (Month 3–5)**
-- Extract UI-agnostic Application/Domain/Infrastructure assemblies; define capability interfaces; move Android/iOS into plugin backends.
-- Ship a **CLI/headless host** reusing the engine (enables CI capture).
-
-**Phase 5 — Cross-platform & fleet (Month 5–8)**
-- Prototype **Avalonia** front-end (Windows first, then **macOS** for real iOS support).
-- Multi-device dashboard; device groups.
-
-**Phase 6 — Integrations & intelligence (Month 8–12)**
-- Appium bridge + local control API; Jira/ADO/TestRail/GitHub bug filing.
-- AI-assisted crash triage/clustering; log analytics; HTML/PDF reporting; opt-in team cloud store.
+### Track B — Cross-Platform + Game-Testing Platform (Month 3–12)
+- **Phase 4 (Mo 3–5):** Engine extraction complete; **headless CLI** shipped; begin **Avalonia (Windows)**.
+- **Phase 5 (Mo 4–7):** **Engine-agnostic performance profiler** (Android FPS/jank/thermal/power via SurfaceFlinger/gfxinfo/Perfetto; live HUD + charts + session report). [§12.1, §13.2]
+- **Phase 6 (Mo 5–8):** **macOS Avalonia build**; light up **iOS DVT** (tunnel, sysmon, FPS, energy, network, screen recording). [§13.1]
+- **Phase 7 (Mo 6–9):** Condition simulation (network/thermal), location spoofing, device-tier matrix + comparison reports, soak/endurance runs. [§12.2/12.3/12.4/12.5]
+- **Phase 8 (Mo 8–12):** Integrations (Jira/ADO/TestRail/GitHub), Appium bridge, AI triage, team/cloud, trend dashboards; Linux build; retire WPF. [§15, §16]
 
 ---
 
-## 16. Prioritization Matrix
+## 19. Prioritization Matrix
 
 | Initiative | Impact | Effort | Priority |
 |---|---|---|---|
-| Retarget to .NET 10 LTS | Critical (support deadline) | Low | **P0 — now** |
-| DI container + de-static services | High (unblocks everything) | Medium | **P0** |
-| Concurrency + command-injection hardening | High (reliability + security) | Medium | **P0/P1** |
-| Perf: streaming/virtualization/StringBuilder | High (usability) | Medium | **P1** |
-| Lifecycle/Dispose + DeviceStore | High (leaks, coupling) | Medium | **P1** |
-| Branding/app-data unification | Medium (data integrity, polish) | Low | **P1** |
-| Privacy: SecureMode default, retention, minimization | High (studio risk) | Low-Med | **P1** |
-| UX safety + theming + a11y | Medium-High | Medium | **P1/P2** |
-| VM tests + coverage gate + adb shim | High (regression safety) | Medium | **P1/P2** |
-| Split God classes | Medium (maintainability) | Medium-High | **P2** |
-| Engine extraction (UI-agnostic) | High (enables CLI + cross-platform) | High | **P2** |
-| CLI/headless + Appium/CI hooks | High (automation reach) | High | **P2/P3** |
-| Avalonia + macOS build (iOS parity) | High (market reach) | High | **P3** |
-| AI triage, analytics, reporting, team cloud | Medium-High (differentiation) | High | **P3** |
+| Retarget to .NET 10 LTS | Critical (deadline) | Low | **P0 — now** |
+| Remove WPF from engine (decouple) + DI | Critical (unblocks everything) | Medium-High | **P0** |
+| Concurrency + injection + privacy hardening | High | Medium | **P0/P1** |
+| Perf: streaming/virtualization/StringBuilder | High | Medium | **P1** |
+| Headless CLI on extracted engine | High (CI reach) | Medium | **P1** |
+| Engine-agnostic performance profiler (Android) | **Very High (core value)** | High | **P1** |
+| Avalonia app (Windows parity) | High (migration) | High | **P1/P2** |
+| macOS build + full iOS DVT instrumentation | **Very High (iOS unlock)** | High | **P2** |
+| Condition/location simulation, tier matrix, soak | High (game QA) | Medium-High | **P2** |
+| Split God classes; VM/parser/fake-tool tests | High (maintainability) | Medium | **P2** |
+| Integrations, Appium, AI triage, cloud, dashboards | Medium-High (differentiation) | High | **P3** |
+| Linux build; retire WPF | Medium | Medium | **P3** |
 
 ---
 
-## 17. Success Metrics / KPIs
+## 20. Success Metrics / KPIs
 
-- **Support posture:** 100% on a supported LTS runtime (.NET 10) before 2026-11-10.
-- **Reliability:** zero UI freezes > 250 ms during 1M-line capture; no ghost adb polls after navigation/theme switch; crash-free session rate tracked via tool crash reports.
-- **Testability:** view-model line coverage from ~0% → 60%+; overall coverage ratchet with no regressions in CI.
-- **Security/privacy:** SecureMode default on; bug reports contain no raw serials or full package inventory; NuGet audit clean; releases signed with SBOM.
-- **Performance:** log export memory bounded (streaming, flat regardless of file size); device-detail fetch p95 under a few seconds.
-- **Maintainability:** no source file > ~400 LOC for VMs/services; single app-data location; single CI workflow.
-- **Reach (Track B):** functional macOS build with expanded iOS capability parity; CLI capture usable in CI.
+- **Support posture:** 100% on .NET 10 LTS before 2026-11-10; supported UI framework (Avalonia).
+- **Cross-platform:** functional Windows + macOS + Linux builds from one codebase; macOS lights up iOS DVT features unavailable on Windows.
+- **Engine-agnostic coverage:** performance metrics (FPS, jank %, CPU, mem, thermal, power, network) captured for **any** app with zero engine integration, validated against Unity/Unreal/Godot + a proprietary sample.
+- **Profiler quality:** FPS sampling overhead < a few % CPU; frame-timeline accuracy validated against Perfetto ground truth.
+- **Reliability:** no UI freeze > 250 ms during 1M-line capture; no ghost polls after navigation/theme switch.
+- **Testability:** VM coverage 0% → 60%+; ratcheting overall coverage in a cross-OS CI matrix.
+- **Privacy/security:** SecureMode default; redacted, minimized bug bundles; signed/notarized releases + SBOM; clean NuGet audit.
+- **Maintainability:** no VM/service file > ~400 LOC; single app-data location; single CI workflow.
+- **Automation reach:** CLI usable in CI; ≥1 issue-tracker integration in production use.
+- **Usability (zero-confusion goal):** a new tester completes connect → capture → screenshot → export a bug bundle **without docs** in usability testing; primary action on every screen identifiable in < 3s; no disabled control without an explanatory tooltip; SUS (System Usability Scale) target ≥ 80.
+- **Design consistency:** 100% of screens built from the shared component library + design tokens; both light & dark themes fully theme-aware for shell and content; WCAG contrast met in both.
 
 ---
 
-## 18. Risks, Assumptions & Open Questions
+## 21. Risks, Assumptions & Open Questions
 
 **Assumptions**
-- The product should remain a first-class Windows desktop tool in the near term (Track A), with cross-platform as a strategic Track B bet.
-- pymobiledevice3 stays **process-isolated** to preserve GPL-3.0 compliance.
-- The existing `AUDIT-FINDINGS.md` bug registry remains the tactical source of truth; this blueprint sequences and frames those fixes rather than re-listing them.
+- Avalonia + .NET 10 is the chosen path; the engine is extracted UI-agnostic first so the WPF app keeps working during migration.
+- pymobiledevice3 stays **process-isolated** (GPL-3.0); its DVT flags/behaviors are version-gated behind a capability probe.
+- Instrumentation is strictly **engine-agnostic** (OS surfaces only); anything needing an engine SDK is out of scope by design.
+- The tactical `AUDIT-FINDINGS.md` remains the source of truth for line-level fixes; this blueprint sequences them.
 
 **Risks**
-- **Deadline compression:** the .NET 8 EOS window is short; Phase 0 must not be blocked behind larger refactors — retarget first, refactor second.
-- **DI refactor blast radius:** the current `.continue-here.md` explicitly warns against adding DI casually. Do it as a dedicated phase with the full startup rewrite, behind good tests.
-- **Native-tool drift:** adb/scrcpy/pymd3 CLI changes can silently break features; the capability/version-probe layer and integration shims mitigate this.
-- **Cross-platform cost:** Avalonia migration is real effort; de-risk by extracting the UI-agnostic engine first (valuable even if the WPF UI is kept).
+- **Deadline compression:** retarget to .NET 10 first (Phase 0) — do not block it behind the Avalonia migration.
+- **Avalonia XAML re-authoring cost:** real but bounded; mitigated by porting view-models unchanged and decoupling early.
+- **iOS 17+ tunnel/elevated-privilege friction:** DVT services need the RemoteXPC tunnel and admin rights; UX must handle prompts gracefully; macOS is the most reliable host.
+- **Native-tool drift:** adb/scrcpy/pymd3/Perfetto CLI changes can break parsing; mitigate with capability probes, version pinning, and golden-file tests.
+- **Instrumentation overhead & accuracy:** high-frequency sampling can perturb the game; use background sampling, ring buffers, adaptive intervals, and validate against Perfetto/DVT ground truth.
 
 **Open questions for stakeholders**
-1. Is **cross-platform (macOS) iOS support** a strategic goal, or is Windows-only acceptable long-term?
-2. Is **team/cloud** functionality desired, or should the tool stay strictly local (which simplifies privacy posture)?
-3. What issue trackers / automation frameworks are in use (drives §12.2 integration order)?
-4. Is an **AI triage** feature acceptable given unreleased-content sensitivity (local-only vs. cloud)?
-5. Preferred packaging for enterprise rollout: MSIX, Inno Setup, or both?
+1. Confirm **Avalonia** as the target (vs. Uno if browser reach is desired later).
+2. Is a **macOS testing lab** available/planned (required to unlock full iOS)?
+3. Which **engines** must be validated first (Unity/Unreal/Godot/Cocos/in-house)?
+4. Which **issue trackers / automation frameworks** are in use (drives §15 order)?
+5. Is **AI triage** acceptable given unreleased-content sensitivity (local-only vs. cloud)?
+6. Are **network/thermal/location simulation** in scope for v1 of the game suite, or fast-follow?
 
 ---
 
 ### Appendix A — Cross-reference to the tactical audit
-The defect-level backing for the themes above lives in [`AUDIT-FINDINGS.md`](./AUDIT-FINDINGS.md) (categories: BUG, ERR, FEAT, SEC/COMP/LEGAL, UX, MISS, NEW, TOOL) and is scheduled in [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md) (Waves 0–11). This blueprint groups those ~162 items into the ten risk/theme areas (R1–R10) and sequences them within the Track A phases.
+Defect-level backing lives in [`AUDIT-FINDINGS.md`](./AUDIT-FINDINGS.md) (BUG/ERR/FEAT/SEC/COMP/LEGAL/UX/MISS/NEW/TOOL) and is scheduled in [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md). This blueprint groups those ~162 items into risk themes (R1–R11) and sequences them across the Track A phases.
 
 ### Appendix B — Sources (current-industry, 2026)
-- .NET support policy & .NET 8/9 end of support (2026-11-10): [Microsoft support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core), [.NET 8/9 EOS](https://devblogs.microsoft.com/dotnet/dotnet-8-9-end-of-support/)
-- .NET 10 LTS (supported to Nov 2028): [Announcing .NET 10](https://devblogs.microsoft.com/dotnet/announcing-dotnet-10/)
-- WPF modernization vs. migration guidance: [platform.uno decision guide](https://platform.uno/articles/wpf-modernization-in-2026-a-source-backed-decision-guide/), [Avalonia "What is WPF" 2026](https://avaloniaui.net/blog/what-is-wpf)
-- Cross-platform framework comparison: [Avalonia vs MAUI vs Uno (2026)](https://startdebugging.net/2026/05/maui-vs-avalonia-vs-uno-in-2026/)
-- CommunityToolkit.Mvvm current line (8.4.x): [CommunityToolkit/dotnet](https://github.com/CommunityToolkit/dotnet)
+- .NET support & .NET 8/9 EOS (2026-11-10): [support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core), [.NET 8/9 EOS](https://devblogs.microsoft.com/dotnet/dotnet-8-9-end-of-support/); .NET 10 LTS: [Announcing .NET 10](https://devblogs.microsoft.com/dotnet/announcing-dotnet-10/)
+- Cross-platform UI: [Avalonia "What is WPF" 2026](https://avaloniaui.net/blog/what-is-wpf), [platform.uno WPF modernization guide](https://platform.uno/articles/wpf-modernization-in-2026-a-source-backed-decision-guide/), [MAUI vs Avalonia vs Uno](https://startdebugging.net/2026/05/maui-vs-avalonia-vs-uno-in-2026/), [UniGetUI Avalonia migration](https://www.ntcompatible.com/story/unigetui-v202623-releases-nativeaot-cuts-download-size-by/)
+- iOS instrumentation: [pymobiledevice3](https://github.com/doronz88/pymobiledevice3), [device-operator services](https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/SKILL.md), [iOS location spoofing](https://gist.github.com/lucasrod/52b8375d0b8a8212092c2440f0400fa3)
+- Android performance / engine-agnostic: [tracking jank/FPS](https://developer.android.com/topic/performance/vitals/tracking_jank), [slow sessions (games)](https://developer.android.com/topic/performance/vitals/slow-session), [analyze/optimize game performance](https://developer.android.com/games/optimize/gameperformance), [Perfetto FrameTimeline](https://perfetto.dev/docs/data-sources/frametimeline), [gfxinfo janky frames](https://stackoverflow.com/questions/45236131/total-frames-and-janky-frames-in-dumpsys-gfxinfo-report), [GameBench FPS](https://docs.gamebench.net/docs/web-dashboard/the-performance-pane/)
+- Game QA needs: [mobile game testing](https://yrkan.com/blog/mobile-game-testing/), [QA checklist](https://qawerk.com/blog/mobile-game-testing-detailed-qa-checklist/), [2026 studio guide](https://snoopgame.com/blog/mobile-game-testing-complete-guide-2026/)
 
 *Content from external sources was rephrased/summarized for compliance with licensing restrictions.*
