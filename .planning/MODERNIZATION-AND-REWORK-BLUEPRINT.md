@@ -1,7 +1,7 @@
 # LogPro / QADeviceTool — Modernization, Enhancement & Full-Rework Blueprint
 
 > **Author:** Engineering audit (Kiro)
-> **Date:** 2026-07-31 (rev. 2 — adds UI-framework migration decision + engine-agnostic game-testing suite)
+> **Date:** 2026-07-31 (rev. 3 — adds minimalist UI design language & zero-confusion UX spec; rev. 2 added UI-framework migration + engine-agnostic game-testing suite)
 > **Scope:** Forward-looking transformation plan — migrating off Windows-only WPF to a cross-platform stack, architecture rework, technology updates, performance & security hardening, UX modernization, and a game-tester-focused feature program (engine-agnostic performance profiling, full iOS/Android instrumentation via `pymobiledevice3` + `adb`), with a phased roadmap aligned with the current (2026) device-QA industry.
 > **Relationship to existing docs:** This document is *strategic and forward-looking*. It complements — and does not repeat — the tactical, line-by-line defect registry in [`AUDIT-FINDINGS.md`](./AUDIT-FINDINGS.md) (~162 catalogued bugs across 12 categories) and the wave-based fix schedule in [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md). Where a theme here maps to specific bug IDs, they are cross-referenced.
 
@@ -253,14 +253,66 @@ Testing **unreleased games** makes data minimization first-class.
 
 ## 11. UX / UI Modernization
 
-- **Fluent, theme-aware shell** (both shell *and* content respond to light/dark via `DynamicResource`; today the shell stays dark). [NEW-05/06]
-- **Consistent control library** (fix dark-theme combo box; unify buttons/cards/inputs).
-- **Interaction safety:** `CanExecute`-driven enable/disable for Start/Stop, Mirror, Uninstall, Delete, Push/Pull, Play/Stop; confirmations for destructive actions. [UX-01/02/04/10/11/12]
-- **Feedback:** global busy/progress, toast confirmations, live connection-state dots. [UX-03/09/14]
-- **Onboarding:** first-run guided setup (USB debugging, trust computer, developer mode, driver/dependency check) with one-click remediation. [UX-17]
-- **Command palette & shortcuts:** fix glyphs (Fluent icons), wire Ctrl+1..n, arrow-key nav. [UX-07/08]
-- **Accessibility:** automation peers, keyboard-only nav, high-contrast theme, screen-reader labels.
-- **Layout:** dockable/resizable panels, side-by-side multi-device, density options for small laptops.
+> **North-star:** *A beautiful, calm, minimalist tool that a first-time tester can operate with zero training — it is always obvious what to press, what will happen, and what to do next.* Explicitly **not** a cyberpunk / neon / "hacker terminal" aesthetic. The visual language is quiet and professional so the **device screen, logs, and performance data are the heroes** — the chrome recedes.
+
+### 11.1 Design principles (the rules every screen follows)
+1. **Clarity over cleverness.** Plain labels ("Start capture", "Record screen"), never jargon-only icons. Every icon pairs with a text label or a tooltip.
+2. **One primary action per screen.** Exactly one visually dominant button (the thing you most likely came to do); everything else is secondary/tertiary. No wall of equally-loud buttons.
+3. **Progressive disclosure.** Show the 3–4 things a tester needs first; tuck advanced options behind "Advanced ▸" or a settings drawer. The default path is short.
+4. **Never leave the user guessing.** Every action gives immediate feedback (state change, toast, progress). Disabled controls explain *why* they're disabled via tooltip ("Connect a device to start").
+5. **Forgiving by default.** Destructive actions confirm; long actions can be cancelled; nothing silently fails.
+6. **Calm, minimal, spacious.** Generous whitespace, few colors, restrained motion. Color is used sparingly and only to carry meaning (status, severity), never decoration.
+7. **Consistency.** The same control looks and behaves the same everywhere; one component library, one spacing scale, one type scale.
+
+### 11.2 Visual language (minimalist — the opposite of cyberpunk)
+- **Aesthetic:** clean, soft, "quiet productivity tool" — think a modern, uncluttered desktop app: lots of neutral surface, subtle 1px dividers, gentle rounded corners (8–12px), soft shadows for elevation. **No** neon glows, gradients-on-everything, glitch effects, matrix greens, scanlines, or dark-with-cyan-accents.
+- **Color system — neutral base + one calm accent:**
+  - **Neutrals carry the UI:** near-white / very-light-gray surfaces in light mode; deep-charcoal (not pure black) surfaces in dark mode. Text uses layered neutrals (primary / secondary / tertiary) rather than pure black-on-white for softer contrast.
+  - **A single, calm brand accent** (e.g., a muted indigo/teal — chosen with the team) used only for the primary action, selection, and focus. Not spread across the whole screen.
+  - **Semantic colors reserved for meaning only:** success (green), warning (amber), error (red), info (blue). These appear in status dots, log-level tags, and pass/fail chips — nowhere decorative.
+- **Typography:** one clean, highly-legible UI sans-serif (e.g., Inter, already bundled) with a small, strict **type scale** (e.g., 12 / 14 / 16 / 20 / 28). Monospace only where it earns its place: log/console text and metric readouts. Weight (not color) creates hierarchy.
+- **Spacing & grid:** an **8px spacing scale** (4/8/16/24/32) applied consistently; comfortable line-height for logs; content max-widths so text never sprawls edge-to-edge.
+- **Elevation:** flat by default; subtle shadow/tint only to separate overlays (dialogs, popovers, the perf HUD) from content.
+- **Iconography:** one consistent, thin-stroke icon set (Fluent/Lucide-style), always with labels. Replaces today's broken/cyber glyphs. [UX-07]
+- **Motion:** short, subtle, purposeful (120–200ms ease) for state changes and panel transitions; a "reduce motion" setting honors OS preference. No flashy animation.
+- **Light & dark themes**, both fully theme-aware for **shell *and* content** via `DynamicResource` (today the shell stays dark). Light is the default; dark is a first-class equal, not a "hacker mode". [NEW-05/06]
+
+### 11.3 Information architecture & navigation (so nothing is hidden)
+- **Persistent left sidebar** with labeled sections (icon **+** word): Dashboard, Sessions, Devices, Performance, Apps, Files, Automation, Settings. The current section is clearly highlighted.
+- **Global top bar:** the **active device selector** (always visible, so the tester always knows which device they're acting on), a global search/command palette (Ctrl/Cmd+K), and connection/health status.
+- **Breadcrumbs** in drill-down areas (Files, Sessions) so users always know where they are and can step back.
+- **Everything reachable in ≤2 clicks** from the sidebar; no feature buried more than one level deep.
+
+### 11.4 Guided, self-explanatory UX (zero-confusion mechanics)
+- **First-run guided setup wizard:** step-by-step "connect your device" — enable USB debugging / trust computer / developer mode, with a live checklist, inline help, and **one-click remediation** for each dependency (adb, driver, scrcpy, pymobiledevice3, iOS tunnel). [UX-17]
+- **Helpful empty states:** every screen with no data shows a friendly illustration, a one-line explanation, and the single button to get started ("No devices yet — connect a device over USB").
+- **Primary/secondary button hierarchy:** the main action is a filled accent button; secondary actions are outlined; tertiary are text-only. Users can tell at a glance what the "main" thing is.
+- **Contextual affordances:** actions live next to the thing they act on (a session row's Stop/Export buttons appear on that row), not in a distant toolbar.
+- **State-driven controls** ([UX-01/02/04/10/11/12]): Start/Stop, Mirror, Record, Uninstall, Delete, Push/Pull, Play/Stop are enabled only when valid; when disabled they show a tooltip explaining the precondition. A capture in progress shows a clear "● Recording" state.
+- **Confirmations for destructive/irreversible actions** (delete session, uninstall app, wipe data, enable wireless ADB, spoof GPS) — with a plain-language summary of what will happen and a clear cancel.
+- **Inline validation:** forms (deep links, macro params, thresholds) validate as you type with human-readable messages, not error codes.
+- **Consistent feedback system:** a lightweight, non-blocking **toast** confirms success ("Screenshot saved"), a **global busy indicator** covers long operations with progress + cancel, and **live status dots** reflect real device/connection state. [UX-03/09/14]
+- **Undo where possible** (e.g., recently deleted session) instead of only confirm dialogs.
+
+### 11.5 Power-user layer (kept out of the beginner's way)
+- **Command palette (Ctrl/Cmd+K):** fuzzy-search every action and device; the fastest path for pros — but never required for beginners.
+- **Keyboard shortcuts:** Ctrl/Cmd+1..n for sections, arrow-key list navigation, documented in a discoverable "Shortcuts" sheet (press `?`). [UX-07/08]
+- **Adjustable density** (comfortable / compact) for small laptops; **resizable/dockable panels** (e.g., logs side-by-side with the perf HUD) with sensible defaults that non-power-users never need to touch.
+
+### 11.6 Component library (one source of truth)
+A single Avalonia component set + design tokens (colors, spacing, radii, type) so the whole app is consistent and theme-swaps cleanly: buttons (primary/secondary/tertiary/danger), inputs (fixing today's broken dark-theme combo box), cards, tabs, tables/virtualized lists, status chips, toasts, dialogs, the perf HUD, and empty states. Tokens live in one place so rebranding = editing tokens, not screens.
+
+### 11.7 Accessibility (part of "no one is confused")
+- WCAG-minded contrast in **both** themes; a **high-contrast** theme option.
+- Full **keyboard-only** operability with visible focus rings; logical tab order.
+- **Screen-reader** support via automation peers/labels on every control.
+- Respects OS settings for **reduced motion**, text scaling, and theme.
+
+### 11.8 Acceptance criteria for "so good no one is confused"
+- A brand-new tester completes "connect a device → start a capture → take a screenshot → export a bug bundle" **without documentation** in a quick usability test.
+- On every screen, the intended primary action is identifiable in **under 3 seconds**.
+- **Zero dead-ends:** no disabled control without an explanation; no empty screen without a next step; no destructive action without confirmation + (where feasible) undo.
+- The UI passes a "squint test": with eyes half-closed the single most important action still stands out.
 
 ---
 
@@ -504,6 +556,8 @@ The migration off WPF is staged to avoid a big-bang rewrite and to keep shipping
 - **Privacy/security:** SecureMode default; redacted, minimized bug bundles; signed/notarized releases + SBOM; clean NuGet audit.
 - **Maintainability:** no VM/service file > ~400 LOC; single app-data location; single CI workflow.
 - **Automation reach:** CLI usable in CI; ≥1 issue-tracker integration in production use.
+- **Usability (zero-confusion goal):** a new tester completes connect → capture → screenshot → export a bug bundle **without docs** in usability testing; primary action on every screen identifiable in < 3s; no disabled control without an explanatory tooltip; SUS (System Usability Scale) target ≥ 80.
+- **Design consistency:** 100% of screens built from the shared component library + design tokens; both light & dark themes fully theme-aware for shell and content; WCAG contrast met in both.
 
 ---
 
