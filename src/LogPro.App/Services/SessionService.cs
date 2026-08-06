@@ -176,7 +176,7 @@ public class SessionService : ISessionService
 
                 if (appWriter != null && !string.IsNullOrWhiteSpace(currentTargetPid))
                 {
-                    if (Regex.IsMatch(line, $@"\b{currentTargetPid}\b"))
+                    if (Regex.IsMatch(line, $@"\b{Regex.Escape(currentTargetPid)}\b"))
                     {
                         try { appWriter.WriteLine(line); } catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to write app log"); }
                     }
@@ -386,9 +386,16 @@ public class SessionService : ISessionService
         if (string.IsNullOrEmpty(session.LogFilePath) || !File.Exists(session.LogFilePath))
             return "No log file found.";
 
-        var lines = File.ReadAllLines(session.LogFilePath);
-        var subset = lines.TakeLast(maxLines).ToArray();
-        return string.Join(Environment.NewLine, subset);
+        // Tail-read via StreamReader — never load a 50-100MB+ file fully into memory (BUG-17).
+        var lastLines = new Queue<string>(maxLines);
+        using var reader = new StreamReader(session.LogFilePath);
+        while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
+        {
+            if (lastLines.Count == maxLines) lastLines.Dequeue();
+            lastLines.Enqueue(line);
+        }
+
+        return string.Join(Environment.NewLine, lastLines);
     }
 
     public bool DeleteSession(LogSession session)

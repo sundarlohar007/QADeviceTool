@@ -17,6 +17,67 @@ public static class ToolLauncher
     private static readonly string _toolsDir;
     private static readonly string _pymobileDeviceDir;
 
+    // §9.1 concurrency policy: per-device lock + global cap. Serialized per device,
+    // parallel across devices, bounded subprocess count. Long-running processes
+    // (StartLongRunning) intentionally bypass the gate — they'd hold it for hours.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _deviceLocks = new(StringComparer.Ordinal);
+    private static readonly SemaphoreSlim _globalCap = new(Environment.ProcessorCount);
+    private static readonly SemaphoreSlim _globalOnly = new(Environment.ProcessorCount);
+    private static readonly System.Text.RegularExpressions.Regex _deviceKeyRegex =
+        new(@"(?:-s|--udid)\s+(\S+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static async Task<IDisposable> EnterDeviceGateAsync(string arguments)
+    {
+        var m = _deviceKeyRegex.Match(arguments);
+        if (!m.Success)
+        {
+            await _globalOnly.WaitAsync();
+            return new GateRelease(_globalOnly, null);
+        }
+
+        var deviceLock = _deviceLocks.GetOrAdd(m.Groups[1].Value, _ => new SemaphoreSlim(1, 1));
+        await _globalCap.WaitAsync();
+        await deviceLock.WaitAsync();
+        return new GateRelease(_globalCap, deviceLock);
+    }
+
+    private sealed class GateRelease : IDisposable
+    {
+        private readonly SemaphoreSlim _global;
+        private readonly SemaphoreSlim? _device;
+        private int _disposed;
+        public GateRelease(SemaphoreSlim global, SemaphoreSlim? device) { _global = global; _device = device; }
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            _device?.Release();
+            _global.Release();
+        }
+    }
+
+    /// <summary>Test hook: acquire the gate without launching a process. null = timed out.</summary>
+    internal static async Task<IDisposable?> TestAcquireAsync(string arguments, int waitMs = 0)
+    {
+        var m = _deviceKeyRegex.Match(arguments);
+        if (!m.Success)
+        {
+            return await _globalOnly.WaitAsync(waitMs).ConfigureAwait(false)
+                ? new GateRelease(_globalOnly, null) : null;
+        }
+
+        var deviceLock = _deviceLocks.GetOrAdd(m.Groups[1].Value, _ => new SemaphoreSlim(1, 1));
+        if (waitMs > 0)
+        {
+            var ok = await _globalCap.WaitAsync(waitMs).ConfigureAwait(false);
+            var deviceOk = ok && await deviceLock.WaitAsync(waitMs).ConfigureAwait(false);
+            return (ok && deviceOk) ? new GateRelease(_globalCap, deviceLock) : null;
+        }
+
+        await _globalCap.WaitAsync().ConfigureAwait(false);
+        await deviceLock.WaitAsync().ConfigureAwait(false);
+        return new GateRelease(_globalCap, deviceLock);
+    }
+
     static ToolLauncher()
     {
         _toolsDir = Path.Combine(AppContext.BaseDirectory, "tools");
@@ -59,6 +120,8 @@ public static class ToolLauncher
     {
         var result = new ToolLauncherResult();
         var fullExePath = ResolveExecutablePath(exeName);
+
+        using var gate = await EnterDeviceGateAsync(arguments).ConfigureAwait(false);
 
         try
         {

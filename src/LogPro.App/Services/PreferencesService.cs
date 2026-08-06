@@ -13,7 +13,7 @@ public class AppPreferences
     public Dictionary<string, DevicePreference> DevicePreferences { get; set; } = new();
     public int LogRetentionDays { get; set; } = 7;
     public string? ThemePreference { get; set; }
-    public bool SecureMode { get; set; } = false;
+    public bool SecureMode { get; set; } = true; // §10: redaction on by default
     public bool PrivacyNoticeAccepted { get; set; } = false;
 }
 
