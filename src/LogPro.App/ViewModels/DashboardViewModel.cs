@@ -20,7 +20,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
     private readonly ISessionService _sessionService;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly DependencyChecker _dependencyChecker;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -78,7 +78,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         _sessionService = sessionService;
         _deviceMonitor = deviceMonitor;
         _dependencyChecker = dependencyChecker;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
 
@@ -90,7 +90,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
                 var keyword = PreferencesService.Current.TargetPackageName;
                 if (!string.IsNullOrWhiteSpace(keyword))
                 {
-                    _dispatcher.BeginInvoke(DispatcherPriority.Background, () => TargetPackageName = keyword);
+                    _dispatcher.Post(() => TargetPackageName = keyword);
                 }
             }
             catch (Exception) { /* keyword load best-effort */ }
@@ -116,7 +116,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             Devices.Clear();
             foreach (var device in devices)
@@ -148,7 +148,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
     {
         IsLoading = true;
         var statuses = await _dependencyChecker.CheckAllAsync();
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             ToolStatuses.Clear();
             foreach (var status in statuses)

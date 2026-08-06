@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
 using LogPro.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LogPro.ViewModels;
 
@@ -20,7 +21,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ISessionService _sessionService;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly DependencyChecker _dependencyChecker;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
+    private readonly IDeviceStore _deviceStore;
 
     [ObservableProperty]
     private ObservableObject? _currentView;
@@ -35,18 +37,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private string _statusBarText = "Ready";
 
     [ObservableProperty]
-    private ObservableCollection<DeviceInfo> _devices = new();
-
-    [ObservableProperty]
-    private DeviceInfo? _selectedDevice;
-
-    [ObservableProperty]
     private bool _isDeviceToolsExpanded;
 
     [ObservableProperty]
     private bool _isSidebarCollapsed;
 
     public double SidebarWidth => IsSidebarCollapsed ? 48 : 220;
+
+    public IReadOnlyList<DeviceInfo> Devices => _deviceStore.Devices;
+
+    public DeviceInfo? SelectedDevice
+    {
+        get => _deviceStore.SelectedDevice;
+        set => _deviceStore.SelectedDevice = value;
+    }
 
     // Child ViewModels
     public DashboardViewModel DashboardVM { get; }
@@ -61,17 +65,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public StressTestViewModel StressTestVM { get; }
     public SettingsViewModel SettingsVM { get; }
 
-    public MainViewModel()
+    public MainViewModel(IServiceProvider services)
     {
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = services.GetRequiredService<IUiDispatcher>();
+        _deviceStore = services.GetRequiredService<IDeviceStore>();
 
         // Initialize services
-        _adbService = new AdbService();
-        _iosService = new IosService();
-        _scrcpyService = new ScrcpyService();
-        _sessionService = new SessionService(_adbService, _iosService);
-        _deviceMonitor = new DeviceMonitorService(_adbService, _iosService);
-        _dependencyChecker = new DependencyChecker(_adbService, _iosService, _scrcpyService);
+        _adbService = services.GetRequiredService<IAdbService>();
+        _iosService = services.GetRequiredService<IIosService>();
+        _scrcpyService = services.GetRequiredService<IScrcpyService>();
+        _sessionService = services.GetRequiredService<ISessionService>();
+        _deviceMonitor = services.GetRequiredService<IDeviceMonitorService>();
+        _dependencyChecker = services.GetRequiredService<DependencyChecker>();
+
+        _deviceStore.UpdateDevices(_deviceMonitor.CurrentDevices);
 
         // Initialize child ViewModels
         DashboardVM = new DashboardViewModel(_adbService, _iosService, _scrcpyService, _sessionService, _deviceMonitor, _dependencyChecker);
@@ -86,42 +93,46 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StressTestVM = new StressTestViewModel(_adbService, _deviceMonitor);
         SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService, _adbService);
 
-        // Wire up device monitor events
-        _deviceMonitor.DevicesChanged += devices =>
-        {
-            _dispatcher.BeginInvoke(() =>
-            {
-                ConnectedDeviceCount = devices.Count;
-                StatusBarText = devices.Count > 0
-                    ? $"{devices.Count} device(s) connected"
-                    : "No devices connected";
+        // Wire up device monitor events -> single source of truth (IDeviceStore)
+        _deviceMonitor.DevicesChanged += OnDevicesChanged;
 
-                // Update global devices collection
-                Devices.Clear();
-                foreach (var device in devices)
-                {
-                    Devices.Add(device);
-                }
-
-                // Auto-select first device if none selected
-                if (SelectedDevice == null && Devices.Count > 0)
-                {
-                    SelectedDevice = Devices[0];
-                }
-                // Remove selected if it's no longer connected
-                var stillConnected = SelectedDevice != null && Devices.Any(d => d.Serial == SelectedDevice.Serial);
-                if (!stillConnected)
-                {
-                    SelectedDevice = Devices.Count > 0 ? Devices[0] : null;
-                }
-            });
-        };
+        _deviceStore.Changed += OnDevicesStoreChanged;
 
         // Default view
         CurrentView = DashboardVM;
 
         // Start monitoring
         _deviceMonitor.StartMonitoring();
+    }
+
+    private void OnDevicesChanged(List<DeviceInfo> devices)
+    {
+        _dispatcher.Post(() =>
+        {
+            _deviceStore.UpdateDevices(devices);
+            ConnectedDeviceCount = _deviceStore.Devices.Count;
+            StatusBarText = ConnectedDeviceCount > 0
+                ? $"{ConnectedDeviceCount} device(s) connected"
+                : "No devices connected";
+        });
+    }
+
+    private void OnDevicesStoreChanged()
+    {
+        // Propagate device selection to all child ViewModels
+        var selection = _deviceStore.SelectedDevice;
+        if (selection != null)
+        {
+            DashboardVM?.OnDeviceSelected(selection);
+            SessionVM?.OnDeviceSelected(selection);
+            ShellVM?.OnDeviceSelected(selection);
+            DeepLinkVM?.OnDeviceSelected(selection);
+            VitalsVM?.OnDeviceSelected(selection);
+            FileExplorerVM?.OnDeviceSelected(selection);
+            MacroVM?.OnDeviceSelected(selection);
+            StressTestVM?.OnDeviceSelected(selection);
+            AppManagementVM?.OnDeviceSelected(selection);
+        }
     }
 
     [RelayCommand]
@@ -140,23 +151,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     partial void OnIsSidebarCollapsedChanged(bool value)
     {
         OnPropertyChanged(nameof(SidebarWidth));
-    }
-
-    partial void OnSelectedDeviceChanged(DeviceInfo? value)
-    {
-        // Propagate selected device to all child ViewModels
-        if (value != null)
-        {
-            DashboardVM?.OnDeviceSelected(value);
-            SessionVM?.OnDeviceSelected(value);
-            ShellVM?.OnDeviceSelected(value);
-            DeepLinkVM?.OnDeviceSelected(value);
-            VitalsVM?.OnDeviceSelected(value);
-            FileExplorerVM?.OnDeviceSelected(value);
-            MacroVM?.OnDeviceSelected(value);
-            StressTestVM?.OnDeviceSelected(value);
-            AppManagementVM?.OnDeviceSelected(value);
-        }
     }
 
     [RelayCommand]
@@ -186,17 +180,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void Cleanup()
     {
-        _sessionService.StopAllCaptures();
-        _scrcpyService.StopMirroring();
-        _deviceMonitor.Dispose();
+        Dispose();
     }
-
-
-    private void OnDevicesChanged(List<DeviceInfo> devices) { }
 
     public void Dispose()
     {
-        // _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceStore.Changed -= OnDevicesStoreChanged;
+
+        foreach (var child in new IDisposable[]
+        {
+            DashboardVM, SessionVM, DeviceVM, AppManagementVM, ShellVM,
+            DeepLinkVM, VitalsVM, FileExplorerVM, MacroVM, StressTestVM
+        })
+        {
+            child?.Dispose();
+        }
+
+        _sessionService.StopAllCaptures();
+        _scrcpyService.StopMirroring();
+        _deviceMonitor.Dispose();
+        _deviceStore.Dispose();
         GC.SuppressFinalize(this);
     }
 }

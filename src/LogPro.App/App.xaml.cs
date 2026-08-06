@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using LogPro.Helpers;
 using LogPro.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LogPro;
 
@@ -80,7 +81,7 @@ public partial class App : Application
         // Set up MainViewModel after window creation (moved from XAML to avoid
         // duplicate VM creation during theme switches via ThemeService)
         if (Application.Current.MainWindow is MainWindow mw)
-        { mw.DataContext = new LogPro.ViewModels.MainViewModel(); }
+        { mw.DataContext = CreateMainViewModel(); }
         EarlyLog("Base OnStartup completed, initializing services...");
 
         try
@@ -106,6 +107,35 @@ public partial class App : Application
         {
             EarlyLog("FATAL ERROR DURING INIT", ex);
         }
+    }
+
+    /// <summary>
+    /// Composition root — central place to construct the object graph.
+    /// Swapping an implementation (e.g. IAdbService fake for tests, IUiDispatcher
+    /// for Avalonia later) happens only here.
+    /// </summary>
+    private static LogPro.ViewModels.MainViewModel CreateMainViewModel()
+    {
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection()
+            .AddSingleton<IUiDispatcher>(_ => new Services.WpfUiDispatcher(Application.Current.Dispatcher))
+            .AddSingleton<IDeviceStore, DeviceStore>()
+            .AddSingleton<IAdbService, AdbService>()
+            .AddSingleton<IIosService, IosService>()
+            .AddSingleton<IScrcpyService, ScrcpyService>()
+            .AddSingleton<ISessionService>(sp => new SessionService(
+                sp.GetRequiredService<IAdbService>(),
+                sp.GetRequiredService<IIosService>()))
+            .AddSingleton<IDeviceMonitorService>(sp => new DeviceMonitorService(
+                sp.GetRequiredService<IAdbService>(),
+                sp.GetRequiredService<IIosService>()))
+            .AddSingleton(sp => new DependencyChecker(
+                sp.GetRequiredService<IAdbService>(),
+                sp.GetRequiredService<IIosService>(),
+                sp.GetRequiredService<IScrcpyService>()))
+            .AddSingleton<LogPro.ViewModels.MainViewModel>()
+            .BuildServiceProvider();
+
+        return services.GetRequiredService<LogPro.ViewModels.MainViewModel>();
     }
 
     private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

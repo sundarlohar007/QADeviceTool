@@ -22,7 +22,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly DependencyChecker _dependencyChecker;
     private readonly ISessionService _sessionService;
     private readonly IAdbService _adbService;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<ToolStatus> _toolStatuses = new();
@@ -74,7 +74,7 @@ public partial class SettingsViewModel : ObservableObject
         _dependencyChecker = dependencyChecker;
         _sessionService = sessionService;
         _adbService = adbService;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
         _sessionsDirectory = sessionService.SessionsRootDirectory;
 
         InitializeLogRetentionOptions();
@@ -153,7 +153,7 @@ public partial class SettingsViewModel : ObservableObject
 
         var statuses = await _dependencyChecker.CheckAllAsync();
 
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             ToolStatuses.Clear();
             foreach (var s in statuses)

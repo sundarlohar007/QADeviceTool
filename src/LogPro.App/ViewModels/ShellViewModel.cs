@@ -14,7 +14,7 @@ public partial class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly IIosService _iosService;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -36,14 +36,14 @@ public partial class ShellViewModel : ObservableObject, IDisposable
     {
         _deviceMonitor = deviceMonitor;
         _iosService = iosService;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             var currentSelected = SelectedDevice?.Serial;
 
@@ -199,7 +199,7 @@ public partial class ShellViewModel : ObservableObject, IDisposable
     private void AppendOutput(string text)
     {
         if (string.IsNullOrEmpty(text)) return;
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             _outputBuilder.Append(text.TrimEnd('\r', '\n')).Append('\n');
             if (_outputBuilder.Length > 50000)

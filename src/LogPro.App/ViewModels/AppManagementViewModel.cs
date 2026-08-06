@@ -17,7 +17,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     private readonly IIosService _iosService;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly ISessionService _sessionService;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -51,14 +51,14 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
         _sessionService = sessionService;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             var currentSelected = SelectedDevice?.Serial;
 
@@ -135,7 +135,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                 ? await _adbService.ListInstalledAppsAsync(device.Serial)
                 : await _iosService.ListInstalledAppsAsync(device.Serial);
 
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            _dispatcher.Post(() =>
             {
                 InstalledApps.Clear();
                 foreach (var app in apps)
@@ -191,7 +191,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                 if (!string.IsNullOrWhiteSpace(line))
                 {
                     var trimmed = line.Trim();
-                    _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+                    _dispatcher.Post(() =>
                     {
                         _outputBuilder.Append(trimmed + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
                         StatusMessage = $"[Installing] {trimmed}";

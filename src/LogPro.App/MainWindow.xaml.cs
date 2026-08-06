@@ -99,10 +99,8 @@ public partial class MainWindow : Window
         else if (commandId == "action:selectAll")
         {
             // Select all online devices for batch operations
-            foreach (var d in vm.Devices.Where(d => d.ConnectionState == Models.DeviceConnectionState.Online))
-            {
-                if (vm.Devices.IndexOf(d) == 0) vm.SelectedDevice = d;
-            }
+            var online = vm.Devices.Where(d => d.ConnectionState == Models.DeviceConnectionState.Online).ToList();
+            if (online.Count > 0) vm.SelectedDevice = online[0];
         }
     }
 

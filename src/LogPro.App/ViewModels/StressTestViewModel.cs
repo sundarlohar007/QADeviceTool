@@ -16,12 +16,12 @@ using LogPro.Services;
 
 namespace LogPro.ViewModels;
 
-public partial class StressTestViewModel : ObservableObject
+public partial class StressTestViewModel : ObservableObject, IDisposable
 {
     private readonly IAdbService _adbService;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly List<object> _metricSnapshots = new();
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     private CancellationTokenSource? _runCts;
     private Process? _adbProcess;
@@ -69,7 +69,7 @@ public partial class StressTestViewModel : ObservableObject
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
 
         TargetPackage = PreferencesService.Current.TargetPackageName;
 
@@ -79,7 +79,7 @@ public partial class StressTestViewModel : ObservableObject
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             Devices.Clear();
             foreach (var d in devices) Devices.Add(d);
@@ -92,7 +92,7 @@ public partial class StressTestViewModel : ObservableObject
         if (!IsRunning) return;
         if (_runningOnSerial != null && device.Serial == _runningOnSerial)
         {
-            _dispatcher.BeginInvoke(() =>
+            _dispatcher.Post(() =>
             {
                 AppendOutput("\n[!] Device disconnected — stopping monkey.");
                 StopMonkey();
@@ -264,7 +264,7 @@ public partial class StressTestViewModel : ObservableObject
             AppendOutput("");
             AppendOutput(report.TrimEnd());
 
-            await _dispatcher.BeginInvoke(() =>
+            await _dispatcher.InvokeAsync(() =>
             {
                 if (!_runCts.IsCancellationRequested)
                 {
@@ -276,11 +276,11 @@ public partial class StressTestViewModel : ObservableObject
         catch (OperationCanceledException)
         {
             await KillOnDeviceMonkeyAsync(_runningOnSerial);
-            await _dispatcher.BeginInvoke(() => StatusMessage = "Cancelled. On-device monkey killed.");
+            await _dispatcher.InvokeAsync(() => StatusMessage = "Cancelled. On-device monkey killed.");
         }
         catch (Exception ex)
         {
-            await _dispatcher.BeginInvoke(() => { StatusMessage = $"[!] Error: {ex.Message}"; AppendOutput($"\nERROR: {ex.Message}"); });
+            await _dispatcher.InvokeAsync(() => { StatusMessage = $"[!] Error: {ex.Message}"; AppendOutput($"\nERROR: {ex.Message}"); });
         }
         finally
         {
@@ -325,7 +325,7 @@ public partial class StressTestViewModel : ObservableObject
             await _adbService.ExecuteCommandAsync(serial, "shell pkill -l 9 com.android.commands.monkey");
             await _adbService.ExecuteCommandAsync(serial, "shell pkill -f monkey");
             await _adbService.ExecuteCommandAsync(serial, "shell killall -9 com.android.commands.monkey");
-            await _dispatcher.BeginInvoke(() => AppendOutput("[STOP] On-device monkey terminated."));
+            await _dispatcher.InvokeAsync(() => AppendOutput("[STOP] On-device monkey terminated."));
         }
         catch (Exception ex)
         {
@@ -386,7 +386,7 @@ public partial class StressTestViewModel : ObservableObject
 
     private void AppendOutput(string line)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             // Cap output buffer at ~200KB to prevent UI sluggishness during long runs.
             const int MaxChars = 200_000;

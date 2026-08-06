@@ -26,7 +26,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private readonly IAdbService _adbService;
     private readonly IIosService _iosService;
     private readonly IDeviceMonitorService _deviceMonitor;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     // ── Log Viewer Properties ──
     public BulkObservableCollection<LogEntry> LogEntries { get; } = new();
@@ -118,7 +118,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _adbService = adbService;
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
 
         LogEntriesView = CollectionViewSource.GetDefaultView(LogEntries);
         LogEntriesView.Filter = FilterLogEntry;
@@ -143,7 +143,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     private void OnCrashDetected(CrashDetector.CrashEvent crash)
     {
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             CrashCount = _crashDetector.CrashCount;
             HasCrashAlert = true;
@@ -176,7 +176,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             AvailableDevices.Clear();
             foreach (var d in devices)
@@ -204,7 +204,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         if (!AutoCapture) return;
 
-        _dispatcher.BeginInvoke(async () =>
+        _dispatcher.Post(async () =>
         {
             // Prevent re-entrant auto-capture from rapid DeviceConnected events
             lock (_autoCaptureLock)
@@ -253,7 +253,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// </summary>
     private void OnDeviceDisconnected(DeviceInfo device)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             try
             {
@@ -349,7 +349,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     private void OnLogBatchReceived(string sessionId, string batch)
     {
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             if (SelectedSession == null || SelectedSession.Id != sessionId) return;
             if (IsPaused) return;
@@ -401,7 +401,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     private void AddLogEntry(string message, LogLevel level)
     {
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             LogEntries.Add(new LogEntry
             {
@@ -1285,7 +1285,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                     }
                     else
                     {
-                        await _dispatcher.BeginInvoke(() =>
+                        await _dispatcher.InvokeAsync(() =>
                         {
                             LogEntries.Clear();
                             StatusMessage = session.Status == SessionStatus.Idle
@@ -1297,7 +1297,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 }
                 else
                 {
-                    await _dispatcher.BeginInvoke(() =>
+                    await _dispatcher.InvokeAsync(() =>
                     {
                         LogEntries.Clear();
                         StatusMessage = session.Status == SessionStatus.Idle
@@ -1308,12 +1308,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 }
             }
 
-            await _dispatcher.BeginInvoke(() => StatusMessage = "Loading log...");
+            await _dispatcher.InvokeAsync(() => StatusMessage = "Loading log...");
             var content = await _sessionService.ReadLogContentAsync(session, maxLines: 200000);
 
             var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
-            await _dispatcher.BeginInvoke(() =>
+            await _dispatcher.InvokeAsync(() =>
             {
                 var parsed = lines.Select(ParseLogLine).ToList();
                 LogEntries.Clear();
@@ -1327,7 +1327,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            await _dispatcher.BeginInvoke(() =>
+            await _dispatcher.InvokeAsync(() =>
                 StatusMessage = $"Could not load log file: {ex.Message}");
         }
         finally

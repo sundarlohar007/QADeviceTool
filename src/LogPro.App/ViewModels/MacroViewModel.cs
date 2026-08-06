@@ -17,7 +17,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
     private readonly MacroService _macroService;
     private readonly IAdbService _adbService;
     private readonly IDeviceMonitorService _deviceMonitor;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -56,7 +56,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
         _macroService = macroService;
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _macroDir = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "Macros");
         Directory.CreateDirectory(_macroDir);
@@ -67,7 +67,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             Devices.Clear();
             foreach (var d in devices)
