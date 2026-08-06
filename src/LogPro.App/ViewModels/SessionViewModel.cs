@@ -31,7 +31,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     // ── Log Viewer Properties ──
     public BulkObservableCollection<LogEntry> LogEntries { get; } = new();
     public ICollectionView LogEntriesView { get; }
-    
+
     // UI scroll scroll-to-end event
     public event Action? ScrollToEndRequested;
 
@@ -368,8 +368,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
             LogEntries.AddRange(entries);
 
-                if (LogEntries.Count > 200000)
-                    TrimLogEntries(150000);
+            if (LogEntries.Count > 200000)
+                TrimLogEntries(150000);
 
             ScrollToEndRequested?.Invoke();
         });
@@ -613,8 +613,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             {
                 StatusMessage = "Exporting to CSV...";
                 var success = await _sessionService.ExportToCsvAsync(SelectedSession, dialog.FileName, AnonymizeExport);
-                StatusMessage = success 
-                    ? $"Exported to: {dialog.FileName}" 
+                StatusMessage = success
+                    ? $"Exported to: {dialog.FileName}"
                     : "[!] Export failed.";
             }
         }
@@ -646,8 +646,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             {
                 StatusMessage = "Exporting to JSON...";
                 var success = await _sessionService.ExportToJsonAsync(SelectedSession, dialog.FileName, AnonymizeExport);
-                StatusMessage = success 
-                    ? $"Exported to: {dialog.FileName}" 
+                StatusMessage = success
+                    ? $"Exported to: {dialog.FileName}"
                     : "[!] Export failed.";
             }
         }
@@ -993,7 +993,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
 
             var dir = SelectedSession.SessionDirectory;
-            
+
             if (!string.IsNullOrEmpty(dir))
             {
                 if (Directory.Exists(dir))
@@ -1145,11 +1145,11 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 StatusMessage = $"Copied last {entries.Count} of {totalCount} log entries to clipboard. (Truncated for performance)";
             else
                 StatusMessage = $"Copied {entries.Count} log entries to clipboard.";
-                
+
             var text = IsRawMode
                 ? string.Join(Environment.NewLine, entries.Select(e => e.RawLine))
                 : string.Join(Environment.NewLine, entries.Select(e => $"[{e.Timestamp}] [{e.Level}] {e.Message}"));
-                
+
             Clipboard.SetText(text);
         }
         catch (Exception ex)
@@ -1346,9 +1346,9 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
-            _deviceMonitor.DeviceConnected -= OnDeviceConnected;
-            _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DeviceConnected -= OnDeviceConnected;
+        _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
         GC.SuppressFinalize(this);
     }
 }

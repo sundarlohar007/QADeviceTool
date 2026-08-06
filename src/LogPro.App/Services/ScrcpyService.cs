@@ -73,7 +73,7 @@ public class ScrcpyService : IScrcpyService
         await Task.Delay(500);
 
         LastError = "scrcpy process exited immediately.";
-            if (_mirrorProcess.HasExited)
+        if (_mirrorProcess.HasExited)
         {
             MirroredDeviceSerial = null;
             _mirrorProcess.Dispose();
@@ -87,7 +87,7 @@ public class ScrcpyService : IScrcpyService
         return true;
 
 
-        }
+    }
 
     private string BuildScrcpyArguments(string serial, ScrcpyOptions? options)
     {

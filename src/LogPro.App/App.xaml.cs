@@ -59,10 +59,17 @@ public partial class App : Application
         EarlyLog($"OS Architecture: {(Environment.Is64BitOperatingSystem ? "x64" : "x86")}");
         EarlyLog($"Process Architecture: {(Environment.Is64BitProcess ? "x64" : "x86")}");
         var pathEntries = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(";");
-                EarlyLog($"PATH entries: {pathEntries.Length}");
+        EarlyLog($"PATH entries: {pathEntries.Length}");
 
         // Ensure native DLL paths are initialized for iOS tools
         ToolResolver.InitializeNativePaths();
+
+        // One-time branding migration: %LOCALAPPDATA%\QAQCDeviceTool -> LogPro.
+        // Must precede PreferencesService static init (below) so settings load from the new path.
+        if (!Helpers.PathHelper.MigrateLegacyAppData())
+        {
+            EarlyLog("Legacy app-data migration deferred (target existed or move failed).");
+        }
 
 
         // Apply theme BEFORE MainWindow is instantiated via StartupUri
@@ -73,7 +80,7 @@ public partial class App : Application
         // Set up MainViewModel after window creation (moved from XAML to avoid
         // duplicate VM creation during theme switches via ThemeService)
         if (Application.Current.MainWindow is MainWindow mw)
-        {            mw.DataContext = new LogPro.ViewModels.MainViewModel();}
+        { mw.DataContext = new LogPro.ViewModels.MainViewModel(); }
         EarlyLog("Base OnStartup completed, initializing services...");
 
         try
@@ -138,7 +145,7 @@ public partial class App : Application
         Services.AppLogger.Log.Error(e.Exception, "TaskUnobserved");
         e.SetObserved(); // Prevent crash
     }
-    
+
     protected override void OnExit(ExitEventArgs e)
     {
         EarlyLog("APPLICATION EXITING.");
@@ -155,7 +162,7 @@ public partial class App : Application
     {
         try
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LogPro", "crash-reports");
+            var dir = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "crash-reports");
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
             var filePath = Path.Combine(dir, $"crash-report-{DateTime.Now:yyyyMMdd_HHmmss}.txt");
             var sb = new System.Text.StringBuilder();

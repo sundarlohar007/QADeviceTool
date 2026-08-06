@@ -10,8 +10,8 @@ public class TempDirectory : IDisposable
     public TempDirectory(string? prefix = null)
     {
         var tempPath = System.IO.Path.GetTempPath();
-        var dirName = string.IsNullOrEmpty(prefix) 
-            ? $"LogProTest_{Guid.NewGuid():N}" 
+        var dirName = string.IsNullOrEmpty(prefix)
+            ? $"LogProTest_{Guid.NewGuid():N}"
             : $"LogProTest_{prefix}_{Guid.NewGuid():N}";
         DirectoryPath = System.IO.Path.Combine(tempPath, dirName);
         System.IO.Directory.CreateDirectory(DirectoryPath);

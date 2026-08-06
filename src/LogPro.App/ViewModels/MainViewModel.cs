@@ -130,7 +130,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsDeviceToolsExpanded = !IsDeviceToolsExpanded;
     }
 
-        [RelayCommand]
+    [RelayCommand]
     private void ToggleSidebar()
     {
         IsSidebarCollapsed = !IsSidebarCollapsed;

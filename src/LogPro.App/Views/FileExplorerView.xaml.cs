@@ -14,8 +14,8 @@ public partial class FileExplorerView : UserControl
 
     private void DataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is DataGrid grid && 
-            grid.SelectedItem is DeviceFile selectedFile && 
+        if (sender is DataGrid grid &&
+            grid.SelectedItem is DeviceFile selectedFile &&
             DataContext is FileExplorerViewModel vm)
         {
             if (vm.ItemDoubleClickedCommand.CanExecute(selectedFile))

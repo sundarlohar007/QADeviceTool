@@ -42,8 +42,8 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     private readonly System.Text.StringBuilder _outputBuilder = new();
 
     public AppManagementViewModel(
-        IAdbService adbService, 
-        IIosService iosService, 
+        IAdbService adbService,
+        IIosService iosService,
         IDeviceMonitorService deviceMonitor,
         ISessionService sessionService)
     {
@@ -61,11 +61,11 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             var currentSelected = SelectedDevice?.Serial;
-            
+
             Devices.Clear();
             foreach (var d in devices)
                 Devices.Add(d);
-                
+
             if (!string.IsNullOrEmpty(currentSelected))
             {
                 SelectedDevice = Devices.FirstOrDefault(d => d.Serial == currentSelected);
@@ -128,10 +128,10 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     {
         IsLoading = true;
         StatusMessage = "Loading installed applications...";
-        
+
         try
         {
-            var apps = device.Platform == DevicePlatform.Android 
+            var apps = device.Platform == DevicePlatform.Android
                 ? await _adbService.ListInstalledAppsAsync(device.Serial)
                 : await _iosService.ListInstalledAppsAsync(device.Serial);
 
@@ -246,14 +246,14 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     private async Task UninstallAppAsync()
     {
         if (SelectedDevice == null || SelectedApp == null) return;
-        
+
         var pkg = SelectedApp.PackageId;
         var confirm = MessageBox.Show(
             $"Are you sure you want to uninstall '{SelectedApp.Name}'?",
             "Confirm Uninstall",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
-            
+
         if (confirm != MessageBoxResult.Yes) return;
 
         IsLoading = true;
@@ -407,7 +407,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

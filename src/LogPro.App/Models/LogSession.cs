@@ -18,12 +18,12 @@ public partial class LogSession : ObservableObject
     public string LogFilePath { get; set; } = string.Empty;
     public string AppLogFilePath { get; set; } = string.Empty;
     public string SessionDirectory { get; set; } = string.Empty;
-    
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusIcon))]
     [NotifyPropertyChangedFor(nameof(DurationText))]
     private SessionStatus _status = SessionStatus.Idle;
-    
+
     public long LogLineCount { get; set; }
 
     public string DurationText

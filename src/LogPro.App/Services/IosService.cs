@@ -160,8 +160,11 @@ public class IosService : IIosService
 
                 devices.Add(new DeviceInfo
                 {
-                    Serial = udid, Id = udid,
-                    Name = name, Model = model, OsVersion = osVer,
+                    Serial = udid,
+                    Id = udid,
+                    Name = name,
+                    Model = model,
+                    OsVersion = osVer,
                     Platform = DevicePlatform.iOS,
                     ConnectionState = connType.Equals("Unavailable", StringComparison.OrdinalIgnoreCase)
                         ? DeviceConnectionState.Offline
@@ -563,7 +566,9 @@ public class IosService : IIosService
                 if (string.IsNullOrEmpty(udid)) continue;
                 devices.Add(new DeviceInfo
                 {
-                    Serial = udid, Id = udid, Platform = DevicePlatform.iOS,
+                    Serial = udid,
+                    Id = udid,
+                    Platform = DevicePlatform.iOS,
                     Name = item.TryGetProperty("DeviceName", out var dn) ? dn.GetString() ?? "" : "",
                     ConnectionState = DeviceConnectionState.Online
                 });
@@ -644,7 +649,7 @@ public class IosService : IIosService
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
         if (path.Contains("..")) return false;
-        
+
         // Strict allowlist: only alphanumeric, spaces, and safe symbols
         return System.Text.RegularExpressions.Regex.IsMatch(path, @"^[a-zA-Z0-9._\-/\s]+$");
     }

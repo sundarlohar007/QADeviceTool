@@ -46,7 +46,7 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
         _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             var currentSelected = SelectedDevice?.Serial;
-            
+
             Devices.Clear();
             foreach (var d in devices)
             {
@@ -55,7 +55,7 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
                     Devices.Add(d);
                 }
             }
-            
+
             if (!string.IsNullOrEmpty(currentSelected))
             {
                 SelectedDevice = Devices.FirstOrDefault(d => d.Serial == currentSelected);
@@ -129,7 +129,7 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

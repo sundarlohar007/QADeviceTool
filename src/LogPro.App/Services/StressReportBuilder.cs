@@ -91,7 +91,7 @@ internal static class StressReportBuilder
         {
             return value;
         }
-        
+
         AppLogger.Log.Warn($"[StressReportBuilder] Failed to match pattern '{pattern}' in metrics output.");
         return null;
     }

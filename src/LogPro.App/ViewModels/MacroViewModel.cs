@@ -58,9 +58,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
         _deviceMonitor = deviceMonitor;
         _dispatcher = Application.Current.Dispatcher;
 
-        _macroDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "QAQCDeviceTool", "Macros");
+        _macroDir = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "Macros");
         Directory.CreateDirectory(_macroDir);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
@@ -144,7 +142,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
                 _recordProcess.WaitForExit(1500);
             }
             catch { /* process already exited */ }
-            
+
             try { _recordProcess.Dispose(); } catch { /* best effort */ }
             _recordProcess = null;
         }

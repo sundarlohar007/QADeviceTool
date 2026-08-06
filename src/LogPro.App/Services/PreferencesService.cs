@@ -31,9 +31,9 @@ public static class PreferencesService
 
     static PreferencesService()
     {
-        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QAQCDeviceTool");
+        var dir = PathHelper.GetAppDataDirectory();
         if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-        
+
         _settingsFilePath = Path.Combine(dir, "settings.json");
         Load();
     }
@@ -71,7 +71,7 @@ public static class PreferencesService
         {
             Current.SessionsRootDirectory = PathHelper.GetDefaultSessionsDirectory();
         }
-        
+
         // Ensure device preferences dictionary is initialized
         if (Current.DevicePreferences == null)
         {
@@ -93,17 +93,17 @@ public static class PreferencesService
             AppLogger.Log.Error(ex, "Failed to save preferences.");
         }
     }
-    
+
     public static DevicePreference GetDevicePreference(string serial)
     {
         if (Current.DevicePreferences.TryGetValue(serial, out var pref))
             return pref;
-        
+
         var newPref = new DevicePreference();
         Current.DevicePreferences[serial] = newPref;
         return newPref;
     }
-    
+
     public static void SaveDevicePreference(string serial, DevicePreference pref)
     {
         Current.DevicePreferences[serial] = pref;
@@ -114,8 +114,8 @@ public static class PreferencesService
     {
         try
         {
-            var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QAQCDeviceTool");
-            
+            var appDataDir = PathHelper.GetAppDataDirectory();
+
             if (File.Exists(_settingsFilePath))
             {
                 File.Delete(_settingsFilePath);
@@ -125,12 +125,12 @@ public static class PreferencesService
             if (Directory.Exists(logsDir))
             {
                 Directory.Delete(logsDir, true);
-            var sessionsDir = Path.Combine(appDataDir, "sessions");             if (Directory.Exists(sessionsDir))             {                 Directory.Delete(sessionsDir, true);             } 
+                var sessionsDir = Path.Combine(appDataDir, "sessions"); if (Directory.Exists(sessionsDir)) { Directory.Delete(sessionsDir, true); }
             }
 
             Current = new AppPreferences();
             Save();
-            
+
             AppLogger.Log.Info("All application data cleared.");
         }
         catch (Exception ex)
@@ -147,8 +147,7 @@ public static class PreferencesService
             if (retentionDays <= 0) return;
 
             var logsDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "QAQCDeviceTool",
+                PathHelper.GetAppDataDirectory(),
                 "logs");
 
             if (!Directory.Exists(logsDir)) return;

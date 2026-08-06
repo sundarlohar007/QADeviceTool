@@ -95,7 +95,7 @@ public static class ToolResolver
     public static void InitializeNativePaths()
     {
         if (!Directory.Exists(_toolsDir)) return;
-        if (_initialized) return;         _initialized = true;
+        if (_initialized) return; _initialized = true;
 
         try
         {

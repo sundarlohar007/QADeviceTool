@@ -89,7 +89,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     private void SaveDeviceNotes()
     {
         if (SelectedDevice == null) return;
-        
+
         var pref = PreferencesService.GetDevicePreference(SelectedDevice.Serial);
         pref.Notes = DeviceNotes;
         pref.Tag = DeviceTag;
@@ -275,7 +275,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

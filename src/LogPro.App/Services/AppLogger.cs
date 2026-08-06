@@ -14,8 +14,8 @@ public static class AppLogger
     {
         var config = new LoggingConfiguration();
 
-        var logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QAQCDeviceTool", "logs");
-        
+        var logDirectory = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "logs");
+
         // Ensure directory exists
         if (!Directory.Exists(logDirectory))
         {

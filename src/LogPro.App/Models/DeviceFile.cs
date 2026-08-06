@@ -36,7 +36,7 @@ public class DeviceFile
     /// <summary>
     /// Formatted modified date for the UI list view.
     /// </summary>
-    public string DisplayDate => ModifiedDate != DateTime.MinValue 
-        ? ModifiedDate.ToString("yyyy-MM-dd HH:mm") 
+    public string DisplayDate => ModifiedDate != DateTime.MinValue
+        ? ModifiedDate.ToString("yyyy-MM-dd HH:mm")
         : string.Empty;
 }

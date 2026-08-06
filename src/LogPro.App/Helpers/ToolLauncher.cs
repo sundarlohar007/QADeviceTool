@@ -88,26 +88,18 @@ public static class ToolLauncher
 
             var outputTask = Task.Run(async () =>
             {
-                while (!process.StandardOutput.EndOfStream)
+                while (await process.StandardOutput.ReadLineAsync() is { } line)
                 {
-                    var line = await process.StandardOutput.ReadLineAsync();
-                    if (line != null)
-                    {
-                        fullOutput.AppendLine(line);
-                        outputCallback?.Invoke(line);
-                    }
+                    fullOutput.AppendLine(line);
+                    outputCallback?.Invoke(line);
                 }
             });
 
             var errorTask = Task.Run(async () =>
             {
-                while (!process.StandardError.EndOfStream)
+                while (await process.StandardError.ReadLineAsync() is { } line)
                 {
-                    var line = await process.StandardError.ReadLineAsync();
-                    if (line != null)
-                    {
-                        fullError.AppendLine(line);
-                    }
+                    fullError.AppendLine(line);
                 }
             });
 

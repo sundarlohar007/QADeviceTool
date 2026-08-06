@@ -27,7 +27,7 @@ public class LogSessionTests
     public void DurationText_WhenLessThanOneHour_ReturnsMinutesAndSeconds()
     {
         var session = new LogSession { StartTime = DateTime.Now.AddMinutes(-5) };
-        
+
         session.DurationText.Should().Contain("m");
     }
 
@@ -35,7 +35,7 @@ public class LogSessionTests
     public void DurationText_WhenMoreThanOneHour_ReturnsHoursAndMinutes()
     {
         var session = new LogSession { StartTime = DateTime.Now.AddHours(-2).AddMinutes(-30) };
-        
+
         session.DurationText.Should().Contain("h");
     }
 

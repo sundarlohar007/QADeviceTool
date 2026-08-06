@@ -22,7 +22,7 @@ public class PreferencesServiceTests
     public void AppPreferences_DefaultValues_AreSet()
     {
         var prefs = new AppPreferences();
-        
+
         prefs.SessionsRootDirectory.Should().BeEmpty();
         prefs.TargetPackageName.Should().BeEmpty();
         prefs.DevicePreferences.Should().NotBeNull();
@@ -33,7 +33,7 @@ public class PreferencesServiceTests
     public void DevicePreference_DefaultValues_AreSet()
     {
         var pref = new DevicePreference();
-        
+
         pref.Notes.Should().BeEmpty();
         pref.Tag.Should().BeEmpty();
         pref.LastConnected.Should().BeNull();

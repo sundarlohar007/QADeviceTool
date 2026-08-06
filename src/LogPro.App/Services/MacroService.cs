@@ -55,11 +55,9 @@ public class MacroService
                 {
                     await using var stream = new FileStream(outputFilePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
                     using var writer = new StreamWriter(stream);
-                    while (!process.StandardOutput.EndOfStream)
+                    while (await process.StandardOutput.ReadLineAsync() is { } line)
                     {
-                        var line = await process.StandardOutput.ReadLineAsync();
-                        if (line != null)
-                            await writer.WriteLineAsync(line);
+                        await writer.WriteLineAsync(line);
                     }
                 }
                 catch (ObjectDisposedException) { /* process ended */ }
@@ -174,38 +172,38 @@ public class MacroService
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var expectedElapsed = 0L;
         foreach (var evt in macro.Events)
-        
-    {
-        
-        token.ThrowIfCancellationRequested();
-        
-        var cmd = $"sendevent {device} {evt.Type} {evt.Code} {evt.Value}";
-        
-        var result = await _adbService.ExecuteCommandAsync(serial, $"shell {cmd}");
-        if (result != null && (result.Contains("Error") || result.Contains("Failure")))
+
         {
-            AppLogger.Log.Warn($"[MacroService] Replay command failed: {cmd} - {result}");
+
+            token.ThrowIfCancellationRequested();
+
+            var cmd = $"sendevent {device} {evt.Type} {evt.Code} {evt.Value}";
+
+            var result = await _adbService.ExecuteCommandAsync(serial, $"shell {cmd}");
+            if (result != null && (result.Contains("Error") || result.Contains("Failure")))
+            {
+                AppLogger.Log.Warn($"[MacroService] Replay command failed: {cmd} - {result}");
+            }
+
+            var delay = (int)(evt.DelayMs / speedMultiplier);
+
+            if (delay > 0)
+
+            {
+
+                expectedElapsed += delay;
+
+                var remaining = (int)(expectedElapsed - sw.ElapsedMilliseconds);
+
+                if (remaining > 0)
+
+                    await Task.Delay(remaining, token);
+
+            }
+
         }
-        
-        var delay = (int)(evt.DelayMs / speedMultiplier);
-        
-        if (delay > 0)
-        
-        {
-        
-            expectedElapsed += delay;
-        
-            var remaining = (int)(expectedElapsed - sw.ElapsedMilliseconds);
-        
-            if (remaining > 0)
-        
-                await Task.Delay(remaining, token);
-        
-        }
-        
+
     }
-        
-}
 
     /// <summary>
     /// Replays high-level input commands (tap/swipe) for simpler macros.

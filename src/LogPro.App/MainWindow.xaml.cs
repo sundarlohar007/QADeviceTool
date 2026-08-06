@@ -14,8 +14,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-            PreviewKeyDown += OnPreviewKeyDown;
-            }
+        PreviewKeyDown += OnPreviewKeyDown;
+    }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -45,7 +45,7 @@ public partial class MainWindow : Window
         if (_commandPalette != null) return;
 
         _commandPalette = new CommandPaletteWindow();
-        
+
         _commandPalette.AddCommand("nav:dashboard", "Go to Dashboard", "Navigate to dashboard view", "", "Ctrl+1");
         _commandPalette.AddCommand("nav:devices", "Go to Devices", "Navigate to devices view", "", "Ctrl+2");
         _commandPalette.AddCommand("nav:sessions", "Go to Sessions", "Navigate to sessions view", "", "Ctrl+3");
@@ -59,7 +59,7 @@ public partial class MainWindow : Window
         _commandPalette.AddCommand("action:screenshot", "Take Screenshot", "Capture screenshot from device", "");
         _commandPalette.AddCommand("action:mirror", "Start Mirror", "Start screen mirroring", "");
         _commandPalette.AddCommand("action:refresh", "Refresh Devices", "Refresh connected device list", "");
-        
+
         _commandPalette.AddCommand("export:csv", "Export to CSV", "Export current session to CSV", "");
         _commandPalette.AddCommand("export:json", "Export to JSON", "Export current session to JSON", "");
 

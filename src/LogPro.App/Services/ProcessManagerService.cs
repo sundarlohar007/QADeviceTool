@@ -45,7 +45,7 @@ public static class ProcessManagerService
                     AppLogger.Log.Info($"Killing tracked process {process.ProcessName} (ID: {process.Id})");
                     process.Kill(true); // Kill process tree
                 }
-                    // Let owning code dispose its own references — only Kill here
+                // Let owning code dispose its own references — only Kill here
             }
             catch (Exception ex)
             {

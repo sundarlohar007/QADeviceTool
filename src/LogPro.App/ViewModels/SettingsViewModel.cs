@@ -48,13 +48,13 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _clearDataStatus = string.Empty;
 
-    
+
     [ObservableProperty]
     private bool _isDarkTheme;
 
     [ObservableProperty]
     private bool _isLightTheme;
-[ObservableProperty]
+    [ObservableProperty]
     private string _pairingIpPort = string.Empty;
 
     [ObservableProperty]
@@ -79,15 +79,15 @@ public partial class SettingsViewModel : ObservableObject
 
         InitializeLogRetentionOptions();
 
-            
+
         IsDarkTheme = Services.ThemeService.CurrentTheme == Services.ThemeService.ThemeDark;
         IsLightTheme = !IsDarkTheme;
-// Execute all heavy startup IO away from the main UI thread.
-            Task.Run(async () =>
-            {
-                // Start dependency checks
-                await CheckDependenciesAsync();
-            });
+        // Execute all heavy startup IO away from the main UI thread.
+        Task.Run(async () =>
+        {
+            // Start dependency checks
+            await CheckDependenciesAsync();
+        });
     }
 
     private void InitializeLogRetentionOptions()
@@ -100,7 +100,7 @@ public partial class SettingsViewModel : ObservableObject
         LogRetentionOptions.Add(new LogRetentionOption { Text = "Forever", Value = 0 });
 
         var currentValue = PreferencesService.Current.LogRetentionDays;
-        SelectedLogRetention = LogRetentionOptions.FirstOrDefault(o => o.Value == currentValue) 
+        SelectedLogRetention = LogRetentionOptions.FirstOrDefault(o => o.Value == currentValue)
             ?? LogRetentionOptions.First(o => o.Value == 7);
     }
 
@@ -136,9 +136,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         try
         {
-            var logsDir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "QAQCDeviceTool", "logs");
+            var logsDir = System.IO.Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "logs");
             if (System.IO.Directory.Exists(logsDir))
                 System.Diagnostics.Process.Start("explorer.exe", logsDir);
             else
@@ -200,13 +198,13 @@ public partial class SettingsViewModel : ObservableObject
     {
         IsLoading = true;
         DiscoveredPorts = "Discovering...";
-        
+
         var ports = await _adbService.DiscoverPairingPortsAsync();
-        
-        DiscoveredPorts = ports.Count > 0 
-            ? string.Join(", ", ports) 
+
+        DiscoveredPorts = ports.Count > 0
+            ? string.Join(", ", ports)
             : "No listening ports found.";
-        
+
         IsLoading = false;
     }
 
@@ -223,9 +221,9 @@ public partial class SettingsViewModel : ObservableObject
         WirelessStatus = "Pairing...";
 
         var result = await _adbService.PairAsync(PairingIpPort, PairingCode);
-        
-        WirelessStatus = result.Success 
-            ? "Pairing successful!" 
+
+        WirelessStatus = result.Success
+            ? "Pairing successful!"
             : $"Failed: {result.Message}";
 
         IsLoading = false;
@@ -244,9 +242,9 @@ public partial class SettingsViewModel : ObservableObject
         WirelessStatus = "Connecting...";
 
         var result = await _adbService.ConnectAsync(PairingIpPort);
-        
-        WirelessStatus = result.Success 
-            ? $"Connected to {PairingIpPort}" 
+
+        WirelessStatus = result.Success
+            ? $"Connected to {PairingIpPort}"
             : $"Failed: {result.Message}";
 
         IsLoading = false;
@@ -262,8 +260,8 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         var result = await _adbService.DisconnectAsync(PairingIpPort);
-        WirelessStatus = result.Success 
-            ? $"Disconnected from {PairingIpPort}" 
+        WirelessStatus = result.Success
+            ? $"Disconnected from {PairingIpPort}"
             : $"Failed: {result.Message}";
     }
     [RelayCommand]
@@ -287,9 +285,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         try
         {
-            var appDataDir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "QAQCDeviceTool");
+            var appDataDir = Helpers.PathHelper.GetAppDataDirectory();
             if (System.IO.Directory.Exists(appDataDir))
             {
                 System.Diagnostics.Process.Start("explorer.exe", appDataDir);

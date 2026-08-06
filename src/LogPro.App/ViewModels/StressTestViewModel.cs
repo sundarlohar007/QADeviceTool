@@ -194,21 +194,21 @@ public partial class StressTestViewModel : ObservableObject
 
         _runCts = new CancellationTokenSource();
         IsRunning = true;
-            _metricSnapshots.Clear();
-            var metricsTimer = new System.Threading.Timer(async _ =>
+        _metricSnapshots.Clear();
+        var metricsTimer = new System.Threading.Timer(async _ =>
+        {
+            try
             {
-                try
-                {
-                    if (_runningOnSerial == null || _adbService == null) return;
-                    var memResult = await _adbService.ExecuteCommandAsync(_runningOnSerial, "shell dumpsys meminfo " + TargetPackage);
-                    var snapshot = new Services.MetricSnapshot { Timestamp = DateTime.Now, EventsInjected = EventsInjected };
-                    var pssMatch = System.Text.RegularExpressions.Regex.Match(memResult, @"TOTAL\s+(\d+)");
-                    if (pssMatch.Success && int.TryParse(pssMatch.Groups[1].Value, out var pss))
-                        snapshot.TotalPssKb = pss;
-                    lock (_metricSnapshots) { _metricSnapshots.Add(snapshot); }
-                }
-                catch { /* metrics best-effort */ }
-            }, null, 5000, 5000);
+                if (_runningOnSerial == null || _adbService == null) return;
+                var memResult = await _adbService.ExecuteCommandAsync(_runningOnSerial, "shell dumpsys meminfo " + TargetPackage);
+                var snapshot = new Services.MetricSnapshot { Timestamp = DateTime.Now, EventsInjected = EventsInjected };
+                var pssMatch = System.Text.RegularExpressions.Regex.Match(memResult, @"TOTAL\s+(\d+)");
+                if (pssMatch.Success && int.TryParse(pssMatch.Groups[1].Value, out var pss))
+                    snapshot.TotalPssKb = pss;
+                lock (_metricSnapshots) { _metricSnapshots.Add(snapshot); }
+            }
+            catch { /* metrics best-effort */ }
+        }, null, 5000, 5000);
         CrashCount = 0;
         AnrCount = 0;
         EventsInjected = 0;
@@ -429,8 +429,8 @@ public partial class StressTestViewModel : ObservableObject
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
-            _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
         GC.SuppressFinalize(this);
     }
 }

@@ -41,7 +41,7 @@ public class SessionService : ISessionService
     {
         var deviceHash = SecurityHelper.HashSerial(device.Serial);
         var sessionName = SecurityHelper.GetSafeSessionName(customSessionName, deviceHash, device.Platform.ToString());
-        
+
         var sessionDir = PathHelper.CreateSessionDirectory(sessionName, SessionsRootDirectory);
         var logFileName = $"{sessionName}_log.txt";
         var logFilePath = Path.Combine(sessionDir, logFileName);
@@ -287,7 +287,7 @@ public class SessionService : ISessionService
                 _flushTimer = null;
             }
         }
-        
+
         AppLogger.Log.Info($"Capture stopped for device {session.DeviceId}. Duration: {session.EndTime - session.StartTime}");
     }
 
@@ -443,30 +443,30 @@ public class SessionService : ISessionService
         try
         {
             if (!File.Exists(session.LogFilePath)) return false;
-            
+
             using var reader = new StreamReader(session.LogFilePath);
             using var writer = new StreamWriter(outputPath, false);
-            
+
             // CSV header
             await writer.WriteLineAsync("Timestamp,Level,Message");
-            
+
             string? line;
             while ((line = await reader.ReadLineAsync()) != null)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
-                
+
                 var parsed = ParseLogLine(line);
                 var message = parsed["Message"];
-                
+
                 if (anonymize)
                 {
                     message = AnonymizeDeviceInfo(message);
                 }
-                
+
                 var escapedMessage = message.Replace("\"", "\"\"");
                 await writer.WriteLineAsync($"\"{parsed["Timestamp"]}\",\"{parsed["Level"]}\",\"{escapedMessage}\"");
             }
-            
+
             return true;
         }
         catch (Exception ex)
@@ -484,30 +484,30 @@ public class SessionService : ISessionService
         try
         {
             if (!File.Exists(session.LogFilePath)) return false;
-            
+
             using var reader = new StreamReader(session.LogFilePath);
             var entries = new List<Dictionary<string, string>>();
-            
+
             string? line;
             while ((line = await reader.ReadLineAsync()) != null)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
-                
+
                 var parsed = ParseLogLine(line);
-                
+
                 if (anonymize)
                 {
                     parsed["Message"] = AnonymizeDeviceInfo(parsed["Message"]);
                 }
-                
+
                 entries.Add(parsed);
             }
-            
-            var json = System.Text.Json.JsonSerializer.Serialize(entries, new System.Text.Json.JsonSerializerOptions 
-            { 
-                WriteIndented = true 
+
+            var json = System.Text.Json.JsonSerializer.Serialize(entries, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true
             });
-            
+
             await File.WriteAllTextAsync(outputPath, json);
             return true;
         }
@@ -540,8 +540,12 @@ public class SessionService : ISessionService
                 {
                     result["Level"] = rest[0] switch
                     {
-                        'F' => "Fatal", 'E' => "Error", 'W' => "Warning",
-                        'I' => "Info", 'D' => "Debug", 'V' => "Verbose",
+                        'F' => "Fatal",
+                        'E' => "Error",
+                        'W' => "Warning",
+                        'I' => "Info",
+                        'D' => "Debug",
+                        'V' => "Verbose",
                         _ => "Unknown"
                     };
                 }
@@ -573,8 +577,12 @@ public class SessionService : ISessionService
                 {
                     result["Level"] = match.Groups[1].Value switch
                     {
-                        "F" => "Fatal", "E" => "Error", "W" => "Warning",
-                        "I" => "Info", "D" => "Debug", "V" => "Verbose",
+                        "F" => "Fatal",
+                        "E" => "Error",
+                        "W" => "Warning",
+                        "I" => "Info",
+                        "D" => "Debug",
+                        "V" => "Verbose",
                         _ => "Unknown"
                     };
                 }

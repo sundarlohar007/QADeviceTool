@@ -307,7 +307,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         if (SelectedDevice == null || SelectedFile == null) return;
         if (SelectedFile.Name == "..") return;
 
-        var confirm = MessageBox.Show($"Are you sure you want to permanently delete from device:\n\n{SelectedFile.Path}", 
+        var confirm = MessageBox.Show($"Are you sure you want to permanently delete from device:\n\n{SelectedFile.Path}",
             "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning);
 
         if (confirm == MessageBoxResult.Yes)
@@ -346,17 +346,17 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     private string GetParentDirectory(string path)
     {
         if (path == "/") return "/";
-        
+
         var trimmed = path.TrimEnd('/');
         var lastSlash = trimmed.LastIndexOf('/');
-        
+
         if (lastSlash <= 0) return "/";
         return trimmed.Substring(0, lastSlash);
     }
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

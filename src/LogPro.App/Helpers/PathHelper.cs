@@ -7,13 +7,42 @@ namespace LogPro.Helpers;
 /// </summary>
 public static class PathHelper
 {
+    public const string AppDataFolderName = "LogPro";
+    private const string LegacyAppDataFolderName = "QAQCDeviceTool";
+
+    /// <summary>
+    /// Root application-data directory under %LOCALAPPDATA% (single source of truth for branding).
+    /// </summary>
+    public static string GetAppDataDirectory()
+        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDataFolderName);
+
+    /// <summary>
+    /// One-time migration of the legacy %LOCALAPPDATA%\QAQCDeviceTool folder to LogPro
+    /// (branding unification). No-op when the target already exists; returns false if it couldn't move.
+    /// </summary>
+    public static bool MigrateLegacyAppData(string? localAppData = null)
+    {
+        var root = localAppData ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var legacy = Path.Combine(root, LegacyAppDataFolderName);
+        var target = Path.Combine(root, AppDataFolderName);
+        if (!Directory.Exists(legacy) || Directory.Exists(target)) return true;
+        try
+        {
+            Directory.Move(legacy, target);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false; // locked by another process; app keeps working, data stays in legacy folder
+        }
+    }
+
     /// <summary>
     /// Gets the default sessions root directory under Documents.
     /// </summary>
     public static string GetDefaultSessionsDirectory()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(localAppData, "QAQCDeviceTool", "Sessions");
+        return Path.Combine(GetAppDataDirectory(), "Sessions");
     }
 
     /// <summary>
@@ -33,8 +62,7 @@ public static class PathHelper
     /// </summary>
     public static string GetConfigFilePath()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(localAppData, "QAQCDeviceTool", "config.txt");
+        return Path.Combine(GetAppDataDirectory(), "config.txt");
     }
 
     /// <summary>

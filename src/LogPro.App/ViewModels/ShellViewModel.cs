@@ -136,15 +136,15 @@ public partial class ShellViewModel : ObservableObject, IDisposable
                 var adbPath = ToolResolver.Resolve("adb");
                 var result = await ToolLauncher.RunAsync(adbPath, $"-s {SelectedDevice.Serial} {cmd}", 60000);
 
-            if (!string.IsNullOrWhiteSpace(result.Output))
-            {
-                AppendOutput(result.Output);
-            }
-            if (!string.IsNullOrWhiteSpace(result.Error))
-            {
-                AppendOutput($"[Error]\n{result.Error}");
-            }
-            
+                if (!string.IsNullOrWhiteSpace(result.Output))
+                {
+                    AppendOutput(result.Output);
+                }
+                if (!string.IsNullOrWhiteSpace(result.Error))
+                {
+                    AppendOutput($"[Error]\n{result.Error}");
+                }
+
                 if (!result.Success && string.IsNullOrWhiteSpace(result.Error) && string.IsNullOrWhiteSpace(result.Output))
                 {
                     AppendOutput($"[Command exited with code {result.ExitCode}]");
@@ -212,7 +212,7 @@ public partial class ShellViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

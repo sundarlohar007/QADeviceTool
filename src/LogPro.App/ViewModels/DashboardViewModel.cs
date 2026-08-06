@@ -94,7 +94,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
                 }
             }
             catch (Exception) { /* keyword load best-effort */ }
-            
+
 
             try
             {
@@ -109,9 +109,9 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
 
     partial void OnTargetPackageNameChanged(string value)
     {
-            PreferencesService.Current.TargetPackageName = value?.Trim() ?? string.Empty;
-            PreferencesService.Save();
-        
+        PreferencesService.Current.TargetPackageName = value?.Trim() ?? string.Empty;
+        PreferencesService.Save();
+
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
@@ -251,13 +251,13 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
     {
         IsLoading = true;
         DiscoveredPorts = "Discovering...";
-        
+
         var ports = await _adbService.DiscoverPairingPortsAsync();
-        
-        DiscoveredPorts = ports.Count > 0 
-            ? string.Join(", ", ports) 
+
+        DiscoveredPorts = ports.Count > 0
+            ? string.Join(", ", ports)
             : "No listening ports found. Ensure ADB is running.";
-        
+
         IsLoading = false;
     }
 
@@ -274,9 +274,9 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         WirelessStatus = "Pairing...";
 
         var result = await _adbService.PairAsync(PairingIpPort, PairingCode);
-        
-        WirelessStatus = result.Success 
-            ? "Pairing successful! Device should connect." 
+
+        WirelessStatus = result.Success
+            ? "Pairing successful! Device should connect."
             : $"Pairing failed: {result.Message}";
 
         if (result.Success)
@@ -300,9 +300,9 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         WirelessStatus = "Connecting...";
 
         var result = await _adbService.ConnectAsync(PairingIpPort);
-        
-        WirelessStatus = result.Success 
-            ? $"Connected to {PairingIpPort}" 
+
+        WirelessStatus = result.Success
+            ? $"Connected to {PairingIpPort}"
             : $"Connection failed: {result.Message}";
 
         if (result.Success)
@@ -323,8 +323,8 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         }
 
         var result = await _adbService.DisconnectAsync(PairingIpPort);
-        WirelessStatus = result.Success 
-            ? $"Disconnected from {PairingIpPort}" 
+        WirelessStatus = result.Success
+            ? $"Disconnected from {PairingIpPort}"
             : $"Disconnect failed: {result.Message}";
 
         await _deviceMonitor.PollDevicesAsync();
@@ -332,7 +332,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

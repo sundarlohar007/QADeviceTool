@@ -31,7 +31,7 @@ public class AdbService : IAdbService
         return result.Success ? result.Output : result.Error;
     }
 
-    
+
     private const int DefaultTimeoutMs = 8000;
     private const int FastTimeoutMs = 5000;
     private const int MaxRetryAttempts = 2;
@@ -121,7 +121,7 @@ public class AdbService : IAdbService
     public async Task<List<DeviceInfo>> GetConnectedDevicesAsync()
     {
         var devices = new List<DeviceInfo>();
-        
+
         try
         {
             var result = await RunAdbAsync("devices -l", DefaultTimeoutMs);
@@ -233,14 +233,14 @@ public class AdbService : IAdbService
             await Task.WhenAll(osTask, batteryTask, mfrTask);
 
             device.OsVersion = osTask.Result ?? "Unknown";
-            
+
             var batteryResult = batteryTask.Result;
             if (batteryResult.Success)
             {
                 var match = Regex.Match(batteryResult.Output, @"level:\s*(\d+)");
                 if (match.Success)
                     device.BatteryLevel = $"{match.Groups[1].Value}%";
-                
+
                 var matchStatus = Regex.Match(batteryResult.Output, @"status:\s*(\w+)");
                 if (matchStatus.Success)
                     device.BatteryStatus = matchStatus.Groups[1].Value;
@@ -369,8 +369,8 @@ public class AdbService : IAdbService
                         await Task.Delay(500); // wait for mp4 finalization
                     }
                 }
-        catch (Exception ex) { AppLogger.Log.Warn(ex, "[AdbService] StopScreenRecord failed"); }
-        try { process.Kill(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[AdbService] ScreenRecord kill error"); }
+                catch (Exception ex) { AppLogger.Log.Warn(ex, "[AdbService] StopScreenRecord failed"); }
+                try { process.Kill(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[AdbService] ScreenRecord kill error"); }
                 process.Dispose();
             }
 
@@ -401,7 +401,7 @@ public class AdbService : IAdbService
     public async Task<string?> GetPidFromPackageNameAsync(string serial, string packageNameKeyword)
     {
         if (string.IsNullOrWhiteSpace(packageNameKeyword)) return null;
-        
+
         try
         {
             var result = await RunAdbAsync($"-s {serial} shell ps -A -o PID,NAME", 10000);
@@ -417,7 +417,7 @@ public class AdbService : IAdbService
                 {
                     var pid = parts[0];
                     var name = parts[1];
-                    
+
                     if (name.Contains(packageNameKeyword, StringComparison.OrdinalIgnoreCase))
                         return pid;
                 }
@@ -427,14 +427,14 @@ public class AdbService : IAdbService
         {
             AppLogger.Log.Error(ex, $"[AdbService] GetPidFromPackageNameAsync failed for {packageNameKeyword}");
         }
-        
+
         return null;
     }
 
     public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? outputCallback = null)
     {
         var result = await RunAdbAsync($"-s {serial} install -r \"{apkPath}\"", 600000, outputCallback);
-        
+
         if (result.Output.Contains("Failure", StringComparison.OrdinalIgnoreCase))
         {
             return (false, result.Output.Trim());
@@ -445,7 +445,7 @@ public class AdbService : IAdbService
         {
             return (true, "APK installed successfully.");
         }
-        
+
         return (false, result.Output.Trim());
     }
 
@@ -626,7 +626,7 @@ public class AdbService : IAdbService
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
         if (path.Contains("..")) return false;
-        
+
         // Strict allowlist: only alphanumeric, spaces, and safe symbols
         return System.Text.RegularExpressions.Regex.IsMatch(path, @"^[a-zA-Z0-9._\-/\s]+$");
     }
@@ -634,7 +634,7 @@ public class AdbService : IAdbService
     public async Task<List<AppItem>> ListInstalledAppsAsync(string serial)
     {
         var apps = new List<AppItem>();
-        
+
         try
         {
             var result = await RunAdbAsync($"-s {serial} shell pm list packages -3", 15000);
