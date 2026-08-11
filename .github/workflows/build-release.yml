@@ -5,8 +5,6 @@ on:
     branches: [main, beta]
   pull_request:
     branches: [main]
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -16,6 +14,7 @@ on:
 env:
   SOLUTION: LogPro.sln
   PROJECT: src/LogPro.App/LogPro.App.csproj
+  CLI_PROJECT: src/LogPro.Cli/LogPro.Cli.csproj
   TEST_PROJECT: src/LogPro.Tests/LogPro.Tests.csproj
   SETUP_SCRIPT: publish/setup.iss
 
@@ -53,9 +52,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          if ("${{ github.event_name }}" -eq "release") {
-            $ver = "${{ github.event.release.tag_name }}" -replace '^v', ''
-          } elseif ("${{ inputs.version }}") {
+          if ("${{ inputs.version }}") {
             $ver = "${{ inputs.version }}"
           } else {
             $ver = "3.2.${{ github.run_number }}"
@@ -63,13 +60,23 @@ jobs:
           echo "semver=$ver" >> $env:GITHUB_OUTPUT
           Write-Host "Version: $ver"
 
-      - name: Publish
-        run: dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/app
+      - name: Publish App
+        run: dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:Version=${{ steps.version.outputs.semver }} -o publish/app
+
+      - name: Publish CLI
+        run: dotnet publish ${{ env.CLI_PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.semver }} -o publish/cli
+
       - name: Upload App
         uses: actions/upload-artifact@v4
         with:
           name: app-published
           path: publish/app/
+
+      - name: Upload CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-published
+          path: publish/cli/
 
   installer:
     name: Setup.exe
@@ -132,16 +139,22 @@ jobs:
           name: app-published
           path: publish/app/
 
-      - name: Create Portable Archive
+      - name: Download CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-published
+          path: publish/cli/
+
+      - name: Create Archives
         shell: pwsh
         run: |
           $ver = "${{ needs.build.outputs.version }}"
-          New-Item -ItemType Directory -Force -Path dist
-          $zipName = "LogPro_v${ver}_portable.zip"
-          Compress-Archive -Path publish/app/* -DestinationPath dist/$zipName
-          Write-Host "Created: dist/$zipName"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path publish/app/* -DestinationPath "dist/LogPro_v${ver}_portable.zip"
+          Compress-Archive -Path publish/cli/* -DestinationPath "dist/logpro-cli_v${ver}_win-x64.zip"
+          Get-ChildItem dist/
 
-      - name: Upload Portable.zip
+      - name: Upload Zips
         uses: actions/upload-artifact@v4
         with:
           name: portable-zip
@@ -149,7 +162,7 @@ jobs:
 
   release:
     name: GitHub Release
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     needs: [installer, portable]
     runs-on: ubuntu-latest
     steps:
@@ -167,7 +180,7 @@ jobs:
         shell: bash
         run: |
           find dist/ -type f \( -name '*.exe' -o -name '*.zip' \) -exec mv {} dist/ \;
-          rm -rf dist/setup-exe dist/portable-zip dist/app-published
+          rm -rf dist/setup-exe dist/portable-zip dist/app-published dist/cli-published
           echo "=== Release Assets ==="
           ls -la dist/
 
@@ -184,21 +197,12 @@ jobs:
           fi
           cat CHANGELOG.md
 
-      - name: Upload to Release
-        if: github.event_name == 'release'
+      - name: Create Release with Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          tag_name: v${{ needs.build.outputs.version }}
+          name: LogPro v${{ needs.build.outputs.version }}
           body_path: CHANGELOG.md
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auto-tag (workflow_dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          VER="${{ needs.build.outputs.version }}"
-          git tag -a "v$VER" -m "Release v$VER"
-          git push origin "v$VER"
