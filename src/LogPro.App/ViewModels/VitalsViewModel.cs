@@ -17,7 +17,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
 {
     private readonly IAdbService _adbService;
     private readonly IDeviceMonitorService _deviceMonitor;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
     private DispatcherTimer? _pollTimer;
     private CancellationTokenSource? _pollCts;
 
@@ -41,11 +41,11 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private ObservableCollection<VitalsLogEntry> _vitalsLog = new();
     [ObservableProperty] private bool _autoScroll = true;
 
-    public VitalsViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor)
+    public VitalsViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _pollTimer.Tick += (s, e) =>
@@ -64,7 +64,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             var currentSelected = SelectedDevice?.Serial;
             Devices.Clear();
@@ -141,7 +141,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
         if (SelectedDevice == null || SelectedDevice.Platform != DevicePlatform.Android) return;
         if (SelectedDevice.ConnectionState != DeviceConnectionState.Online)
         {
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            _dispatcher.Post(() =>
             {
                 MemInfoOutput = $"Device is {SelectedDevice.ConnectionState}. Cannot poll vitals.";
                 TopProcessesOutput = string.Empty;
@@ -160,7 +160,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
             var wifiResult = await _adbService.ExecuteCommandAsync(serial, "shell dumpsys wifi | grep -E 'SSID|mWifiInfo'");
             var ipResult = await _adbService.ExecuteCommandAsync(serial, "shell ip route");
 
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            _dispatcher.Post(() =>
             {
                 ParseMemory(memResult);
                 ParseCpu(topResult);

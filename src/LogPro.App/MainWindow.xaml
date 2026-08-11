@@ -265,7 +265,7 @@
                                             <RectangleGeometry Rect="0,0,1,1" />
                                         </GeometryDrawing.Geometry>
                                         <GeometryDrawing.Brush>
-                                            <SolidColorBrush Color="#0A0A0A" />
+                                            <SolidColorBrush Color="{DynamicResource Void}" />
                                         </GeometryDrawing.Brush>
                                     </GeometryDrawing>
                                     <!-- Primary radial glow (top-right cyan tint) -->

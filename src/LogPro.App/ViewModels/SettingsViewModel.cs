@@ -22,7 +22,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly DependencyChecker _dependencyChecker;
     private readonly ISessionService _sessionService;
     private readonly IAdbService _adbService;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<ToolStatus> _toolStatuses = new();
@@ -37,7 +37,8 @@ public partial class SettingsViewModel : ObservableObject
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
-    private string _appVersion = "3.0.0";
+    private string _appVersion =
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown";
 
     [ObservableProperty]
     private ObservableCollection<LogRetentionOption> _logRetentionOptions = new();
@@ -48,13 +49,13 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _clearDataStatus = string.Empty;
 
-    
+
     [ObservableProperty]
     private bool _isDarkTheme;
 
     [ObservableProperty]
     private bool _isLightTheme;
-[ObservableProperty]
+    [ObservableProperty]
     private string _pairingIpPort = string.Empty;
 
     [ObservableProperty]
@@ -69,25 +70,25 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading;
 
-    public SettingsViewModel(DependencyChecker dependencyChecker, ISessionService sessionService, IAdbService adbService)
+    public SettingsViewModel(DependencyChecker dependencyChecker, ISessionService sessionService, IAdbService adbService, IUiDispatcher? dispatcher = null)
     {
         _dependencyChecker = dependencyChecker;
         _sessionService = sessionService;
         _adbService = adbService;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
         _sessionsDirectory = sessionService.SessionsRootDirectory;
 
         InitializeLogRetentionOptions();
 
-            
+
         IsDarkTheme = Services.ThemeService.CurrentTheme == Services.ThemeService.ThemeDark;
         IsLightTheme = !IsDarkTheme;
-// Execute all heavy startup IO away from the main UI thread.
-            Task.Run(async () =>
-            {
-                // Start dependency checks
-                await CheckDependenciesAsync();
-            });
+        // Execute all heavy startup IO away from the main UI thread.
+        Task.Run(async () =>
+        {
+            // Start dependency checks
+            await CheckDependenciesAsync();
+        });
     }
 
     private void InitializeLogRetentionOptions()
@@ -100,7 +101,7 @@ public partial class SettingsViewModel : ObservableObject
         LogRetentionOptions.Add(new LogRetentionOption { Text = "Forever", Value = 0 });
 
         var currentValue = PreferencesService.Current.LogRetentionDays;
-        SelectedLogRetention = LogRetentionOptions.FirstOrDefault(o => o.Value == currentValue) 
+        SelectedLogRetention = LogRetentionOptions.FirstOrDefault(o => o.Value == currentValue)
             ?? LogRetentionOptions.First(o => o.Value == 7);
     }
 
@@ -136,15 +137,13 @@ public partial class SettingsViewModel : ObservableObject
     {
         try
         {
-            var logsDir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "QAQCDeviceTool", "logs");
+            var logsDir = System.IO.Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "logs");
             if (System.IO.Directory.Exists(logsDir))
                 System.Diagnostics.Process.Start("explorer.exe", logsDir);
             else
                 ClearDataStatus = "Logs directory not found.";
         }
-        catch (Exception ex) { ClearDataStatus = $"Failed to open logs: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[Settings] OpenLogsFolder failed"); ClearDataStatus = $"Failed to open logs: {ex.Message}"; }
     }
 
     [RelayCommand]
@@ -155,7 +154,7 @@ public partial class SettingsViewModel : ObservableObject
 
         var statuses = await _dependencyChecker.CheckAllAsync();
 
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             ToolStatuses.Clear();
             foreach (var s in statuses)
@@ -200,13 +199,13 @@ public partial class SettingsViewModel : ObservableObject
     {
         IsLoading = true;
         DiscoveredPorts = "Discovering...";
-        
+
         var ports = await _adbService.DiscoverPairingPortsAsync();
-        
-        DiscoveredPorts = ports.Count > 0 
-            ? string.Join(", ", ports) 
-            : "No listening ports found.";
-        
+
+        DiscoveredPorts = ports.Count > 0
+            ? string.Join(", ", ports)
+            : "Automatic discovery isn't reliable — enter IP:Port and code from the device (Wireless debugging > Pair device).";
+
         IsLoading = false;
     }
 
@@ -223,9 +222,9 @@ public partial class SettingsViewModel : ObservableObject
         WirelessStatus = "Pairing...";
 
         var result = await _adbService.PairAsync(PairingIpPort, PairingCode);
-        
-        WirelessStatus = result.Success 
-            ? "Pairing successful!" 
+
+        WirelessStatus = result.Success
+            ? "Pairing successful!"
             : $"Failed: {result.Message}";
 
         IsLoading = false;
@@ -244,9 +243,9 @@ public partial class SettingsViewModel : ObservableObject
         WirelessStatus = "Connecting...";
 
         var result = await _adbService.ConnectAsync(PairingIpPort);
-        
-        WirelessStatus = result.Success 
-            ? $"Connected to {PairingIpPort}" 
+
+        WirelessStatus = result.Success
+            ? $"Connected to {PairingIpPort}"
             : $"Failed: {result.Message}";
 
         IsLoading = false;
@@ -262,8 +261,8 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         var result = await _adbService.DisconnectAsync(PairingIpPort);
-        WirelessStatus = result.Success 
-            ? $"Disconnected from {PairingIpPort}" 
+        WirelessStatus = result.Success
+            ? $"Disconnected from {PairingIpPort}"
             : $"Failed: {result.Message}";
     }
     [RelayCommand]
@@ -287,9 +286,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         try
         {
-            var appDataDir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "QAQCDeviceTool");
+            var appDataDir = Helpers.PathHelper.GetAppDataDirectory();
             if (System.IO.Directory.Exists(appDataDir))
             {
                 System.Diagnostics.Process.Start("explorer.exe", appDataDir);
@@ -298,7 +295,7 @@ public partial class SettingsViewModel : ObservableObject
             else
                 ClearDataStatus = "App data folder not found.";
         }
-        catch (Exception ex) { ClearDataStatus = $"Export failed: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[Settings] ExportMyData failed"); ClearDataStatus = $"Export failed: {ex.Message}"; }
     }
 
 }

@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   build:
-    name: Build & Test
+    name: Publish
     runs-on: windows-latest
     outputs:
       version: ${{ steps.version.outputs.semver }}
@@ -38,7 +38,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION }}
@@ -65,7 +65,6 @@ jobs:
 
       - name: Publish
         run: dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/app
-
       - name: Upload App
         uses: actions/upload-artifact@v4
         with:
@@ -98,6 +97,20 @@ jobs:
           Set-Content "${{ env.SETUP_SCRIPT }}" -Value $iss
           Write-Host "Compiling installer for v$ver..."
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "${{ env.SETUP_SCRIPT }}"
+
+      - name: Sign Setup.exe
+        if: env.SIGN_CERT_PFX != '' && env.SIGN_CERT_PASSWORD != ''
+        shell: pwsh
+        env:
+          SIGN_CERT_PFX: ${{ secrets.SIGN_CERT_PFX }}
+          SIGN_CERT_PASSWORD: ${{ secrets.SIGN_CERT_PASSWORD }}
+        run: |
+          $cert = "$env:RUNNER_TEMP\signing.pfx"
+          [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String($env:SIGN_CERT_PFX))
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
+          $exe = Get-Item (Get-ChildItem dist\*.exe | Select-Object -First 1).FullName
+          & $signtool sign /fd SHA256 /f $cert /p $env:SIGN_CERT_PASSWORD /t http://timestamp.digicert.com $exe.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Setup.exe
         uses: actions/upload-artifact@v4

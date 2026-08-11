@@ -16,12 +16,12 @@ using LogPro.Services;
 
 namespace LogPro.ViewModels;
 
-public partial class StressTestViewModel : ObservableObject
+public partial class StressTestViewModel : ObservableObject, IDisposable
 {
     private readonly IAdbService _adbService;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly List<object> _metricSnapshots = new();
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     private CancellationTokenSource? _runCts;
     private Process? _adbProcess;
@@ -41,7 +41,7 @@ public partial class StressTestViewModel : ObservableObject
     [ObservableProperty] private int _eventCount = 1000;
     [ObservableProperty] private int _seed = 0;
     [ObservableProperty] private int _throttleMs = 300;
-    [ObservableProperty] private int _pctTouch = 30;
+    [ObservableProperty] private int _pctTouch = 50; // defaults must sum to 100 (validation requires it)
     [ObservableProperty] private int _pctMotion = 20;
     [ObservableProperty] private int _pctTrackball = 5;
     [ObservableProperty] private int _pctNav = 10;
@@ -65,11 +65,11 @@ public partial class StressTestViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanRun))]
     private bool _isPlatformSupported;
 
-    public StressTestViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor)
+    public StressTestViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         TargetPackage = PreferencesService.Current.TargetPackageName;
 
@@ -79,7 +79,7 @@ public partial class StressTestViewModel : ObservableObject
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             Devices.Clear();
             foreach (var d in devices) Devices.Add(d);
@@ -92,7 +92,7 @@ public partial class StressTestViewModel : ObservableObject
         if (!IsRunning) return;
         if (_runningOnSerial != null && device.Serial == _runningOnSerial)
         {
-            _dispatcher.BeginInvoke(() =>
+            _dispatcher.Post(() =>
             {
                 AppendOutput("\n[!] Device disconnected — stopping monkey.");
                 StopMonkey();
@@ -120,7 +120,7 @@ public partial class StressTestViewModel : ObservableObject
             ApplyAppFilter();
             StatusMessage = $"Loaded {_allApps.Count} apps. Type to search.";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Load apps failed: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[StressTest] RefreshAppsAsync failed"); StatusMessage = $"[!] Load apps failed: {ex.Message}"; }
         finally { IsLoadingApps = false; }
     }
 
@@ -167,6 +167,15 @@ public partial class StressTestViewModel : ObservableObject
             StatusMessage = "[!] Event count must be > 0.";
             return;
         }
+        if (EventCount > 1_000_000)
+        {
+            StatusMessage = "[!] Event count capped at 1,000,000.";
+            EventCount = 1_000_000;
+        }
+        else if (EventCount > 100_000)
+        {
+            AppendOutput($"[i] Large run: {EventCount:N0} events may take a long time.");
+        }
         // Validate monkey event percentages sum to 100
         var totalPct = PctTouch + PctMotion + PctTrackball + PctNav + PctSyskeys + PctAppswitch;
         if (totalPct != 100)
@@ -194,21 +203,21 @@ public partial class StressTestViewModel : ObservableObject
 
         _runCts = new CancellationTokenSource();
         IsRunning = true;
-            _metricSnapshots.Clear();
-            var metricsTimer = new System.Threading.Timer(async _ =>
+        _metricSnapshots.Clear();
+        var metricsTimer = new System.Threading.Timer(async _ =>
+        {
+            try
             {
-                try
-                {
-                    if (_runningOnSerial == null || _adbService == null) return;
-                    var memResult = await _adbService.ExecuteCommandAsync(_runningOnSerial, "shell dumpsys meminfo " + TargetPackage);
-                    var snapshot = new Services.MetricSnapshot { Timestamp = DateTime.Now, EventsInjected = EventsInjected };
-                    var pssMatch = System.Text.RegularExpressions.Regex.Match(memResult, @"TOTAL\s+(\d+)");
-                    if (pssMatch.Success && int.TryParse(pssMatch.Groups[1].Value, out var pss))
-                        snapshot.TotalPssKb = pss;
-                    lock (_metricSnapshots) { _metricSnapshots.Add(snapshot); }
-                }
-                catch { /* metrics best-effort */ }
-            }, null, 5000, 5000);
+                if (_runningOnSerial == null || _adbService == null) return;
+                var memResult = await _adbService.ExecuteCommandAsync(_runningOnSerial, "shell dumpsys meminfo " + TargetPackage);
+                var snapshot = new Services.MetricSnapshot { Timestamp = DateTime.Now, EventsInjected = EventsInjected };
+                var pssMatch = System.Text.RegularExpressions.Regex.Match(memResult, @"TOTAL\s+(\d+)");
+                if (pssMatch.Success && int.TryParse(pssMatch.Groups[1].Value, out var pss))
+                    snapshot.TotalPssKb = pss;
+                lock (_metricSnapshots) { _metricSnapshots.Add(snapshot); }
+            }
+            catch { /* metrics best-effort */ }
+        }, null, 5000, 5000);
         CrashCount = 0;
         AnrCount = 0;
         EventsInjected = 0;
@@ -264,7 +273,7 @@ public partial class StressTestViewModel : ObservableObject
             AppendOutput("");
             AppendOutput(report.TrimEnd());
 
-            await _dispatcher.BeginInvoke(() =>
+            await _dispatcher.InvokeAsync(() =>
             {
                 if (!_runCts.IsCancellationRequested)
                 {
@@ -276,11 +285,12 @@ public partial class StressTestViewModel : ObservableObject
         catch (OperationCanceledException)
         {
             await KillOnDeviceMonkeyAsync(_runningOnSerial);
-            await _dispatcher.BeginInvoke(() => StatusMessage = "Cancelled. On-device monkey killed.");
+            await _dispatcher.InvokeAsync(() => StatusMessage = "Cancelled. On-device monkey killed.");
         }
         catch (Exception ex)
         {
-            await _dispatcher.BeginInvoke(() => { StatusMessage = $"[!] Error: {ex.Message}"; AppendOutput($"\nERROR: {ex.Message}"); });
+            AppLogger.Log.Error(ex, "[StressTest] RunMonkeyAsync failed");
+            await _dispatcher.InvokeAsync(() => { StatusMessage = $"[!] Error: {ex.Message}"; AppendOutput($"\nERROR: {ex.Message}"); });
         }
         finally
         {
@@ -325,7 +335,7 @@ public partial class StressTestViewModel : ObservableObject
             await _adbService.ExecuteCommandAsync(serial, "shell pkill -l 9 com.android.commands.monkey");
             await _adbService.ExecuteCommandAsync(serial, "shell pkill -f monkey");
             await _adbService.ExecuteCommandAsync(serial, "shell killall -9 com.android.commands.monkey");
-            await _dispatcher.BeginInvoke(() => AppendOutput("[STOP] On-device monkey terminated."));
+            await _dispatcher.InvokeAsync(() => AppendOutput("[STOP] On-device monkey terminated."));
         }
         catch (Exception ex)
         {
@@ -386,7 +396,7 @@ public partial class StressTestViewModel : ObservableObject
 
     private void AppendOutput(string line)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             // Cap output buffer at ~200KB to prevent UI sluggishness during long runs.
             const int MaxChars = 200_000;
@@ -424,13 +434,13 @@ public partial class StressTestViewModel : ObservableObject
             await File.WriteAllTextAsync(path, header + Output);
             StatusMessage = $"Saved → {path}";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Save failed: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[StressTest] SaveOutputAsync failed"); StatusMessage = $"[!] Save failed: {ex.Message}"; }
     }
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
-            _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
         GC.SuppressFinalize(this);
     }
 }

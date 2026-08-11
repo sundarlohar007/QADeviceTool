@@ -10,12 +10,12 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Background">
                 <Setter.Value>
-                    <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                    <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="CardHdr" TargetType="Border">
-            <Setter Property="Background" Value="#201F1F" />
+            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
             <Setter Property="Padding" Value="16,12" />
             <Setter Property="CornerRadius" Value="12,12,0,0" />
         </Style>
@@ -108,10 +108,10 @@
                         <Button Grid.Column="2" Style="{StaticResource GhostBtn}" Command="{Binding NavigateToPathCommand}" Margin="8,0,0,0" Content="Go" />
                     </Grid>
                 </Border>
-                <DataGrid ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}" AutoGenerateColumns="False" Background="Transparent" BorderThickness="0" RowBackground="Transparent" AlternatingRowBackground="#1F1F25" Foreground="{DynamicResource BrushTextPrimary}" HorizontalGridLinesBrush="{DynamicResource BrushBorder}" VerticalGridLinesBrush="Transparent" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" HeadersVisibility="Column">
+                <DataGrid ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}" AutoGenerateColumns="False" Background="Transparent" BorderThickness="0" RowBackground="Transparent" AlternatingRowBackground="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" HorizontalGridLinesBrush="{DynamicResource BrushBorder}" VerticalGridLinesBrush="Transparent" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" HeadersVisibility="Column">
                     <DataGrid.ColumnHeaderStyle>
                         <Style TargetType="DataGridColumnHeader">
-                            <Setter Property="Background" Value="#201F1F" />
+                            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
                             <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
                             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
                             <Setter Property="FontSize" Value="10" />
@@ -138,7 +138,7 @@
                             </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter Property="Background" Value="#003848" />
+                                    <Setter Property="Background" Value="{DynamicResource BrushCyanGlow}" />
                                     <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
                                 </Trigger>
                             </Style.Triggers>

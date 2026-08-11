@@ -52,7 +52,7 @@ public partial class CommandPaletteWindow : Window, INotifyPropertyChanged
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         SearchBox.Focus();
-        
+
         var fadeIn = (Storyboard)Resources["FadeIn"];
         BeginStoryboard(fadeIn);
     }
@@ -130,7 +130,7 @@ public partial class CommandPaletteWindow : Window, INotifyPropertyChanged
     {
         FilteredCommands.Clear();
         var search = SearchText?.ToLowerInvariant() ?? "";
-        
+
         foreach (var cmd in AllCommands)
         {
             if (string.IsNullOrEmpty(search) ||

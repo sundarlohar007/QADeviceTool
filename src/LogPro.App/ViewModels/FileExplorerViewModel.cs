@@ -16,7 +16,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     private readonly IAdbService _adbService;
     private readonly IIosService _iosService;
     private readonly IDeviceMonitorService _deviceMonitor;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
     private CancellationTokenSource? _loadCts;
 
     [ObservableProperty]
@@ -37,12 +37,12 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private DeviceFile? _selectedFile;
 
-    public FileExplorerViewModel(IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor)
+    public FileExplorerViewModel(IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
 
@@ -56,7 +56,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             if (SelectedDevice != null && !devices.Any(d => d.Serial == SelectedDevice.Serial))
             {
@@ -115,14 +115,14 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
             CurrentPath = "/sdcard/";
         }
 
-        _ = Task.Run(async () => { try { await LoadDirectoryAsync(CurrentPath); } catch (Exception ex) { AppLogger.Log.Warn(ex, "[FileExplorer] Initial directory load failed"); _dispatcher.BeginInvoke(() => StatusMessage = "[!] Failed to load directory."); } });
+        _ = Task.Run(async () => { try { await LoadDirectoryAsync(CurrentPath); } catch (Exception ex) { AppLogger.Log.Warn(ex, "[FileExplorer] Initial directory load failed"); _dispatcher.Post(() => StatusMessage = "[!] Failed to load directory."); } });
     }
 
     partial void OnCurrentPathChanged(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => CurrentPath = "/");
+            _dispatcher.Post(() => CurrentPath = "/");
         }
     }
 
@@ -145,7 +145,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 loadedFiles = await _iosService.ListDirectoryAsync(device.Serial, path);
 
             token.ThrowIfCancellationRequested();
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            _dispatcher.Post(() =>
             {
                 Files.Clear();
 
@@ -169,7 +169,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             Services.AppLogger.Log.Debug(ex, "[FileExplorer] LoadDirectoryAsync failed");
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => StatusMessage = $"Error loading directory: {ex.Message}");
+            _dispatcher.Post(() => StatusMessage = $"Error loading directory: {ex.Message}");
         }
         finally
         {
@@ -307,7 +307,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         if (SelectedDevice == null || SelectedFile == null) return;
         if (SelectedFile.Name == "..") return;
 
-        var confirm = MessageBox.Show($"Are you sure you want to permanently delete from device:\n\n{SelectedFile.Path}", 
+        var confirm = MessageBox.Show($"Are you sure you want to permanently delete from device:\n\n{SelectedFile.Path}",
             "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning);
 
         if (confirm == MessageBoxResult.Yes)
@@ -346,17 +346,17 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     private string GetParentDirectory(string path)
     {
         if (path == "/") return "/";
-        
+
         var trimmed = path.TrimEnd('/');
         var lastSlash = trimmed.LastIndexOf('/');
-        
+
         if (lastSlash <= 0) return "/";
         return trimmed.Substring(0, lastSlash);
     }
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

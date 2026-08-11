@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using LogPro.Helpers;
 using LogPro.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LogPro;
 
@@ -59,10 +60,17 @@ public partial class App : Application
         EarlyLog($"OS Architecture: {(Environment.Is64BitOperatingSystem ? "x64" : "x86")}");
         EarlyLog($"Process Architecture: {(Environment.Is64BitProcess ? "x64" : "x86")}");
         var pathEntries = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(";");
-                EarlyLog($"PATH entries: {pathEntries.Length}");
+        EarlyLog($"PATH entries: {pathEntries.Length}");
 
         // Ensure native DLL paths are initialized for iOS tools
         ToolResolver.InitializeNativePaths();
+
+        // One-time branding migration: %LOCALAPPDATA%\QAQCDeviceTool -> LogPro.
+        // Must precede PreferencesService static init (below) so settings load from the new path.
+        if (!Helpers.PathHelper.MigrateLegacyAppData())
+        {
+            EarlyLog("Legacy app-data migration deferred (target existed or move failed).");
+        }
 
 
         // Apply theme BEFORE MainWindow is instantiated via StartupUri
@@ -73,7 +81,7 @@ public partial class App : Application
         // Set up MainViewModel after window creation (moved from XAML to avoid
         // duplicate VM creation during theme switches via ThemeService)
         if (Application.Current.MainWindow is MainWindow mw)
-        {            mw.DataContext = new LogPro.ViewModels.MainViewModel();}
+        { mw.DataContext = CreateMainViewModel(); }
         EarlyLog("Base OnStartup completed, initializing services...");
 
         try
@@ -84,6 +92,7 @@ public partial class App : Application
 
             // Cleanup old logs based on retention settings
             Services.PreferencesService.CleanupOldLogs();
+            Services.PreferencesService.CleanupOldSessions();
             // First-run privacy notice             if (!PreferencesService.Current.PrivacyNoticeAccepted)             {                 var accepted = System.Windows.MessageBox.Show(                     "LogPro stores logs, screenshots, and session data locally on this machine. No data is sent externally. This data is used for QA testing purposes only. Continue?",                     "Privacy Notice",                     System.Windows.MessageBoxButton.YesNo,                     System.Windows.MessageBoxImage.Information);                 if (accepted == System.Windows.MessageBoxResult.Yes)                 {                     PreferencesService.Current.PrivacyNoticeAccepted = true;                     PreferencesService.Save();                 }             }
             EarlyLog("Old logs cleaned up.");
 
@@ -99,6 +108,35 @@ public partial class App : Application
         {
             EarlyLog("FATAL ERROR DURING INIT", ex);
         }
+    }
+
+    /// <summary>
+    /// Composition root — central place to construct the object graph.
+    /// Swapping an implementation (e.g. IAdbService fake for tests, IUiDispatcher
+    /// for Avalonia later) happens only here.
+    /// </summary>
+    private static LogPro.ViewModels.MainViewModel CreateMainViewModel()
+    {
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection()
+            .AddSingleton<IUiDispatcher>(_ => new Services.WpfUiDispatcher(Application.Current.Dispatcher))
+            .AddSingleton<IDeviceStore, DeviceStore>()
+            .AddSingleton<IAdbService, AdbService>()
+            .AddSingleton<IIosService, IosService>()
+            .AddSingleton<IScrcpyService, ScrcpyService>()
+            .AddSingleton<ISessionService>(sp => new SessionService(
+                sp.GetRequiredService<IAdbService>(),
+                sp.GetRequiredService<IIosService>()))
+            .AddSingleton<IDeviceMonitorService>(sp => new DeviceMonitorService(
+                sp.GetRequiredService<IAdbService>(),
+                sp.GetRequiredService<IIosService>()))
+            .AddSingleton(sp => new DependencyChecker(
+                sp.GetRequiredService<IAdbService>(),
+                sp.GetRequiredService<IIosService>(),
+                sp.GetRequiredService<IScrcpyService>()))
+            .AddSingleton<LogPro.ViewModels.MainViewModel>()
+            .BuildServiceProvider();
+
+        return services.GetRequiredService<LogPro.ViewModels.MainViewModel>();
     }
 
     private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
@@ -138,7 +176,7 @@ public partial class App : Application
         Services.AppLogger.Log.Error(e.Exception, "TaskUnobserved");
         e.SetObserved(); // Prevent crash
     }
-    
+
     protected override void OnExit(ExitEventArgs e)
     {
         EarlyLog("APPLICATION EXITING.");
@@ -155,7 +193,7 @@ public partial class App : Application
     {
         try
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LogPro", "crash-reports");
+            var dir = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "crash-reports");
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
             var filePath = Path.Combine(dir, $"crash-report-{DateTime.Now:yyyyMMdd_HHmmss}.txt");
             var sb = new System.Text.StringBuilder();

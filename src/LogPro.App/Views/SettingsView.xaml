@@ -9,7 +9,7 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Background">
                 <Setter.Value>
-                    <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                    <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                 </Setter.Value>
             </Setter>
             <Setter Property="Padding" Value="20" />
@@ -126,7 +126,7 @@
                                 <Button Grid.Column="1" Style="{StaticResource GhostBtn}" Content="↻ Re-check" Command="{Binding CheckDependenciesCommand}" />
                             </Grid>
 
-                            <Border Background="#003848" BorderBrush="#006B80" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,14">
+                            <Border Background="{DynamicResource BrushCyanGlow}" BorderBrush="{DynamicResource BrushCyanDim}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,14">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,10,0" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushPrimaryLight}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -313,7 +313,7 @@
 
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                 <TextBlock Text="LogPro" Foreground="{DynamicResource BrushTextPrimary}" FontFamily="{StaticResource FontHeader}" FontSize="20" FontWeight="Bold" />
-                                <Border Background="#003848" BorderBrush="#006B80" BorderThickness="1" CornerRadius="4" Padding="8,2" Margin="12,4,0,0" VerticalAlignment="Center">
+                                <Border Background="{DynamicResource BrushCyanGlow}" BorderBrush="{DynamicResource BrushCyanDim}" BorderThickness="1" CornerRadius="4" Padding="8,2" Margin="12,4,0,0" VerticalAlignment="Center">
                                     <TextBlock FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="{DynamicResource BrushPrimaryLight}">
                                         <Run Text="v" /><Run Text="{Binding AppVersion}" />
                                     </TextBlock>

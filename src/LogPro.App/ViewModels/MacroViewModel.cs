@@ -17,7 +17,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
     private readonly MacroService _macroService;
     private readonly IAdbService _adbService;
     private readonly IDeviceMonitorService _deviceMonitor;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -51,16 +51,14 @@ public partial class MacroViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _playCts;
     private string _macroDir;
 
-    public MacroViewModel(MacroService macroService, IAdbService adbService, IDeviceMonitorService deviceMonitor)
+    public MacroViewModel(MacroService macroService, IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _macroService = macroService;
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
-        _macroDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "QAQCDeviceTool", "Macros");
+        _macroDir = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "Macros");
         Directory.CreateDirectory(_macroDir);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
@@ -69,7 +67,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             Devices.Clear();
             foreach (var d in devices)
@@ -144,7 +142,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
                 _recordProcess.WaitForExit(1500);
             }
             catch { /* process already exited */ }
-            
+
             try { _recordProcess.Dispose(); } catch { /* best effort */ }
             _recordProcess = null;
         }
@@ -204,7 +202,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
             StatusMessage = $"Playback complete: {SelectedMacro.Name}";
         }
         catch (OperationCanceledException) { StatusMessage = "Playback cancelled."; }
-        catch (Exception ex) { StatusMessage = $"[!] Playback error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[Macro] PlayMacroAsync failed"); StatusMessage = $"[!] Playback error: {ex.Message}"; }
         finally { IsPlaying = false; }
     }
 
@@ -231,7 +229,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
             Macros.Remove(SelectedMacro);
             StatusMessage = $"Deleted: {SelectedMacro.Name}";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Delete error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[Macro] DeleteMacroAsync failed"); StatusMessage = $"[!] Delete error: {ex.Message}"; }
     }
 
     private void LoadMacroLibrary()

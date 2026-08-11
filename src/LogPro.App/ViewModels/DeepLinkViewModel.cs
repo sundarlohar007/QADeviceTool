@@ -14,7 +14,7 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
     private readonly IAdbService _adbService;
     private readonly IIosService _iosService;
     private readonly IDeviceMonitorService _deviceMonitor;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -31,22 +31,22 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isRouting;
 
-    public DeepLinkViewModel(IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor)
+    public DeepLinkViewModel(IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             var currentSelected = SelectedDevice?.Serial;
-            
+
             Devices.Clear();
             foreach (var d in devices)
             {
@@ -55,7 +55,7 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
                     Devices.Add(d);
                 }
             }
-            
+
             if (!string.IsNullOrEmpty(currentSelected))
             {
                 SelectedDevice = Devices.FirstOrDefault(d => d.Serial == currentSelected);
@@ -119,6 +119,7 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[DeepLink] FireIntentAsync failed");
             StatusMessage = $"[Error] {ex.Message}";
         }
         finally
@@ -129,7 +130,7 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

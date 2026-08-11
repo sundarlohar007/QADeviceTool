@@ -19,7 +19,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     private readonly IScrcpyService _scrcpyService;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly ISessionService _sessionService;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -47,21 +47,21 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         IIosService iosService,
         IScrcpyService scrcpyService,
         IDeviceMonitorService deviceMonitor,
-        ISessionService sessionService)
+        ISessionService sessionService, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _iosService = iosService;
         _scrcpyService = scrcpyService;
         _deviceMonitor = deviceMonitor;
         _sessionService = sessionService;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             Devices.Clear();
             foreach (var d in devices)
@@ -89,7 +89,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     private void SaveDeviceNotes()
     {
         if (SelectedDevice == null) return;
-        
+
         var pref = PreferencesService.GetDevicePreference(SelectedDevice.Serial);
         pref.Notes = DeviceNotes;
         pref.Tag = DeviceTag;
@@ -227,6 +227,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Device] EnableWirelessAsync failed");
             StatusMessage = $"[!] Wireless error: {ex.Message}";
         }
     }
@@ -249,6 +250,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Device] ConnectWirelessAsync failed");
             StatusMessage = $"[!] Connection error: {ex.Message}";
         }
     }
@@ -269,13 +271,14 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Device] DisconnectWirelessAsync failed");
             StatusMessage = $"[!] Disconnect error: {ex.Message}";
         }
     }
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

@@ -17,7 +17,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     private readonly IIosService _iosService;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly ISessionService _sessionService;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -42,30 +42,30 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     private readonly System.Text.StringBuilder _outputBuilder = new();
 
     public AppManagementViewModel(
-        IAdbService adbService, 
-        IIosService iosService, 
+        IAdbService adbService,
+        IIosService iosService,
         IDeviceMonitorService deviceMonitor,
-        ISessionService sessionService)
+        ISessionService sessionService, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
         _sessionService = sessionService;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             var currentSelected = SelectedDevice?.Serial;
-            
+
             Devices.Clear();
             foreach (var d in devices)
                 Devices.Add(d);
-                
+
             if (!string.IsNullOrEmpty(currentSelected))
             {
                 SelectedDevice = Devices.FirstOrDefault(d => d.Serial == currentSelected);
@@ -128,14 +128,14 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     {
         IsLoading = true;
         StatusMessage = "Loading installed applications...";
-        
+
         try
         {
-            var apps = device.Platform == DevicePlatform.Android 
+            var apps = device.Platform == DevicePlatform.Android
                 ? await _adbService.ListInstalledAppsAsync(device.Serial)
                 : await _iosService.ListInstalledAppsAsync(device.Serial);
 
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            _dispatcher.Post(() =>
             {
                 InstalledApps.Clear();
                 foreach (var app in apps)
@@ -146,6 +146,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[AppManagement] LoadAppsAsync failed");
             StatusMessage = $"Error loading apps: {ex.Message}";
         }
         finally
@@ -191,7 +192,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                 if (!string.IsNullOrWhiteSpace(line))
                 {
                     var trimmed = line.Trim();
-                    _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+                    _dispatcher.Post(() =>
                     {
                         _outputBuilder.Append(trimmed + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
                         StatusMessage = $"[Installing] {trimmed}";
@@ -233,6 +234,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[AppManagement] InstallAppAsync failed");
             _outputBuilder.Append(Environment.NewLine + $"ERROR: {ex.Message}" + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
             StatusMessage = $"[!] Install error: {ex.Message}";
         }
@@ -246,14 +248,14 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     private async Task UninstallAppAsync()
     {
         if (SelectedDevice == null || SelectedApp == null) return;
-        
+
         var pkg = SelectedApp.PackageId;
         var confirm = MessageBox.Show(
             $"Are you sure you want to uninstall '{SelectedApp.Name}'?",
             "Confirm Uninstall",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
-            
+
         if (confirm != MessageBoxResult.Yes) return;
 
         IsLoading = true;
@@ -280,6 +282,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[AppManagement] UninstallAppAsync failed");
             StatusMessage = $"[!] Uninstall error: {ex.Message}";
         }
         finally
@@ -312,7 +315,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             var success = await _adbService.ForceStopAppAsync(SelectedDevice.Serial, SelectedApp.PackageId);
             StatusMessage = success ? $"Force stopped: {SelectedApp.PackageId}" : "Failed to force stop.";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Force stop error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[AppManagement] ForceStopAppAsync failed"); StatusMessage = $"[!] Force stop error: {ex.Message}"; }
         finally { IsLoading = false; }
     }
 
@@ -338,7 +341,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             var success = await _adbService.ClearAppDataAsync(SelectedDevice.Serial, SelectedApp.PackageId);
             StatusMessage = success ? $"Data cleared: {SelectedApp.PackageId}" : "Failed to clear data.";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Clear data error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[AppManagement] ClearAppDataAsync failed"); StatusMessage = $"[!] Clear data error: {ex.Message}"; }
         finally { IsLoading = false; }
     }
 
@@ -359,7 +362,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             var lines = details.Split('\n', '\r').Take(30);
             StatusMessage = string.Join(" | ", lines.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()));
         }
-        catch (Exception ex) { StatusMessage = $"[!] Details error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[AppManagement] ViewAppDetailsAsync failed"); StatusMessage = $"[!] Details error: {ex.Message}"; }
         finally { IsLoading = false; }
     }
 
@@ -398,7 +401,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                     ? $"Installed: {Path.GetFileName(path)}"
                     : $"[!] Failed: {result.Message}";
             }
-            catch (Exception ex) { StatusMessage = $"[!] Install error: {ex.Message}"; }
+            catch (Exception ex) { AppLogger.Log.Error(ex, "[AppManagement] InstallFilesAsync failed"); StatusMessage = $"[!] Install error: {ex.Message}"; }
             finally { IsLoading = false; }
         }
 
@@ -407,7 +410,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

@@ -13,12 +13,12 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Background">
                 <Setter.Value>
-                    <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                    <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="CardHdr" TargetType="Border">
-            <Setter Property="Background" Value="#201F1F" />
+            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
             <Setter Property="Padding" Value="16,12" />
             <Setter Property="CornerRadius" Value="12,12,0,0" />
         </Style>
@@ -30,7 +30,7 @@
         </Style>
         <Style x:Key="GreenBtn" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource BrushCyan}" />
-            <Setter Property="Foreground" Value="#001F25" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushVoid}" />
             <Setter Property="FontFamily" Value="{StaticResource FontHeader}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Bold" />
@@ -118,7 +118,7 @@
                 <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <Border Background="#003848" CornerRadius="6" Padding="8,4" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="{Binding IsScreenRecording, Converter={StaticResource BoolToVis}}">
+                <Border Background="{DynamicResource BrushCyanGlow}" CornerRadius="6" Padding="8,4" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="{Binding IsScreenRecording, Converter={StaticResource BoolToVis}}">
                     <StackPanel Orientation="Horizontal">
                         <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushRed}" Margin="0,0,6,0" />
                         <TextBlock Text="REC" Foreground="{DynamicResource BrushRed}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" />
@@ -193,7 +193,7 @@
                                                 <ContentPresenter />
                                             </Border>
                                             <ControlTemplate.Triggers>
-                                                <Trigger Property="IsSelected" Value="True"><Setter TargetName="b" Property="Background" Value="#003848" /></Trigger>
+                                                <Trigger Property="IsSelected" Value="True"><Setter TargetName="b" Property="Background" Value="{DynamicResource BrushCyanGlow}" /></Trigger>
                                                 <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#2A2A33" /></Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>

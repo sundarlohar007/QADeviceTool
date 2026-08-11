@@ -32,7 +32,7 @@ public static class ThemeService
 
     static ThemeService()
     {
-        
+
     }
 
     public static void ApplyStartupTheme(Application app)

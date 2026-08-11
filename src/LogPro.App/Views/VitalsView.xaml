@@ -23,7 +23,7 @@
                                         <RectangleGeometry Rect="0,0,4,4" />
                                     </GeometryDrawing.Geometry>
                                     <GeometryDrawing.Brush>
-                                        <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                                        <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                                     </GeometryDrawing.Brush>
                                 </GeometryDrawing>
                                 <!-- Noise grain (frosted texture) -->

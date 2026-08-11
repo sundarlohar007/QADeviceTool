@@ -14,7 +14,7 @@ public partial class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly IIosService _iosService;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -32,18 +32,18 @@ public partial class ShellViewModel : ObservableObject, IDisposable
     private bool _isExecuting;
     private readonly System.Text.StringBuilder _outputBuilder = new();
 
-    public ShellViewModel(IDeviceMonitorService deviceMonitor, IIosService iosService)
+    public ShellViewModel(IDeviceMonitorService deviceMonitor, IIosService iosService, IUiDispatcher? dispatcher = null)
     {
         _deviceMonitor = deviceMonitor;
         _iosService = iosService;
-        _dispatcher = Application.Current.Dispatcher;
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             var currentSelected = SelectedDevice?.Serial;
 
@@ -136,15 +136,15 @@ public partial class ShellViewModel : ObservableObject, IDisposable
                 var adbPath = ToolResolver.Resolve("adb");
                 var result = await ToolLauncher.RunAsync(adbPath, $"-s {SelectedDevice.Serial} {cmd}", 60000);
 
-            if (!string.IsNullOrWhiteSpace(result.Output))
-            {
-                AppendOutput(result.Output);
-            }
-            if (!string.IsNullOrWhiteSpace(result.Error))
-            {
-                AppendOutput($"[Error]\n{result.Error}");
-            }
-            
+                if (!string.IsNullOrWhiteSpace(result.Output))
+                {
+                    AppendOutput(result.Output);
+                }
+                if (!string.IsNullOrWhiteSpace(result.Error))
+                {
+                    AppendOutput($"[Error]\n{result.Error}");
+                }
+
                 if (!result.Success && string.IsNullOrWhiteSpace(result.Error) && string.IsNullOrWhiteSpace(result.Output))
                 {
                     AppendOutput($"[Command exited with code {result.ExitCode}]");
@@ -153,6 +153,7 @@ public partial class ShellViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Shell] ExecuteCommandAsync failed");
             AppendOutput($"[Exception]\n{ex.Message}");
         }
         finally
@@ -199,7 +200,7 @@ public partial class ShellViewModel : ObservableObject, IDisposable
     private void AppendOutput(string text)
     {
         if (string.IsNullOrEmpty(text)) return;
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.Post(() =>
         {
             _outputBuilder.Append(text.TrimEnd('\r', '\n')).Append('\n');
             if (_outputBuilder.Length > 50000)
@@ -212,7 +213,7 @@ public partial class ShellViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-            _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         GC.SuppressFinalize(this);
     }
 }

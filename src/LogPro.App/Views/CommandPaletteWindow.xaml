@@ -22,8 +22,8 @@
         </Storyboard>
     </Window.Resources>
 
-    <Border Background="{StaticResource BrushBackgroundSurface}" 
-            BorderBrush="{StaticResource BrushSeparator}" 
+    <Border Background="{DynamicResource BrushBackgroundSurface}" 
+            BorderBrush="{DynamicResource BrushSeparator}" 
             BorderThickness="1" 
             CornerRadius="12">
         <Border.Effect>
@@ -43,8 +43,8 @@
                      FontSize="15"
                      FontFamily="{StaticResource FontPrimary}"
                      Background="Transparent"
-                     Foreground="{StaticResource BrushTextPrimary}"
-                     CaretBrush="{StaticResource BrushAccent}"
+                     Foreground="{DynamicResource BrushTextPrimary}"
+                     CaretBrush="{DynamicResource BrushAccent}"
                      BorderThickness="0"
                      Padding="8,10"
                      Margin="0,0,0,10"/>
@@ -71,10 +71,10 @@
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushFillQuaternary}"/>
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushFillQuaternary}"/>
                                         </Trigger>
                                         <Trigger Property="IsSelected" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushFillTertiary}"/>
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushFillTertiary}"/>
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -92,18 +92,18 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{Binding Icon}" 
                                        FontFamily="Segoe MDL2 Assets" FontSize="14"
-                                       Foreground="{StaticResource BrushAccent}"
+                                       Foreground="{DynamicResource BrushAccent}"
                                        VerticalAlignment="Center" Margin="0,0,10,0"/>
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="{Binding Title}" 
-                                           Foreground="{StaticResource BrushTextPrimary}"
+                                           Foreground="{DynamicResource BrushTextPrimary}"
                                            FontSize="13" FontWeight="Medium"/>
                                 <TextBlock Text="{Binding Description}" 
-                                           Foreground="{StaticResource BrushTextSecondary}"
+                                           Foreground="{DynamicResource BrushTextSecondary}"
                                            FontSize="11"/>
                             </StackPanel>
                             <TextBlock Grid.Column="2" Text="{Binding Shortcut}" 
-                                       Foreground="{StaticResource BrushTextTertiary}"
+                                       Foreground="{DynamicResource BrushTextTertiary}"
                                        FontSize="10" VerticalAlignment="Center"/>
                         </Grid>
                     </DataTemplate>
@@ -113,7 +113,7 @@
             <!-- Hint -->
             <TextBlock Grid.Row="1" 
                        Text="Press Enter to execute • Escape to close • ↑↓ to navigate"
-                       Foreground="{StaticResource BrushTextTertiary}"
+                       Foreground="{DynamicResource BrushTextTertiary}"
                        FontSize="10"
                        VerticalAlignment="Bottom"
                        HorizontalAlignment="Center"
