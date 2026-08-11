@@ -106,8 +106,8 @@ public class IosService : IIosService
         return await ToolLauncher.RunAsync(_exe, BuildArgs(udid, subcommand), timeoutMs, outputCallback).ConfigureAwait(false);
     }
 
-    private System.Diagnostics.Process? StartLong(string? udid, string subcommand)
-        => ToolLauncher.StartLongRunning(_exe, BuildArgs(udid, subcommand));
+    private System.Diagnostics.Process? StartLong(string? udid, string subcommand, bool drainStdout = true)
+        => ToolLauncher.StartLongRunning(_exe, BuildArgs(udid, subcommand), drainStdout: drainStdout);
 
     public Task<ToolLauncherResult> ExecuteCommandAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs, Action<string>? outputCallback = null)
         => RunAsync(udid, subcommand, timeoutMs, outputCallback);
@@ -255,7 +255,7 @@ public class IosService : IIosService
         {
             // syslog live streams to stdout by default; SessionService reads stdout and
             // writes the file itself. Using --out would bypass the capture pipeline entirely.
-            return StartLong(udid, "syslog live");
+            return StartLong(udid, "syslog live", drainStdout: false);
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] StartLogCapture failed"); return null; }
     }

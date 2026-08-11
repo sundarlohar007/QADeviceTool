@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>adb</AssemblyName>
+    <RootNamespace>LogPro.TestFakes</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>Fake adb for hardware-free end-to-end tests. Answers devices/logcat/getprop; streams synthetic logcat.</Description>
+  </PropertyGroup>
+
+</Project>

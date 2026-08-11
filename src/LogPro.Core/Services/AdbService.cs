@@ -78,11 +78,11 @@ public class AdbService : IAdbService
         }
     }
 
-    private async Task<System.Diagnostics.Process?> StartAdbLongRunning(string arguments)
+    private async Task<System.Diagnostics.Process?> StartAdbLongRunning(string arguments, bool drainStdout = true)
     {
         try
         {
-            return ToolLauncher.StartLongRunning(_adb, arguments);
+            return ToolLauncher.StartLongRunning(_adb, arguments, drainStdout: drainStdout);
         }
         catch (Exception ex)
         {
@@ -284,7 +284,8 @@ public class AdbService : IAdbService
             _ => "threadtime"
         };
 
-        return await StartAdbLongRunning($"-s {serial} logcat {bufferArg} -v {formatArg}").ConfigureAwait(false);
+        // drainStdout: false — SessionService attaches its own OutputDataReceived + BeginOutputReadLine (BUG-01 fix-completion)
+        return await StartAdbLongRunning($"-s {serial} logcat {bufferArg} -v {formatArg}", drainStdout: false).ConfigureAwait(false);
     }
 
     public async Task<bool> CaptureScreenshotAsync(string serial, string outputPath)

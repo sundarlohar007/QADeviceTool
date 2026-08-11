@@ -26,6 +26,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LogPro.App\LogPro.App.csproj" />
+    <ProjectReference Include="..\LogPro.Cli\LogPro.Cli.csproj" />
+    <ProjectReference Include="..\LogPro.TestFakes\LogPro.TestFakes.csproj" />
   </ItemGroup>
 
   <ItemGroup>
