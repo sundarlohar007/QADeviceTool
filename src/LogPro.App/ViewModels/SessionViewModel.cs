@@ -27,6 +27,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private readonly IIosService _iosService;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly IUiDispatcher _dispatcher;
+    private readonly BugReportService _bugReportService;
 
     // ── Log Viewer Properties ──
     public BulkObservableCollection<LogEntry> LogEntries { get; } = new();
@@ -118,6 +119,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _adbService = adbService;
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
+        _bugReportService = new BugReportService(adbService, iosService);
         _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
 
         LogEntriesView = CollectionViewSource.GetDefaultView(LogEntries);
@@ -168,11 +170,16 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             {
                 if (e.PropertyName == nameof(LogLevelFilterItem.IsSelected))
                 {
+                    _selectedLevelsCache = null; // invalidate cache
                     LogEntriesView.Refresh();
                 }
             };
         }
     }
+
+    private List<LogLevel>? _selectedLevelsCache;
+    private List<LogLevel> SelectedLevels =>
+        _selectedLevelsCache ??= LogLevelFilters.Where(f => f.IsSelected).Select(f => f.Level).ToList();
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
@@ -724,219 +731,16 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            string saveDir = SelectedSession != null && !string.IsNullOrEmpty(SelectedSession.SessionDirectory)
+            var saveDir = SelectedSession != null && !string.IsNullOrEmpty(SelectedSession.SessionDirectory)
                 ? SelectedSession.SessionDirectory
                 : Helpers.PathHelper.GetDefaultSessionsDirectory();
 
-            if (!Directory.Exists(saveDir)) Directory.CreateDirectory(saveDir);
-
-            var deviceHash = Helpers.SecurityHelper.HashSerial(device.Serial);
-            var timestamp = DateTime.Now;
-
             StatusMessage = "Generating Bug Report...";
-            var tempFiles = new List<string>();
-
-            // ── 1. Screenshot ──
-            var snapshotName = $"snapshot_{timestamp:yyyyMMdd_HHmmss}.png";
-            var snapshotPath = Path.Combine(saveDir, snapshotName);
-            if (device.Platform == DevicePlatform.Android)
-                await _adbService.CaptureScreenshotAsync(device.Serial, snapshotPath);
-            else
-                await _iosService.CaptureScreenshotAsync(device.Serial, snapshotPath);
-            if (File.Exists(snapshotPath)) tempFiles.Add(snapshotPath);
-
-            // ── 2. Log Dump (last 20k lines + crash snippets) ──
-            var logDumpName = $"log_dump_{timestamp:yyyyMMdd_HHmmss}.txt";
-            var logDumpPath = Path.Combine(saveDir, logDumpName);
             var logLines = LogEntries.TakeLast(20000).Select(e => e.RawLine).ToList();
-            var logContent = string.Join(Environment.NewLine, logLines);
-
-            // Append crash snippets if crashes were detected
-            if (_crashDetector.DetectedCrashes.Count > 0)
-            {
-                logContent += $"\n\n{new string('=', 60)}\n";
-                logContent += $"CRASHES DETECTED: {_crashDetector.CrashCount}\n";
-                logContent += $"{new string('=', 60)}\n";
-                foreach (var crash in _crashDetector.DetectedCrashes)
-                {
-                    logContent += $"\n--- Crash at {crash.Timestamp:HH:mm:ss.fff} (line #{crash.LineIndex}) ---\n";
-                    logContent += $"Pattern: {crash.Pattern}\n";
-                    logContent += $"Line: {crash.Line}\n";
-                }
-            }
-            await File.WriteAllTextAsync(logDumpPath, logContent);
-            tempFiles.Add(logDumpPath);
-
-            // ── 3. Device Info / Deep Diagnostics ──
-            var infoName = $"device_info_{timestamp:yyyyMMdd_HHmmss}.txt";
-            var infoPath = Path.Combine(saveDir, infoName);
-            var infoContent = new System.Text.StringBuilder();
-            infoContent.AppendLine($"=== LogPro BUG REPORT ===");
-            infoContent.AppendLine($"Generated: {timestamp:yyyy-MM-dd HH:mm:ss}");
-            infoContent.AppendLine($"Device: {device.DisplayName}");
-            infoContent.AppendLine($"Serial (hashed): {deviceHash}");
-            infoContent.AppendLine($"Platform: {device.Platform}");
-            infoContent.AppendLine($"Model: {device.Model}");
-            infoContent.AppendLine($"OS: {device.OsVersion}");
-            infoContent.AppendLine($"Battery: {device.BatteryLevel}%");
-            infoContent.AppendLine($"Session: {SelectedSession?.Name ?? "N/A"}");
-            infoContent.AppendLine($"Log entries: {LogEntries.Count}");
-            infoContent.AppendLine($"Crashes detected: {_crashDetector.CrashCount}");
-
-            if (device.Platform == DevicePlatform.Android)
-            {
-                var serial = device.Serial;
-                infoContent.AppendLine($"\n{new string('=', 60)}");
-                infoContent.AppendLine("SYSTEM PROPERTIES (filtered)");
-                infoContent.AppendLine($"{new string('=', 60)}");
-                // SEC-04: only QA-relevant keys — full getprop leaks device/user data.
-                var allowedKeys = new[]
-                {
-                    "ro.product.model", "ro.product.brand", "ro.product.manufacturer", "ro.product.device",
-                    "ro.build.version.release", "ro.build.version.sdk", "ro.build.display.id",
-                    "ro.build.fingerprint", "ro.hardware", "ro.sf.lcd_density", "ro.build.date"
-                };
-                var props = await _adbService.ExecuteCommandAsync(serial, "shell getprop");
-                var filteredProps = props.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                    .Where(l => allowedKeys.Any(k => l.Contains($"[{k}]:", StringComparison.Ordinal)));
-                infoContent.AppendLine(string.Join("\n", filteredProps));
-
-                var dumpsysSections = new Dictionary<string, string>
-                {
-                    ["MEMINFO"] = "shell dumpsys meminfo",
-                    ["BATTERY"] = "shell dumpsys battery",
-                    ["CPU"] = "shell dumpsys cpuinfo",
-                    ["DISK"] = "shell dumpsys diskstats",
-
-                    // PACKAGE section removed — leaks all installed app details including competitor apps
-                    ["WINDOW"] = "shell dumpsys window",
-                    ["NOTIFICATION"] = "shell dumpsys notification",
-                };
-
-                foreach (var (section, cmd) in dumpsysSections)
-                {
-                    try
-                    {
-                        var output = await _adbService.ExecuteCommandAsync(serial, cmd);
-                        infoContent.AppendLine($"\n{new string('=', 60)}");
-                        infoContent.AppendLine($"DUMPSYS {section}");
-                        infoContent.AppendLine($"{new string('=', 60)}");
-                        infoContent.AppendLine(string.IsNullOrWhiteSpace(output) ? "(empty)" : output);
-                    }
-                    catch { infoContent.AppendLine($"\n=== {section}: Failed to capture ==="); }
-                }
-
-                // Crash buffer logcat
-                try
-                {
-                    var crashLog = await _adbService.ExecuteCommandAsync(serial, "logcat -d -b crash -v threadtime");
-                    infoContent.AppendLine($"\n{new string('=', 60)}");
-                    infoContent.AppendLine("LOGCAT CRASH BUFFER (-b crash)");
-                    infoContent.AppendLine($"{new string('=', 60)}");
-                    infoContent.AppendLine(string.IsNullOrWhiteSpace(crashLog) ? "(empty)" : crashLog);
-                }
-                catch { infoContent.AppendLine("\n=== CRASH BUFFER: Failed ==="); }
-
-                // Tombstone files
-                try
-                {
-                    var tombstones = await _adbService.ExecuteCommandAsync(serial, "shell ls -t /data/tombstones/ 2>/dev/null");
-                    if (!string.IsNullOrWhiteSpace(tombstones) && !tombstones.Contains("No such file"))
-                    {
-                        infoContent.AppendLine($"\n{new string('=', 60)}");
-                        infoContent.AppendLine("TOMBSTONE FILES");
-                        infoContent.AppendLine($"{new string('=', 60)}");
-                        infoContent.AppendLine(tombstones);
-                    }
-                }
-                catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Tombstone dir access failed"); }
-
-                // ANR traces
-                try
-                {
-                    var anr = await _adbService.ExecuteCommandAsync(serial, "shell ls -t /data/anr/ 2>/dev/null");
-                    if (!string.IsNullOrWhiteSpace(anr) && !anr.Contains("No such file"))
-                    {
-                        infoContent.AppendLine($"\n{new string('=', 60)}");
-                        infoContent.AppendLine("ANR TRACES");
-                        infoContent.AppendLine($"{new string('=', 60)}");
-                        infoContent.AppendLine(anr);
-                    }
-                }
-                catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] ANR dir access failed"); }
-            }
-            else
-            {
-                // iOS: include full device info from pymobiledevice3 lockdown info
-                var iosDetails = await _iosService.GetDeviceDetailsAsync(device);
-                infoContent.AppendLine($"\n{new string('=', 60)}");
-                infoContent.AppendLine("iOS DEVICE DETAILS");
-                infoContent.AppendLine($"{new string('=', 60)}");
-                infoContent.AppendLine($"Name: {iosDetails.Name}");
-                infoContent.AppendLine($"Model: {iosDetails.Model}");
-                infoContent.AppendLine($"OS: {iosDetails.OsVersion}");
-                infoContent.AppendLine($"Serial: {Helpers.SecurityHelper.HashSerial(iosDetails.Serial)}");
-
-                // iOS Diagnostics (pymobiledevice3)
-                try
-                {
-                    var diag = await _iosService.GetDiagnosticsAsync(device.Serial);
-                    infoContent.AppendLine($"\n{new string('=', 60)}");
-                    infoContent.AppendLine("iOS DIAGNOSTICS (pymobiledevice3)");
-                    infoContent.AppendLine($"{new string('=', 60)}");
-                    infoContent.AppendLine(diag);
-                }
-                catch { infoContent.AppendLine("\nDiagnostics: Failed to capture."); }
-
-                // iOS Crash Logs
-                try
-                {
-                    var crashes = await _iosService.ListCrashLogsAsync(device.Serial);
-                    if (crashes.Count > 0)
-                    {
-                        infoContent.AppendLine($"\n{new string('=', 60)}");
-                        infoContent.AppendLine($"CRASH LOGS ({crashes.Count} found)");
-                        infoContent.AppendLine($"{new string('=', 60)}");
-                        foreach (var c in crashes.Take(20))
-                            infoContent.AppendLine(c);
-                    }
-                }
-                catch { infoContent.AppendLine("\nCrash logs: Failed to capture."); }
-            }
-
-            await File.WriteAllTextAsync(infoPath, infoContent.ToString());
-            tempFiles.Add(infoPath);
-
-            // ── 4. Screen Recording Clip (if available) ──
-            if (_lastRecordingPath != null && File.Exists(_lastRecordingPath))
-            {
-                // Make a copy of the recording in the bug report dir
-                var recCopyName = $"screenrecording_{timestamp:yyyyMMdd_HHmmss}.mp4";
-                var recCopyPath = Path.Combine(saveDir, recCopyName);
-                File.Copy(_lastRecordingPath, recCopyPath, overwrite: true);
-                tempFiles.Add(recCopyPath);
-            }
-
-            // ── 5. Zip everything ──
-            var zipName = $"BugReport_{deviceHash}_{timestamp:yyyyMMdd_HHmmss}.zip";
-            var zipPath = Path.Combine(saveDir, zipName);
-
-            using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
-            {
-                foreach (var file in tempFiles)
-                {
-                    if (File.Exists(file))
-                        archive.CreateEntryFromFile(file, Path.GetFileName(file));
-                }
-            }
-
-            // Clean up temp files
-            foreach (var file in tempFiles)
-            {
-                try { if (File.Exists(file)) File.Delete(file); } catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Operation failed"); }
-            }
-
-            StatusMessage = $"Bug Report: {zipName} ({tempFiles.Count} artifacts)";
+            var (success, message) = await _bugReportService.GenerateAsync(
+                device, saveDir, SelectedSession?.Name ?? "N/A",
+                logLines, _crashDetector.DetectedCrashes, _lastRecordingPath);
+            StatusMessage = message;
         }
         catch (Exception ex)
         {
@@ -1248,7 +1052,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         if (obj is not LogEntry entry) return false;
 
-        var selectedLevels = LogLevelFilters.Where(f => f.IsSelected).Select(f => f.Level).ToList();
+        var selectedLevels = SelectedLevels;
 
         if (selectedLevels.Count > 0 && !selectedLevels.Contains(entry.Level))
             return false;
@@ -1263,9 +1067,27 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         return true;
     }
 
+    private CancellationTokenSource? _searchDebounceCts;
+
     partial void OnSearchTextChanged(string value)
     {
-        LogEntriesView.Refresh();
+        // FEAT-03: debounce 300ms — avoid re-filtering 100k+ entries on every keystroke
+        var oldCts = _searchDebounceCts;
+        _searchDebounceCts = new CancellationTokenSource();
+        try { oldCts?.Cancel(); } catch { /* best effort */ }
+        try { oldCts?.Dispose(); } catch { /* best effort */ }
+        var token = _searchDebounceCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(300, token);
+                if (!token.IsCancellationRequested)
+                    _dispatcher.Post(() => LogEntriesView.Refresh());
+            }
+            catch (OperationCanceledException) { /* debounced */ }
+        });
     }
 
     partial void OnSelectedLogLevelChanged(LogLevel value)

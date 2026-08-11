@@ -484,7 +484,7 @@ public class SessionService : ISessionService
     }
 
     /// <summary>
-    /// Exports session logs to JSON format.
+    /// Exports session logs to JSON format. Streams via Utf8JsonWriter — never buffers the whole file.
     /// </summary>
     public async Task<bool> ExportToJsonAsync(LogSession session, string outputPath, bool anonymize = false)
     {
@@ -493,7 +493,10 @@ public class SessionService : ISessionService
             if (!File.Exists(session.LogFilePath)) return false;
 
             using var reader = new StreamReader(session.LogFilePath);
-            var entries = new List<Dictionary<string, string>>();
+            await using var outStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            await using var jsonWriter = new System.Text.Json.Utf8JsonWriter(outStream, new System.Text.Json.JsonWriterOptions { Indented = true });
+
+            jsonWriter.WriteStartArray();
 
             string? line;
             while ((line = await reader.ReadLineAsync()) != null)
@@ -501,21 +504,17 @@ public class SessionService : ISessionService
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
                 var parsed = ParseLogLine(line);
+                var message = anonymize ? AnonymizeDeviceInfo(parsed["Message"]) : parsed["Message"];
 
-                if (anonymize)
-                {
-                    parsed["Message"] = AnonymizeDeviceInfo(parsed["Message"]);
-                }
-
-                entries.Add(parsed);
+                jsonWriter.WriteStartObject();
+                jsonWriter.WriteString("Timestamp", parsed["Timestamp"]);
+                jsonWriter.WriteString("Level", parsed["Level"]);
+                jsonWriter.WriteString("Message", message);
+                jsonWriter.WriteEndObject();
             }
 
-            var json = System.Text.Json.JsonSerializer.Serialize(entries, new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-
-            await File.WriteAllTextAsync(outputPath, json);
+            jsonWriter.WriteEndArray();
+            await jsonWriter.FlushAsync();
             return true;
         }
         catch (Exception ex)
