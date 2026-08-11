@@ -52,3 +52,20 @@ public class InverseBoolConverter : IValueConverter
         return false;
     }
 }
+
+public class NullToVisibilityConverter : IValueConverter
+{
+    public static readonly NullToVisibilityConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var hasValue = value != null && value != System.Windows.DependencyProperty.UnsetValue;
+        var invert = parameter as string == "Invert";
+        return (hasValue != invert) ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}

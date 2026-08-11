@@ -242,6 +242,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
             catch (Exception ex)
             {
+                AppLogger.Log.Error(ex, "[Session] Auto-capture failed");
                 StatusMessage = $"[!] Auto-capture error: {ex.Message}";
             }
             finally
@@ -337,6 +338,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] StartCapture failed");
             StatusMessage = $"[!] Error: {ex.Message}";
         }
     }
@@ -562,6 +564,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] StopCapture failed");
             StatusMessage = $"[!] Error stopping: {ex.Message}";
         }
     }
@@ -587,6 +590,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] SaveLogAsync failed");
             StatusMessage = $"[!] Save error: {ex.Message}";
         }
     }
@@ -620,6 +624,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] ExportCsvAsync failed");
             StatusMessage = $"[!] Export error: {ex.Message}";
         }
     }
@@ -653,6 +658,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] ExportJsonAsync failed");
             StatusMessage = $"[!] Export error: {ex.Message}";
         }
     }
@@ -701,6 +707,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] TakeSnapshotAsync failed");
             StatusMessage = $"[!] Snapshot error: {ex.Message}";
         }
     }
@@ -780,10 +787,19 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             {
                 var serial = device.Serial;
                 infoContent.AppendLine($"\n{new string('=', 60)}");
-                infoContent.AppendLine("SYSTEM PROPERTIES (getprop)");
+                infoContent.AppendLine("SYSTEM PROPERTIES (filtered)");
                 infoContent.AppendLine($"{new string('=', 60)}");
+                // SEC-04: only QA-relevant keys — full getprop leaks device/user data.
+                var allowedKeys = new[]
+                {
+                    "ro.product.model", "ro.product.brand", "ro.product.manufacturer", "ro.product.device",
+                    "ro.build.version.release", "ro.build.version.sdk", "ro.build.display.id",
+                    "ro.build.fingerprint", "ro.hardware", "ro.sf.lcd_density", "ro.build.date"
+                };
                 var props = await _adbService.ExecuteCommandAsync(serial, "shell getprop");
-                infoContent.AppendLine(props);
+                var filteredProps = props.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Where(l => allowedKeys.Any(k => l.Contains($"[{k}]:", StringComparison.Ordinal)));
+                infoContent.AppendLine(string.Join("\n", filteredProps));
 
                 var dumpsysSections = new Dictionary<string, string>
                 {
@@ -924,6 +940,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] GenerateBugReportAsync failed");
             StatusMessage = $"[!] Bug Report error: {ex.Message}";
         }
     }
@@ -948,6 +965,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] CreateSession failed");
             StatusMessage = $"[!] Error: {ex.Message}";
         }
     }
@@ -977,6 +995,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] DeleteSession failed");
             StatusMessage = $"[!] Error: {ex.Message}";
         }
     }
@@ -1090,6 +1109,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] StartScreenRecordAsync failed");
             StatusMessage = $"[!] Screen record error: {ex.Message}";
         }
     }
@@ -1121,6 +1141,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] StopScreenRecordAsync failed");
             IsScreenRecording = false;
             ScreenRecordStatus = string.Empty;
             StatusMessage = $"[!] Screen record stop error: {ex.Message}";
@@ -1154,6 +1175,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] CopyToClipboard failed");
             StatusMessage = $"[!] Copy failed: {ex.Message}";
         }
     }
@@ -1327,6 +1349,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Session] LoadSessionLogSafeAsync failed");
             await _dispatcher.InvokeAsync(() =>
                 StatusMessage = $"Could not load log file: {ex.Message}");
         }

@@ -146,6 +146,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[AppManagement] LoadAppsAsync failed");
             StatusMessage = $"Error loading apps: {ex.Message}";
         }
         finally
@@ -233,6 +234,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[AppManagement] InstallAppAsync failed");
             _outputBuilder.Append(Environment.NewLine + $"ERROR: {ex.Message}" + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
             StatusMessage = $"[!] Install error: {ex.Message}";
         }
@@ -280,6 +282,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[AppManagement] UninstallAppAsync failed");
             StatusMessage = $"[!] Uninstall error: {ex.Message}";
         }
         finally
@@ -312,7 +315,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             var success = await _adbService.ForceStopAppAsync(SelectedDevice.Serial, SelectedApp.PackageId);
             StatusMessage = success ? $"Force stopped: {SelectedApp.PackageId}" : "Failed to force stop.";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Force stop error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[AppManagement] ForceStopAppAsync failed"); StatusMessage = $"[!] Force stop error: {ex.Message}"; }
         finally { IsLoading = false; }
     }
 
@@ -338,7 +341,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             var success = await _adbService.ClearAppDataAsync(SelectedDevice.Serial, SelectedApp.PackageId);
             StatusMessage = success ? $"Data cleared: {SelectedApp.PackageId}" : "Failed to clear data.";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Clear data error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[AppManagement] ClearAppDataAsync failed"); StatusMessage = $"[!] Clear data error: {ex.Message}"; }
         finally { IsLoading = false; }
     }
 
@@ -359,7 +362,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             var lines = details.Split('\n', '\r').Take(30);
             StatusMessage = string.Join(" | ", lines.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()));
         }
-        catch (Exception ex) { StatusMessage = $"[!] Details error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[AppManagement] ViewAppDetailsAsync failed"); StatusMessage = $"[!] Details error: {ex.Message}"; }
         finally { IsLoading = false; }
     }
 
@@ -398,7 +401,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                     ? $"Installed: {Path.GetFileName(path)}"
                     : $"[!] Failed: {result.Message}";
             }
-            catch (Exception ex) { StatusMessage = $"[!] Install error: {ex.Message}"; }
+            catch (Exception ex) { AppLogger.Log.Error(ex, "[AppManagement] InstallFilesAsync failed"); StatusMessage = $"[!] Install error: {ex.Message}"; }
             finally { IsLoading = false; }
         }
 

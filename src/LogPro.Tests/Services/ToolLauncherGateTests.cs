@@ -8,13 +8,14 @@ public class ToolLauncherGateTests
     public async Task SameDevice_SecondCommandWaitsForFirst()
     {
         var first = await ToolLauncher.TestAcquireAsync("-s R12345678 cmd");
+        first.Should().NotBeNull();
         var second = await ToolLauncher.TestAcquireAsync("-s R12345678 cmd", waitMs: 50);
         second.Should().BeNull("same-device commands must serialize");
 
-        first.Dispose();
+        first!.Dispose();
         var after = await ToolLauncher.TestAcquireAsync("-s R12345678 cmd", waitMs: 50);
         after.Should().NotBeNull("gate must release when first command completes");
-        after.Dispose();
+        after!.Dispose();
     }
 
     [Fact]
@@ -23,8 +24,8 @@ public class ToolLauncherGateTests
         var first = await ToolLauncher.TestAcquireAsync("-s DEVICE_A cmd");
         var second = await ToolLauncher.TestAcquireAsync("-s DEVICE_B cmd", waitMs: 50);
         second.Should().NotBeNull("different devices must run in parallel");
-        first.Dispose();
-        second.Dispose();
+        first!.Dispose();
+        second!.Dispose();
     }
 
     [Fact]
@@ -32,6 +33,6 @@ public class ToolLauncherGateTests
     {
         var first = await ToolLauncher.TestAcquireAsync("version");
         first.Should().NotBeNull();
-        first.Dispose();
+        first!.Dispose();
     }
 }

@@ -256,7 +256,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
 
         DiscoveredPorts = ports.Count > 0
             ? string.Join(", ", ports)
-            : "No listening ports found. Ensure ADB is running.";
+            : "Automatic discovery isn't reliable — enter IP:Port and code from the device (Settings > Developer options > Wireless debugging > Pair device).";
 
         IsLoading = false;
     }

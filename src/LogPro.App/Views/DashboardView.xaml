@@ -256,10 +256,13 @@
                                                             <Style TargetType="Ellipse">
                                                                 <Setter Property="Fill" Value="{DynamicResource BrushRed}" />
                                                                 <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding ConnectionState}" Value="Connected">
+                                                                    <DataTrigger Binding="{Binding ConnectionState}" Value="Online">
                                                                         <Setter Property="Fill" Value="#4ADE80" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding ConnectionState}" Value="Unauthorized">
+                                                                        <Setter Property="Fill" Value="#F59E0B" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding ConnectionState}" Value="PendingTrust">
                                                                         <Setter Property="Fill" Value="#F59E0B" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>

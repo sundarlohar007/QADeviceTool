@@ -135,7 +135,24 @@
                                         <TextBlock Text="{Binding DisplayName}" FontFamily="{StaticResource FontBody}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
                                         <TextBlock Text="{Binding Serial}" FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="{DynamicResource BrushTextMuted}" />
                                     </StackPanel>
-                                    <Ellipse Grid.Column="2" Width="8" Height="8" Fill="#4ADE80" VerticalAlignment="Center" />
+                                    <Ellipse Grid.Column="2" Width="8" Height="8" VerticalAlignment="Center">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="{DynamicResource BrushRed}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ConnectionState}" Value="Online">
+                                                        <Setter Property="Fill" Value="#4ADE80" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding ConnectionState}" Value="Unauthorized">
+                                                        <Setter Property="Fill" Value="#F59E0B" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding ConnectionState}" Value="PendingTrust">
+                                                        <Setter Property="Fill" Value="#F59E0B" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -164,7 +181,7 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
-                            <StackPanel Visibility="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}, ConverterParameter=Vis}">
+                            <StackPanel Visibility="{Binding SelectedDevice, Converter={x:Static conv:NullToVisibilityConverter.Instance}}">
                                 <TextBlock Text="{Binding SelectedDevice.DisplayName}" FontFamily="{StaticResource FontHeader}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4" />
                                 <TextBlock Text="{Binding SelectedDevice.StatusText}" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="#4ADE80" Margin="0,0,0,16" />
                                 <TextBox Text="{Binding DeviceDetails}" FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{DynamicResource BrushTextPrimary}" Background="{DynamicResource BrushBase}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="12" IsReadOnly="True" TextWrapping="NoWrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MinHeight="200" />

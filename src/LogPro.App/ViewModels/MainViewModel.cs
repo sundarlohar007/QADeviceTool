@@ -171,7 +171,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             "vitals" => VitalsVM,
             "files" => FileExplorerVM,
             "macros" => MacroVM,
-            "StressTest" => StressTestVM,
+            "stresstest" => StressTestVM,
             "settings" => SettingsVM,
             _ => DashboardVM
         };

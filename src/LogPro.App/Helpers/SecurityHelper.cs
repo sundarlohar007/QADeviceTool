@@ -16,6 +16,10 @@ public static class SecurityHelper
         return Convert.ToHexString(hash)[..16].ToLower();
     }
 
+    /// <summary>True if the string looks like a hashed serial key (16 lowercase hex chars).</summary>
+    public static bool IsHashedSerialKey(string key)
+        => key.Length == 16 && key.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
+
     public static string GetSafeSessionName(string? customName, string deviceHash, string platform)
     {
         if (!string.IsNullOrWhiteSpace(customName))

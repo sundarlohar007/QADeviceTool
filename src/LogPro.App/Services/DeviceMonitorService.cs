@@ -20,7 +20,6 @@ public class DeviceMonitorService : IDeviceMonitorService
 
     private readonly ConcurrentDictionary<string, int> _missedPollCount = new(StringComparer.Ordinal);
     private const int MissedPollThreshold = 3;
-    private bool _isFirstPoll = true;
 
     public event Action<List<DeviceInfo>>? DevicesChanged;
     public event Action<DeviceInfo>? DeviceConnected;
@@ -70,7 +69,7 @@ public class DeviceMonitorService : IDeviceMonitorService
             await Task.WhenAll(androidTask, iosTask).ConfigureAwait(false);
 
             try { newDevices.AddRange(androidTask.Result); }
-            catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to get Android devices"); }
+            catch (Exception ex) { AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get Android devices"); }
 
             try { newDevices.AddRange(iosTask.Result); }
             catch (Exception ex) { AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get iOS devices"); }

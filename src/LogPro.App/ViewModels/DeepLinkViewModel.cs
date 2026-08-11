@@ -119,6 +119,7 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[DeepLink] FireIntentAsync failed");
             StatusMessage = $"[Error] {ex.Message}";
         }
         finally

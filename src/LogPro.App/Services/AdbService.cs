@@ -768,20 +768,10 @@ public class AdbService : IAdbService
         return (result.Success, result.Output.Trim());
     }
 
-    public async Task<List<string>> DiscoverPairingPortsAsync()
+    public Task<List<string>> DiscoverPairingPortsAsync()
     {
-        var ports = new List<string>();
-        var testPorts = new[] { 47201, 47202, 47203 };
-
-        foreach (var port in testPorts)
-        {
-            var result = await RunAdbAsync($"pair 127.0.0.1:{port}", 3000);
-            if (result.Output.Contains("Listening"))
-            {
-                ports.Add($"127.0.0.1:{port}");
-            }
-        }
-
-        return ports;
+        // BUG-10: hardcoded port scanning is broken (pairing ports are on the device, not localhost)
+        // and fires bogus pairing attempts. Manual entry is supported — return empty.
+        return Task.FromResult(new List<string>());
     }
 }

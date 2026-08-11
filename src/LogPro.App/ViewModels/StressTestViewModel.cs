@@ -120,7 +120,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
             ApplyAppFilter();
             StatusMessage = $"Loaded {_allApps.Count} apps. Type to search.";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Load apps failed: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[StressTest] RefreshAppsAsync failed"); StatusMessage = $"[!] Load apps failed: {ex.Message}"; }
         finally { IsLoadingApps = false; }
     }
 
@@ -166,6 +166,15 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         {
             StatusMessage = "[!] Event count must be > 0.";
             return;
+        }
+        if (EventCount > 1_000_000)
+        {
+            StatusMessage = "[!] Event count capped at 1,000,000.";
+            EventCount = 1_000_000;
+        }
+        else if (EventCount > 100_000)
+        {
+            AppendOutput($"[i] Large run: {EventCount:N0} events may take a long time.");
         }
         // Validate monkey event percentages sum to 100
         var totalPct = PctTouch + PctMotion + PctTrackball + PctNav + PctSyskeys + PctAppswitch;
@@ -280,6 +289,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[StressTest] RunMonkeyAsync failed");
             await _dispatcher.InvokeAsync(() => { StatusMessage = $"[!] Error: {ex.Message}"; AppendOutput($"\nERROR: {ex.Message}"); });
         }
         finally
@@ -424,7 +434,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
             await File.WriteAllTextAsync(path, header + Output);
             StatusMessage = $"Saved → {path}";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Save failed: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[StressTest] SaveOutputAsync failed"); StatusMessage = $"[!] Save failed: {ex.Message}"; }
     }
 
     public void Dispose()

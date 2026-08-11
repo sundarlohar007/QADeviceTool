@@ -227,6 +227,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Device] EnableWirelessAsync failed");
             StatusMessage = $"[!] Wireless error: {ex.Message}";
         }
     }
@@ -249,6 +250,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Device] ConnectWirelessAsync failed");
             StatusMessage = $"[!] Connection error: {ex.Message}";
         }
     }
@@ -269,6 +271,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Device] DisconnectWirelessAsync failed");
             StatusMessage = $"[!] Disconnect error: {ex.Message}";
         }
     }

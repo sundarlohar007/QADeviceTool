@@ -77,6 +77,16 @@ public static class PreferencesService
         {
             Current.DevicePreferences = new Dictionary<string, DevicePreference>();
         }
+
+        // SEC-06: migrate raw serial keys to hashed keys (one-time).
+        var rawKeys = Current.DevicePreferences.Keys
+            .Where(k => !Helpers.SecurityHelper.IsHashedSerialKey(k)).ToList();
+        foreach (var rawKey in rawKeys)
+        {
+            var pref = Current.DevicePreferences[rawKey];
+            Current.DevicePreferences.Remove(rawKey);
+            Current.DevicePreferences[Helpers.SecurityHelper.HashSerial(rawKey)] = pref;
+        }
     }
 
     public static void Save()
@@ -96,17 +106,18 @@ public static class PreferencesService
 
     public static DevicePreference GetDevicePreference(string serial)
     {
-        if (Current.DevicePreferences.TryGetValue(serial, out var pref))
+        var key = Helpers.SecurityHelper.HashSerial(serial);
+        if (Current.DevicePreferences.TryGetValue(key, out var pref))
             return pref;
 
         var newPref = new DevicePreference();
-        Current.DevicePreferences[serial] = newPref;
+        Current.DevicePreferences[key] = newPref;
         return newPref;
     }
 
     public static void SaveDevicePreference(string serial, DevicePreference pref)
     {
-        Current.DevicePreferences[serial] = pref;
+        Current.DevicePreferences[Helpers.SecurityHelper.HashSerial(serial)] = pref;
         Save();
     }
 
@@ -125,7 +136,12 @@ public static class PreferencesService
             if (Directory.Exists(logsDir))
             {
                 Directory.Delete(logsDir, true);
-                var sessionsDir = Path.Combine(appDataDir, "sessions"); if (Directory.Exists(sessionsDir)) { Directory.Delete(sessionsDir, true); }
+            }
+
+            var sessionsDir = Path.Combine(appDataDir, "sessions");
+            if (Directory.Exists(sessionsDir))
+            {
+                Directory.Delete(sessionsDir, true);
             }
 
             Current = new AppPreferences();
@@ -174,6 +190,40 @@ public static class PreferencesService
         catch (Exception ex)
         {
             AppLogger.Log.Debug(ex, "Failed to cleanup old logs.");
+        }
+    }
+
+    /// <summary>Purges session directories (logs, screenshots, recordings) older than retention. SEC-02/03, COMP-01.</summary>
+    public static void CleanupOldSessions()
+    {
+        try
+        {
+            var retentionDays = Current.LogRetentionDays;
+            if (retentionDays <= 0) return;
+
+            var sessionsDir = Current.SessionsRootDirectory;
+            if (string.IsNullOrWhiteSpace(sessionsDir) || !Directory.Exists(sessionsDir)) return;
+
+            var cutoffDate = DateTime.Now.AddDays(-retentionDays);
+            int deletedCount = 0;
+            foreach (var dir in Directory.GetDirectories(sessionsDir))
+            {
+                var dirInfo = new DirectoryInfo(dir);
+                if (dirInfo.LastWriteTime < cutoffDate)
+                {
+                    dirInfo.Delete(recursive: true);
+                    deletedCount++;
+                }
+            }
+
+            if (deletedCount > 0)
+            {
+                AppLogger.Log.Info($"Cleaned up {deletedCount} old session directories (retention: {retentionDays} days).");
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Warn(ex, "Failed to cleanup old sessions.");
         }
     }
 }

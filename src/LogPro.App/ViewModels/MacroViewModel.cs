@@ -202,7 +202,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
             StatusMessage = $"Playback complete: {SelectedMacro.Name}";
         }
         catch (OperationCanceledException) { StatusMessage = "Playback cancelled."; }
-        catch (Exception ex) { StatusMessage = $"[!] Playback error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[Macro] PlayMacroAsync failed"); StatusMessage = $"[!] Playback error: {ex.Message}"; }
         finally { IsPlaying = false; }
     }
 
@@ -229,7 +229,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
             Macros.Remove(SelectedMacro);
             StatusMessage = $"Deleted: {SelectedMacro.Name}";
         }
-        catch (Exception ex) { StatusMessage = $"[!] Delete error: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[Macro] DeleteMacroAsync failed"); StatusMessage = $"[!] Delete error: {ex.Message}"; }
     }
 
     private void LoadMacroLibrary()

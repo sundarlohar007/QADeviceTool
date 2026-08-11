@@ -120,7 +120,7 @@
                         <TextBlock Text="OUTPUT" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
-                <TextBox Style="{StaticResource MonoBlock}" Text="{Binding ShellOutput, Mode=OneWay}" Background="{DynamicResource BrushVoid}" BorderThickness="0" Margin="0" />
+                <TextBox Style="{StaticResource MonoBlock}" Text="{Binding ShellOutput, Mode=OneWay}" Background="{DynamicResource BrushVoid}" BorderThickness="0" Margin="0" TextChanged="OutputTextBox_TextChanged" />
             </DockPanel>
         </Border>
         <Grid Grid.Row="2" Margin="24,0,24,24">

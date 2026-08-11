@@ -37,7 +37,8 @@ public partial class SettingsViewModel : ObservableObject
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
-    private string _appVersion = "3.0.0";
+    private string _appVersion =
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown";
 
     [ObservableProperty]
     private ObservableCollection<LogRetentionOption> _logRetentionOptions = new();
@@ -142,7 +143,7 @@ public partial class SettingsViewModel : ObservableObject
             else
                 ClearDataStatus = "Logs directory not found.";
         }
-        catch (Exception ex) { ClearDataStatus = $"Failed to open logs: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[Settings] OpenLogsFolder failed"); ClearDataStatus = $"Failed to open logs: {ex.Message}"; }
     }
 
     [RelayCommand]
@@ -203,7 +204,7 @@ public partial class SettingsViewModel : ObservableObject
 
         DiscoveredPorts = ports.Count > 0
             ? string.Join(", ", ports)
-            : "No listening ports found.";
+            : "Automatic discovery isn't reliable — enter IP:Port and code from the device (Wireless debugging > Pair device).";
 
         IsLoading = false;
     }
@@ -294,7 +295,7 @@ public partial class SettingsViewModel : ObservableObject
             else
                 ClearDataStatus = "App data folder not found.";
         }
-        catch (Exception ex) { ClearDataStatus = $"Export failed: {ex.Message}"; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[Settings] ExportMyData failed"); ClearDataStatus = $"Export failed: {ex.Message}"; }
     }
 
 }

@@ -153,6 +153,7 @@ public partial class ShellViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            AppLogger.Log.Error(ex, "[Shell] ExecuteCommandAsync failed");
             AppendOutput($"[Exception]\n{ex.Message}");
         }
         finally
