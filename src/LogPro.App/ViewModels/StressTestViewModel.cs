@@ -41,7 +41,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _eventCount = 1000;
     [ObservableProperty] private int _seed = 0;
     [ObservableProperty] private int _throttleMs = 300;
-    [ObservableProperty] private int _pctTouch = 30;
+    [ObservableProperty] private int _pctTouch = 50; // defaults must sum to 100 (validation requires it)
     [ObservableProperty] private int _pctMotion = 20;
     [ObservableProperty] private int _pctTrackball = 5;
     [ObservableProperty] private int _pctNav = 10;
@@ -65,11 +65,11 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(CanRun))]
     private bool _isPlatformSupported;
 
-    public StressTestViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor)
+    public StressTestViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         TargetPackage = PreferencesService.Current.TargetPackageName;
 

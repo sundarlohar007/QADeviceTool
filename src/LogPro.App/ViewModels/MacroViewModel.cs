@@ -51,12 +51,12 @@ public partial class MacroViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _playCts;
     private string _macroDir;
 
-    public MacroViewModel(MacroService macroService, IAdbService adbService, IDeviceMonitorService deviceMonitor)
+    public MacroViewModel(MacroService macroService, IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _macroService = macroService;
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _macroDir = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "Macros");
         Directory.CreateDirectory(_macroDir);

@@ -41,11 +41,11 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private ObservableCollection<VitalsLogEntry> _vitalsLog = new();
     [ObservableProperty] private bool _autoScroll = true;
 
-    public VitalsViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor)
+    public VitalsViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _pollTimer.Tick += (s, e) =>

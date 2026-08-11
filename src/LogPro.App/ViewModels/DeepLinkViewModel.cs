@@ -31,12 +31,12 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isRouting;
 
-    public DeepLinkViewModel(IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor)
+    public DeepLinkViewModel(IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }

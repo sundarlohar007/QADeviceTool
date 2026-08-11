@@ -32,11 +32,11 @@ public partial class ShellViewModel : ObservableObject, IDisposable
     private bool _isExecuting;
     private readonly System.Text.StringBuilder _outputBuilder = new();
 
-    public ShellViewModel(IDeviceMonitorService deviceMonitor, IIosService iosService)
+    public ShellViewModel(IDeviceMonitorService deviceMonitor, IIosService iosService, IUiDispatcher? dispatcher = null)
     {
         _deviceMonitor = deviceMonitor;
         _iosService = iosService;
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }

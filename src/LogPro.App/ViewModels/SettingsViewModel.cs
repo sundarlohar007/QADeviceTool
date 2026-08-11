@@ -70,12 +70,12 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading;
 
-    public SettingsViewModel(DependencyChecker dependencyChecker, ISessionService sessionService, IAdbService adbService)
+    public SettingsViewModel(DependencyChecker dependencyChecker, ISessionService sessionService, IAdbService adbService, IUiDispatcher? dispatcher = null)
     {
         _dependencyChecker = dependencyChecker;
         _sessionService = sessionService;
         _adbService = adbService;
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
         _sessionsDirectory = sessionService.SessionsRootDirectory;
 
         InitializeLogRetentionOptions();

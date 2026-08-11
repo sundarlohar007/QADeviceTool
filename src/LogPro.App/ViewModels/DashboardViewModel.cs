@@ -70,7 +70,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         IScrcpyService scrcpyService,
         ISessionService sessionService,
         IDeviceMonitorService deviceMonitor,
-        DependencyChecker dependencyChecker)
+        DependencyChecker dependencyChecker, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _iosService = iosService;
@@ -78,7 +78,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         _sessionService = sessionService;
         _deviceMonitor = deviceMonitor;
         _dependencyChecker = dependencyChecker;
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
 

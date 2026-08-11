@@ -37,12 +37,12 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private DeviceFile? _selectedFile;
 
-    public FileExplorerViewModel(IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor)
+    public FileExplorerViewModel(IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
 

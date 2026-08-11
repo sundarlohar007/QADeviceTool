@@ -47,14 +47,14 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         IIosService iosService,
         IScrcpyService scrcpyService,
         IDeviceMonitorService deviceMonitor,
-        ISessionService sessionService)
+        ISessionService sessionService, IUiDispatcher? dispatcher = null)
     {
         _adbService = adbService;
         _iosService = iosService;
         _scrcpyService = scrcpyService;
         _deviceMonitor = deviceMonitor;
         _sessionService = sessionService;
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }

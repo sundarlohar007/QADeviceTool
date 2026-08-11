@@ -113,14 +113,14 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private LogcatFormat _selectedLogFormat = LogcatFormat.ThreadTime;
 
-    public SessionViewModel(ISessionService sessionService, IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor)
+    public SessionViewModel(ISessionService sessionService, IAdbService adbService, IIosService iosService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
     {
         _sessionService = sessionService;
         _adbService = adbService;
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
         _bugReportService = new BugReportService(adbService, iosService);
-        _dispatcher = new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
 
         LogEntriesView = CollectionViewSource.GetDefaultView(LogEntries);
         LogEntriesView.Filter = FilterLogEntry;
