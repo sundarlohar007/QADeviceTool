@@ -129,6 +129,7 @@ public static class PathHelper
     /// <summary>Restricts directory access to current user (owner-only) on Windows.</summary>
     public static void RestrictDirectoryAccess(string directoryPath)
     {
+        if (!OperatingSystem.IsWindows()) return; // ACL API is Windows-only (SEC-13)
         try
         {
             if (!System.IO.Directory.Exists(directoryPath)) return;

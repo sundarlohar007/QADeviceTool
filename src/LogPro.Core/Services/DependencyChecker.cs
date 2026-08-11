@@ -47,6 +47,14 @@ public class DependencyChecker
             Description = "Required for Android USB device communication"
         };
 
+        if (!OperatingSystem.IsWindows())
+        {
+            status.IsInstalled = true;
+            status.Version = "N/A";
+            status.StatusMessage = "USB driver check is Windows-only; not applicable here.";
+            return status;
+        }
+
         try
         {
             var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(

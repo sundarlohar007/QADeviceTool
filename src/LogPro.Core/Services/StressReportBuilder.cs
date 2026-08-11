@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace LogPro.Services;
 
-internal sealed class MetricSnapshot
+public sealed class MetricSnapshot
 {
     public DateTime Timestamp { get; set; }
     public int? TotalPssKb { get; set; }
@@ -11,7 +11,7 @@ internal sealed class MetricSnapshot
     public int EventsInjected { get; set; }
 }
 
-internal sealed class StressPerformanceMetrics
+public sealed class StressPerformanceMetrics
 {
     public int? TotalPssKb { get; set; }
     public int? TotalRssKb { get; set; }
@@ -21,7 +21,7 @@ internal sealed class StressPerformanceMetrics
     public int? MissedVsync { get; set; }
 }
 
-internal sealed class StressRunSummary
+public sealed class StressRunSummary
 {
     public string PackageName { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
@@ -34,7 +34,7 @@ internal sealed class StressRunSummary
     public StressPerformanceMetrics Metrics { get; set; } = new();
 }
 
-internal static class StressReportBuilder
+public static class StressReportBuilder
 {
     public static StressPerformanceMetrics ParseMetrics(string packageName, string meminfo, string cpuinfo, string gfxinfo)
     {

@@ -36,6 +36,10 @@
     <PackageReference Include="NLog" Version="6.1.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\LogPro.Core\LogPro.Core.csproj" />
+  </ItemGroup>
+
   <!-- Copy bundled tools (scrcpy, platform-tools, pymobiledevice3) to output.
        Excludes PyInstaller intermediates, source files, dist-info, __pycache__, and the
        numpy site-package (pymobiledevice3 doesn't need numpy at runtime; PyInstaller
