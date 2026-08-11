@@ -10,12 +10,12 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Background">
                 <Setter.Value>
-                    <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                    <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="CardHdr" TargetType="Border">
-            <Setter Property="Background" Value="#201F1F" />
+            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
             <Setter Property="Padding" Value="16,12" />
             <Setter Property="CornerRadius" Value="12,12,0,0" />
         </Style>
@@ -52,7 +52,7 @@
         </Style>
         <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
             <Setter Property="Background" Value="{DynamicResource BrushCyan}" />
-            <Setter Property="Foreground" Value="#001F25" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushVoid}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BrushCyan}" />
             <Setter Property="FontWeight" Value="Bold" />
         </Style>

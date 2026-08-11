@@ -10,12 +10,12 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Background">
                 <Setter.Value>
-                    <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                    <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="CardHdr" TargetType="Border">
-            <Setter Property="Background" Value="#201F1F" />
+            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
             <Setter Property="Padding" Value="16,12" />
             <Setter Property="CornerRadius" Value="12,12,0,0" />
         </Style>
@@ -58,7 +58,7 @@
         </Style>
         <Style x:Key="RecBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
             <Setter Property="Foreground" Value="{DynamicResource BrushPrimaryLight}" />
-            <Setter Property="BorderBrush" Value="#006B80" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushCyanDim}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsRecording}" Value="True">
                     <Setter Property="Foreground" Value="{DynamicResource BrushRed}" />
@@ -68,7 +68,7 @@
         </Style>
         <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
             <Setter Property="Background" Value="{DynamicResource BrushCyan}" />
-            <Setter Property="Foreground" Value="#001F25" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushVoid}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BrushCyan}" />
             <Setter Property="FontWeight" Value="Bold" />
         </Style>
@@ -187,7 +187,7 @@
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsSelected" Value="True">
-                                                    <Setter TargetName="b" Property="Background" Value="#003848" />
+                                                    <Setter TargetName="b" Property="Background" Value="{DynamicResource BrushCyanGlow}" />
                                                     <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrushPrimaryLight}" />
                                                 </Trigger>
                                                 <Trigger Property="IsMouseOver" Value="True">
@@ -206,7 +206,7 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="6" Background="#003848" Margin="0,0,12,0">
+                                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="6" Background="{DynamicResource BrushCyanGlow}" Margin="0,0,12,0">
                                         <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">

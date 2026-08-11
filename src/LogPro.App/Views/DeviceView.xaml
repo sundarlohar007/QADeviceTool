@@ -10,12 +10,12 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Background">
                 <Setter.Value>
-                    <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                    <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="CardHdr" TargetType="Border">
-            <Setter Property="Background" Value="#201F1F" />
+            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
             <Setter Property="Padding" Value="16,12" />
             <Setter Property="CornerRadius" Value="12,12,0,0" />
         </Style>
@@ -109,7 +109,7 @@
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsSelected" Value="True">
-                                                    <Setter TargetName="b" Property="Background" Value="#003848" />
+                                                    <Setter TargetName="b" Property="Background" Value="{DynamicResource BrushCyanGlow}" />
                                                 </Trigger>
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter TargetName="b" Property="Background" Value="#2A2A33" />
@@ -128,7 +128,7 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0" Width="32" Height="32" Background="#353534" CornerRadius="6" Margin="0,0,12,0">
+                                    <Border Grid.Column="0" Width="32" Height="32" Background="{DynamicResource BrushOverlay}" CornerRadius="6" Margin="0,0,12,0">
                                         <TextBlock Text="&#xE8EA;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="{DynamicResource BrushTextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">

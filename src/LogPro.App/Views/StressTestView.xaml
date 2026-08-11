@@ -9,12 +9,12 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Background">
                 <Setter.Value>
-                    <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                    <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="CardHdr" TargetType="Border">
-            <Setter Property="Background" Value="#201F1F" />
+            <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
             <Setter Property="Padding" Value="16,12" />
             <Setter Property="CornerRadius" Value="12,12,0,0" />
         </Style>
@@ -69,7 +69,7 @@
         </Style>
         <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource GhostBtn}">
             <Setter Property="Background" Value="{DynamicResource BrushRedDim}" />
-            <Setter Property="Foreground" Value="#FFB4AB" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushRed}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BrushRedDim}" />
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="Padding" Value="16,9" />
@@ -183,7 +183,7 @@
                                                             <ContentPresenter />
                                                         </Border>
                                                         <ControlTemplate.Triggers>
-                                                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="b" Property="Background" Value="#003848" /></Trigger>
+                                                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="b" Property="Background" Value="{DynamicResource BrushCyanGlow}" /></Trigger>
                                                             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#201F1F" /></Trigger>
                                                         </ControlTemplate.Triggers>
                                                     </ControlTemplate>

@@ -4,7 +4,7 @@
              xmlns:vm="clr-namespace:LogPro.ViewModels"
              xmlns:conv="clr-namespace:LogPro.Converters">
 
-    <Grid Background="{StaticResource BrushVoid}">
+    <Grid Background="{DynamicResource BrushVoid}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -19,7 +19,7 @@
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="Background">
                     <Setter.Value>
-                        <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                        <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                     </Setter.Value>
                 </Setter>
             </Style>
@@ -47,12 +47,12 @@
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="Background">
                     <Setter.Value>
-                        <SolidColorBrush Color="#151B24" Opacity="0.72" />
+                        <SolidColorBrush Color="{DynamicResource Surface}" Opacity="0.72" />
                     </Setter.Value>
                 </Setter>
             </Style>
             <Style x:Key="CardHeader" TargetType="Border">
-                <Setter Property="Background" Value="#201F1F" />
+                <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
                 <Setter Property="Padding" Value="16,12" />
                 <Setter Property="CornerRadius" Value="12,12,0,0" />
             </Style>
@@ -69,7 +69,7 @@
                 <Setter Property="Margin" Value="0,0,0,8" />
             </Style>
             <Style x:Key="DeviceIconBox" TargetType="Border">
-                <Setter Property="Background" Value="#353534" />
+                <Setter Property="Background" Value="{DynamicResource BrushOverlay}" />
                 <Setter Property="CornerRadius" Value="8" />
                 <Setter Property="Width" Value="40" />
                 <Setter Property="Height" Value="40" />
@@ -121,7 +121,7 @@
                         </ControlTemplate>
                     </Button.Template>
                 </Button>
-                <Button Background="{DynamicResource BrushCyan}" Foreground="#001F25"
+                <Button Background="{DynamicResource BrushCyan}" Foreground="{DynamicResource BrushVoid}"
                         FontFamily="{StaticResource FontHeader}" FontSize="13" FontWeight="Bold"
                         Padding="16,10" Cursor="Hand" BorderThickness="0"
                         Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
@@ -304,21 +304,21 @@
                         <TextBlock Text="Mirror Screen" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
-                <Border Width="1" Height="24" Background="#3C494C" Margin="8,0" VerticalAlignment="Center" />
+                <Border Width="1" Height="24" Background="{DynamicResource BrushBorder}" Margin="8,0" VerticalAlignment="Center" />
                 <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickSnapshotCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Snapshot" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
-                <Border Width="1" Height="24" Background="#3C494C" Margin="8,0" VerticalAlignment="Center" />
+                <Border Width="1" Height="24" Background="{DynamicResource BrushBorder}" Margin="8,0" VerticalAlignment="Center" />
                 <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7B5;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Start Session" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
-                <Border Width="1" Height="24" Background="#3C494C" Margin="8,0" VerticalAlignment="Center" />
+                <Border Width="1" Height="24" Background="{DynamicResource BrushBorder}" Margin="8,0" VerticalAlignment="Center" />
                 <Button Style="{StaticResource QuickActionBtn}" Command="{Binding RefreshDevicesCommand}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
