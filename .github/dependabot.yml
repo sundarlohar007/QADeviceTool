@@ -4,9 +4,21 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    rebase-strategy: "auto"
+    open-pull-requests-limit: 10
     groups:
+      # Minor/patch bumps consolidate into one PR per batch — majors stay separate for review
+      # (e.g. FluentAssertions 8.x carries a license change and must be reviewed by a human).
+      nuget-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+        patterns:
+          - "*"
       microsoft-extensions:
+        update-types:
+          - "minor"
+          - "patch"
         patterns:
           - "Microsoft.Extensions.*"
 
@@ -14,3 +26,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    rebase-strategy: "auto"
+    groups:
+      github-actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+        patterns:
+          - "*"
