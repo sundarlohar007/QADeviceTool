@@ -167,7 +167,7 @@
                         </Ellipse>
                     </Grid>
                     <TextBlock Text="{Binding Devices.Count, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="{DynamicResource BrushCyan}">
-                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="{DynamicResource BrushCyan}" /></TextBlock.Effect>
+                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="{DynamicResource Cyan}" /></TextBlock.Effect>
                     </TextBlock>
                     <TextBlock Text="iOS &amp; Android" Style="{StaticResource StatSubtitle}" />
                 </StackPanel>
@@ -176,7 +176,7 @@
                 <StackPanel>
                     <TextBlock Text="Active Sessions" Style="{StaticResource StatLabel}" />
                     <TextBlock Text="{Binding ActiveSessionCount, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="{DynamicResource BrushCyan}">
-                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="{DynamicResource BrushCyan}" /></TextBlock.Effect>
+                        <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="{DynamicResource Cyan}" /></TextBlock.Effect>
                     </TextBlock>
                     <TextBlock Text="Currently running" Style="{StaticResource StatSubtitle}" />
                 </StackPanel>

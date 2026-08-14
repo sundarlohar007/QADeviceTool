@@ -78,10 +78,24 @@ public partial class App : Application
 
         base.OnStartup(e);
 
-        // Set up MainViewModel after window creation (moved from XAML to avoid
-        // duplicate VM creation during theme switches via ThemeService)
-        if (Application.Current.MainWindow is MainWindow mw)
-        { mw.DataContext = CreateMainViewModel(); }
+        // Explicit window bootstrap: on .NET 10 the StartupUri window is not created
+        // synchronously inside base.OnStartup — Application.Current.MainWindow is still
+        // null here, which previously left the app running with no DataContext (blank UI).
+        var mainWindow = new MainWindow();
+        Application.Current.MainWindow = mainWindow;
+        try
+        {
+            var vm = CreateMainViewModel();
+            mainWindow.DataContext = vm;
+            EarlyLog($"MainViewModel created and set as DataContext. CurrentView: {vm.CurrentView?.GetType().Name ?? "null"}");
+        }
+        catch (Exception vmEx)
+        {
+            EarlyLog("FATAL: MainViewModel creation failed", vmEx);
+            try { Services.AppLogger.Log.Fatal(vmEx, "MainViewModel creation failed"); } catch { /* logger may not be ready */ }
+        }
+        mainWindow.Show();
+
         EarlyLog("Base OnStartup completed, initializing services...");
 
         try
