@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LogPro.ViewModels"
+             xmlns:conv="using:LogPro.Avalonia.Converters"
+             x:Class="LogPro.Avalonia.Views.PerformanceView"
+             x:DataType="vm:ProfilerViewModel">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+      <DockPanel>
+        <StackPanel>
+          <TextBlock Text="Performance" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+          <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#9AA0A6" Margin="0,4,0,0" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <Button Content="Start" Command="{Binding StartProfilingCommand}" IsEnabled="{Binding !IsProfiling}" Padding="16,8" />
+          <Button Content="Stop" Command="{Binding StopProfilingCommand}" IsEnabled="{Binding IsProfiling}" Padding="16,8" />
+          <Button Content="HUD" Click="OnHudClick" Padding="16,8" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer>
+      <StackPanel Margin="24" Spacing="12">
+        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
+          <Border Grid.Column="0" Background="#17171C" CornerRadius="10" Padding="16">
+            <StackPanel Spacing="4">
+              <TextBlock Text="FPS" Foreground="#9AA0A6" FontSize="11" />
+              <TextBlock Text="{Binding Fps, StringFormat='{}{0:F1}'}" Foreground="#4FD1C5" FontSize="28" FontWeight="Bold" />
+              <TextBlock Text="{Binding FrameP90Ms, StringFormat='p90 {0:F1} ms'}" Foreground="#9AA0A6" FontSize="11" />
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="1" Background="#17171C" CornerRadius="10" Padding="16">
+            <StackPanel Spacing="4">
+              <TextBlock Text="CPU" Foreground="#9AA0A6" FontSize="11" />
+              <TextBlock Text="{Binding CpuPercent, StringFormat='{}{0:F0}%'}" Foreground="#4FD1C5" FontSize="28" FontWeight="Bold" />
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="2" Background="#17171C" CornerRadius="10" Padding="16">
+            <StackPanel Spacing="4">
+              <TextBlock Text="MEMORY (PSS)" Foreground="#9AA0A6" FontSize="11" />
+              <TextBlock Text="{Binding PssKb}" Foreground="#4FD1C5" FontSize="28" FontWeight="Bold" />
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="3" Background="#17171C" CornerRadius="10" Padding="16">
+            <StackPanel Spacing="4">
+              <TextBlock Text="JANKY FRAMES" Foreground="#9AA0A6" FontSize="11" />
+              <TextBlock Text="{Binding JankyFrames}" Foreground="#F59E0B" FontSize="28" FontWeight="Bold" />
+              <TextBlock Text="{Binding BatteryLevel, StringFormat='battery {0}%'}" Foreground="#9AA0A6" FontSize="11" />
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <Border Background="#17171C" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="12">
+            <TextBlock Text="FPS" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
+            <Polyline Points="{Binding History, Converter={x:Static conv:AppConverters.Sparkline}, ConverterParameter=fps}"
+                      Stroke="#4FD1C5" StrokeThickness="2" Width="600" Height="120" Stretch="Uniform" />
+            <TextBlock Text="CPU %" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
+            <Polyline Points="{Binding History, Converter={x:Static conv:AppConverters.Sparkline}, ConverterParameter=cpu}"
+                      Stroke="#F59E0B" StrokeThickness="2" Width="600" Height="80" Stretch="Uniform" />
+            <TextBlock Text="MEMORY MB" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
+            <Polyline Points="{Binding History, Converter={x:Static conv:AppConverters.Sparkline}, ConverterParameter=mem}"
+                      Stroke="#E879F9" StrokeThickness="2" Width="600" Height="80" Stretch="Uniform" />
+            <TextBlock Text="{Binding History.Count, StringFormat='{}{0} samples'}" Foreground="#9AA0A6" FontSize="11" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

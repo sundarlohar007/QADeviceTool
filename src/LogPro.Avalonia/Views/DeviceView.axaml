@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LogPro.ViewModels"
+             xmlns:conv="using:LogPro.Avalonia.Converters"
+             x:Class="LogPro.Avalonia.Views.DeviceView"
+             x:DataType="vm:DeviceViewModel">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+      <DockPanel>
+        <StackPanel>
+          <TextBlock Text="Devices" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+          <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#9AA0A6" Margin="0,4,0,0" />
+        </StackPanel>
+        <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshDevicesCommand}" Padding="14,6" />
+      </DockPanel>
+    </Border>
+    <Grid ColumnDefinitions="300,*">
+      <Border Grid.Column="0" BorderBrush="#232329" BorderThickness="0,0,1,0" Padding="12">
+        <ListBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Margin="0,4">
+                <TextBlock Text="{Binding DisplayName}" Foreground="#E8EAED" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Serial}" Foreground="#9AA0A6" FontSize="11" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+      <ScrollViewer Grid.Column="1" Padding="24">
+        <StackPanel Spacing="12">
+          <TextBlock Text="DEVICE DETAILS" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
+          <TextBox Text="{Binding DeviceDetails}" AcceptsReturn="True" MinHeight="200" Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329" FontFamily="Consolas, Menlo, monospace" />
+          <TextBlock Text="NOTES" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
+          <TextBox Text="{Binding DeviceNotes}" Watermark="Notes for this device" Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329" />
+          <WrapPanel>
+            <Button Margin="0,0,8,0" Content="Save Notes" Command="{Binding SaveDeviceNotesCommand}" Padding="14,6" />
+            <Button Margin="0,0,8,0" Content="Mirror" Command="{Binding StartMirrorCommand}" IsEnabled="{Binding IsMirroring, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="14,6" />
+            <Button Margin="0,0,8,0" Content="Stop Mirror" Command="{Binding StopMirrorCommand}" IsEnabled="{Binding IsMirroring}" Padding="14,6" />
+            <Button Margin="0,0,8,0" Content="Snapshot" Command="{Binding TakeSnapshotCommand}" Padding="14,6" />
+            <Button Margin="0,0,8,0" Content="Enable Wireless" Command="{Binding EnableWirelessCommand}" Padding="14,6" />
+          </WrapPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </DockPanel>
+</UserControl>

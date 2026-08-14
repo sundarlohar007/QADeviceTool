@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LogPro.ViewModels"
+             xmlns:conv="using:LogPro.Avalonia.Converters"
+             x:Class="LogPro.Avalonia.Views.MacroView"
+             x:DataType="vm:MacroViewModel">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+      <DockPanel>
+        <TextBlock Text="Macros" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <Button Content="+ New" Command="{Binding NewSequenceCommand}" Padding="14,6" />
+          <Button Content="{Binding IsRecording, Converter={x:Static conv:AppConverters.RecordingLabel}}" Command="{Binding ToggleRecordingCommand}" Padding="14,6" />
+          <Button Content="Play" Command="{Binding PlayMacroCommand}" IsEnabled="{Binding IsPlaying, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="14,6" />
+          <Button Content="Stop" Command="{Binding StopPlaybackCommand}" IsEnabled="{Binding IsPlaying}" Padding="14,6" />
+          <Button Content="Delete" Command="{Binding DeleteMacroCommand}" IsEnabled="{Binding SelectedMacro, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="14,6" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <DockPanel Margin="16">
+      <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}" Foreground="#9AA0A6" FontSize="11" Margin="0,8,0,0" />
+      <ListBox ItemsSource="{Binding Macros}" SelectedItem="{Binding SelectedMacro}" Background="Transparent">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <StackPanel Margin="0,4">
+              <TextBlock Text="{Binding Name}" Foreground="#E8EAED" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding FilePath}" Foreground="#9AA0A6" FontSize="11" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+  </DockPanel>
+</UserControl>

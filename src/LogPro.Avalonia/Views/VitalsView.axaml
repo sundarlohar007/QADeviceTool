@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LogPro.ViewModels"
+             xmlns:conv="using:LogPro.Avalonia.Converters"
+             x:Class="LogPro.Avalonia.Views.VitalsView"
+             x:DataType="vm:VitalsViewModel">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+      <DockPanel>
+        <TextBlock Text="Vitals" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="220" />
+          <Button Content="{Binding IsPolling, Converter={x:Static conv:AppConverters.PollLabel}}" Command="{Binding TogglePollingCommand}" Padding="14,6" />
+          <Button Content="Record" Command="{Binding RecordCommand}" Padding="14,6" />
+          <Button Content="CSV" Command="{Binding ExportCsvCommand}" Padding="14,6" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <Grid ColumnDefinitions="*,*" Margin="16">
+      <StackPanel Grid.Column="0" Spacing="10">
+        <Border Background="#17171C" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="4">
+            <TextBlock Text="CPU" Foreground="#9AA0A6" FontSize="11" />
+            <TextBlock Text="{Binding CpuPercent, StringFormat='{}{0:F1}%'}" Foreground="#4FD1C5" FontSize="28" FontWeight="Bold" />
+          </StackPanel>
+        </Border>
+        <Border Background="#17171C" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="4">
+            <TextBlock Text="MEMORY" Foreground="#9AA0A6" FontSize="11" />
+            <TextBlock Text="{Binding MemoryDetail}" Foreground="#4FD1C5" FontSize="20" FontWeight="Bold" />
+            <ProgressBar Maximum="100" Value="{Binding MemoryPercent}" Height="6" />
+          </StackPanel>
+        </Border>
+        <Border Background="#17171C" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="4">
+            <TextBlock Text="TEMPERATURE / BATTERY / NETWORK" Foreground="#9AA0A6" FontSize="11" />
+            <TextBlock Text="{Binding TemperatureCelsius, StringFormat='{}{0:F1} °C'}" Foreground="#E8EAED" />
+            <TextBlock Text="{Binding BatteryPercent, StringFormat='battery {0}%'}" Foreground="#E8EAED" />
+            <TextBlock Text="{Binding NetworkLatency}" Foreground="#E8EAED" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+      <DockPanel Grid.Column="1" Margin="16,0,0,0">
+        <TextBlock DockPanel.Dock="Top" Text="LIVE FEED" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6" />
+        <ListBox ItemsSource="{Binding VitalsLog}" Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Message}" Foreground="#C8CCD0" FontSize="11" FontFamily="Consolas, Menlo, monospace" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</UserControl>
