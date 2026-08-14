@@ -78,6 +78,7 @@ public static class PathHelper
         var root = string.IsNullOrWhiteSpace(rootDirectory) ? GetDefaultSessionsDirectory() : rootDirectory;
         var fullPath = Path.Combine(root, dirName);
         Directory.CreateDirectory(fullPath);
+        RestrictDirectoryAccess(fullPath); // SEC-13: owner-only on Windows
         return fullPath;
     }
 
@@ -135,8 +136,19 @@ public static class PathHelper
             if (!System.IO.Directory.Exists(directoryPath)) return;
             var info = new System.IO.DirectoryInfo(directoryPath);
             var acl = info.GetAccessControl();
-            // Remove inherited permissions
+            // Remove inherited permissions, then grant owner-only access (strip-without-add = deny-all).
             acl.SetAccessRuleProtection(true, false);
+            var user = System.Security.Principal.WindowsIdentity.GetCurrent().User;
+            if (user != null)
+            {
+                acl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                    user,
+                    System.Security.AccessControl.FileSystemRights.FullControl,
+                    System.Security.AccessControl.InheritanceFlags.ContainerInherit |
+                    System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                    System.Security.AccessControl.PropagationFlags.None,
+                    System.Security.AccessControl.AccessControlType.Allow));
+            }
             info.SetAccessControl(acl);
         }
         catch { /* ACLs best-effort on Windows */ }

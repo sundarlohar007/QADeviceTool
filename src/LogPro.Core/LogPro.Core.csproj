@@ -14,8 +14,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-    <PackageReference Include="NLog" Version="6.1.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="NLog" />
   </ItemGroup>
 
 </Project>

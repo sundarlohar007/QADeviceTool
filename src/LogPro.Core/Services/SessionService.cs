@@ -87,6 +87,11 @@ public class SessionService : ISessionService
         try
         {
             writer = new StreamWriter(session.LogFilePath, append: true);
+            // FEAT-21: mark restarts so appended captures are distinguishable
+            if (new FileInfo(session.LogFilePath) is { Length: > 0 })
+            {
+                writer.WriteLine("--- SESSION RESTARTED ---");
+            }
             if (session.Platform == DevicePlatform.Android && !string.IsNullOrWhiteSpace(targetPackageName))
             {
                 session.AppLogFilePath = Path.Combine(session.SessionDirectory, $"{session.Platform}_{session.DeviceId}_app_log.txt");
