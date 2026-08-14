@@ -9,6 +9,24 @@ public static class AppConverters
     public static readonly IValueConverter NullToBool = new NullToBoolConverter();
     public static readonly IValueConverter InverseBool = new InverseBoolConverter();
     public static readonly IValueConverter InstalledToBrush = new InstalledToBrushConverter();
+    public static readonly IValueConverter RecordingLabel = new RecordingLabelConverter();
+    public static readonly IValueConverter PollLabel = new PollLabelConverter();
+}
+
+public sealed class PollLabelConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? "Stop Polling" : "Start Polling";
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => null;
+}
+
+public sealed class RecordingLabelConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? "■ Stop Rec" : "● Record";
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => null;
 }
 
 public sealed class InstalledToBrushConverter : IValueConverter

@@ -1,0 +1,48 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LogPro.ViewModels"
+             xmlns:conv="using:LogPro.Avalonia.Converters"
+             x:Class="LogPro.Avalonia.Views.AppManagementView"
+             x:DataType="vm:AppManagementViewModel">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+      <DockPanel>
+        <StackPanel>
+          <TextBlock Text="Apps" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+          <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#9AA0A6" Margin="0,4,0,0" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <Button Content="Refresh" Command="{Binding RefreshAppsCommand}" Padding="14,6" />
+          <Button Content="Install" Command="{Binding InstallAppCommand}" Padding="14,6" />
+          <Button Content="Uninstall" Command="{Binding UninstallAppCommand}" IsEnabled="{Binding SelectedApp, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="14,6" />
+          <Button Content="Force Stop" Command="{Binding ForceStopAppCommand}" IsEnabled="{Binding SelectedApp, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="14,6" />
+          <Button Content="Clear Data" Command="{Binding ClearAppDataCommand}" IsEnabled="{Binding SelectedApp, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="14,6" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <Grid RowDefinitions="*,Auto">
+      <ListBox Grid.Row="0" ItemsSource="{Binding InstalledApps}" SelectedItem="{Binding SelectedApp}" Background="Transparent" Margin="16">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <StackPanel Margin="0,3">
+              <TextBlock Text="{Binding Name}" Foreground="#E8EAED" />
+              <TextBlock Text="{Binding PackageId}" Foreground="#9AA0A6" FontSize="11" FontFamily="Consolas, Menlo, monospace" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <Border Grid.Row="1" Padding="16,10" BorderBrush="#232329" BorderThickness="0,1,0,0">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="CONSOLE" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+            <Button Content="Clear" Command="{Binding ClearConsoleCommand}" Padding="12,6" />
+            <ProgressBar IsIndeterminate="True" Width="120" IsVisible="{Binding IsLoading}" />
+          </StackPanel>
+          <ScrollViewer MaxHeight="160">
+            <TextBlock Text="{Binding ConsoleOutput}" Foreground="#C8CCD0" FontFamily="Consolas, Menlo, monospace" FontSize="11" />
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Grid>
+  </DockPanel>
+</UserControl>

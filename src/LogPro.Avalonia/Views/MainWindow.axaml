@@ -12,15 +12,15 @@
   <Window.DataTemplates>
     <DataTemplate DataType="vm:DashboardViewModel"><views:DashboardView /></DataTemplate>
     <DataTemplate DataType="vm:SessionViewModel"><views:SessionsView /></DataTemplate>
-    <DataTemplate DataType="vm:DeviceViewModel"><views:PlaceholderView Title="Devices" /></DataTemplate>
-    <DataTemplate DataType="vm:AppManagementViewModel"><views:PlaceholderView Title="Apps" /></DataTemplate>
-    <DataTemplate DataType="vm:ShellViewModel"><views:PlaceholderView Title="Shell" /></DataTemplate>
-    <DataTemplate DataType="vm:DeepLinkViewModel"><views:PlaceholderView Title="Deep Link" /></DataTemplate>
-    <DataTemplate DataType="vm:VitalsViewModel"><views:PlaceholderView Title="Vitals (profiler UI lands in phase 1.5)" /></DataTemplate>
-    <DataTemplate DataType="vm:FileExplorerViewModel"><views:PlaceholderView Title="Files" /></DataTemplate>
-    <DataTemplate DataType="vm:MacroViewModel"><views:PlaceholderView Title="Macros" /></DataTemplate>
-    <DataTemplate DataType="vm:StressTestViewModel"><views:PlaceholderView Title="Stress Test" /></DataTemplate>
-    <DataTemplate DataType="vm:SettingsViewModel"><views:PlaceholderView Title="Settings" /></DataTemplate>
+    <DataTemplate DataType="vm:DeviceViewModel"><views:DeviceView /></DataTemplate>
+    <DataTemplate DataType="vm:AppManagementViewModel"><views:AppManagementView /></DataTemplate>
+    <DataTemplate DataType="vm:ShellViewModel"><views:ShellView /></DataTemplate>
+    <DataTemplate DataType="vm:DeepLinkViewModel"><views:DeepLinkView /></DataTemplate>
+    <DataTemplate DataType="vm:VitalsViewModel"><views:VitalsView /></DataTemplate>
+    <DataTemplate DataType="vm:FileExplorerViewModel"><views:FileExplorerView /></DataTemplate>
+    <DataTemplate DataType="vm:MacroViewModel"><views:MacroView /></DataTemplate>
+    <DataTemplate DataType="vm:StressTestViewModel"><views:StressTestView /></DataTemplate>
+    <DataTemplate DataType="vm:SettingsViewModel"><views:SettingsView /></DataTemplate>
   </Window.DataTemplates>
 
   <DockPanel Background="#0E0E12">
