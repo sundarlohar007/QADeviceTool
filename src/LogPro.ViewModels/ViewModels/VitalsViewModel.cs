@@ -3,8 +3,6 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Windows;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
@@ -18,7 +16,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     private readonly IAdbService _adbService;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly IUiDispatcher _dispatcher;
-    private DispatcherTimer? _pollTimer;
+    private System.Threading.Timer? _pollTimer;
     private CancellationTokenSource? _pollCts;
 
     [ObservableProperty] private ObservableCollection<DeviceInfo> _devices = new();
@@ -45,10 +43,9 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
-        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        _pollTimer.Tick += (s, e) =>
+        _pollTimer = new System.Threading.Timer(_ =>
         {
             try
             {
@@ -57,7 +54,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
                     TaskContinuationOptions.OnlyOnFaulted);
             }
             catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[Vitals] Timer poll failed"); }
-        };
+        }, null, Timeout.Infinite, Timeout.Infinite);
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
@@ -123,14 +120,14 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
         if (SelectedDevice == null) return;
         IsPolling = true;
         _ = PollVitalsAsync();
-        _pollTimer?.Start();
+        _pollTimer?.Change(3000, 3000);
         AppendLog("Sys_Info", $"Vitals polling started for {SelectedDevice.DisplayName}.");
     }
 
     private void StopPolling()
     {
         IsPolling = false;
-        _pollTimer?.Stop();
+        _pollTimer?.Change(Timeout.Infinite, Timeout.Infinite);
     }
 
     private bool _isPollingNow;
@@ -268,7 +265,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
-        _pollTimer?.Stop(); _pollTimer = null;
+        _pollTimer?.Dispose(); _pollTimer = null;
         _pollCts?.Cancel(); _pollCts?.Dispose();
         GC.SuppressFinalize(this);
     }
