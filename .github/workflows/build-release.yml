@@ -30,13 +30,13 @@ jobs:
       version: ${{ steps.version.outputs.semver }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           lfs: true
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -68,13 +68,13 @@ jobs:
         run: dotnet publish ${{ env.CLI_PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.semver }} -o publish/cli
 
       - name: Upload App
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-published
           path: publish/app/
 
       - name: Upload CLI
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cli-published
           path: publish/cli/
@@ -85,10 +85,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download App
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: app-published
           path: publish/app/
@@ -121,7 +121,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Setup.exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: setup-exe
           path: dist/*.exe
@@ -132,16 +132,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download App
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: app-published
           path: publish/app/
 
       - name: Download CLI
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cli-published
           path: publish/cli/
@@ -156,7 +156,7 @@ jobs:
           Get-ChildItem dist/
 
       - name: Upload Zips
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: portable-zip
           path: dist/*.zip
@@ -168,18 +168,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Download Installer
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: setup-exe
           path: dist/
 
       - name: Download Zips
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: portable-zip
           path: dist/
