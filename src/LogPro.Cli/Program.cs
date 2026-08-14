@@ -33,6 +33,7 @@ public static class Program
                 "devices" => await ListDevices(adb, ios),
                 "capture" => await Capture(adb, ios, args),
                 "profile" => await Profile(adb, ios, args),
+                "soak" => await Soak(adb, ios, args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -183,6 +184,58 @@ public static class Program
         Console.WriteLine($"Samples: {history.Count} | Avg FPS: {sum.AvgFps?.ToString("F1") ?? "n/a"} | Janky: {sum.JankyFrames} | Max CPU: {sum.MaxCpuPercent?.ToString("F0") ?? "n/a"}% | Mem growth: {sum.MemoryGrowthKb / 1024} MB | Slow session: {sum.SlowSession}");
         Console.WriteLine($"Report: {jsonPath}");
         return history.Count > 0 ? 0 : 1;
+    }
+
+    /// <summary>Soak/endurance run — sustained load while the profiler samples (§12.5).</summary>
+    private static async Task<int> Soak(AdbService adb, IosService ios, string[] args)
+    {
+        var serial = Opt(args, "--serial");
+        if (string.IsNullOrWhiteSpace(serial))
+        {
+            Console.Error.WriteLine("soak requires --serial");
+            return 2;
+        }
+
+        var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 600;
+        var package = Opt(args, "--package") ?? string.Empty;
+        var macroPath = Opt(args, "--macro");
+        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+
+        var device = await FindDevice(adb, ios, serial);
+        if (device == null)
+        {
+            Console.Error.WriteLine($"device not found: {serial}");
+            return 1;
+        }
+
+        Directory.CreateDirectory(outDir);
+        var macro = macroPath != null && File.Exists(macroPath)
+            ? await MacroService.LoadMacroAsync(macroPath)
+            : null;
+
+        Func<CancellationToken, Task> load = macro != null
+            ? async token => await new MacroService(adb).ReplayMacroAsync(serial, macro, token: token)
+            : async token =>
+            {
+                var i = 0;
+                while (!token.IsCancellationRequested)
+                {
+                    await adb.ExecuteCommandAsync(serial, $"shell input keyevent {82 + (i++ % 4)}");
+                    await Task.Delay(200, token);
+                }
+            };
+
+        Console.WriteLine($"Soaking {seconds}s on {device.DisplayName} → {outDir}");
+        var duration = TimeSpan.FromSeconds(seconds);
+        var report = await LogPro.Services.Profiling.SoakRunner.RunAsync(adb, serial, package, duration, load);
+
+        Console.WriteLine($"Samples: {report.SampleCount} | FPS start/end: {report.AvgFpsStart?.ToString("F1") ?? "n/a"} / {report.AvgFpsEnd?.ToString("F1") ?? "n/a"} | decay: {report.FpsDecay?.ToString("F1") ?? "n/a"}");
+        Console.WriteLine($"Memory growth: {report.MemoryGrowthKb / 1024} MB | Janky: {report.JankyFrames} | Max thermal: {report.MaxThermalStatus}");
+        Console.WriteLine($"Flags: mem={(report.MemoryGrowthFlagged ? "YES" : "no")} fpsDecay={(report.FpsDecayFlagged ? "YES" : "no")} thermal={(report.ThermalFlagged ? "YES" : "no")}");
+        Console.WriteLine(report.HasIssues ? "RESULT: ISSUES DETECTED" : "RESULT: PASS");
+
+        var summary = LogPro.Services.Profiling.ProfilerReportWriter.Summarize(new List<LogPro.Services.Profiling.ProfilerSnapshot>());
+        return report.SampleCount > 0 ? 0 : 1;
     }
 
     private static async Task<int> Export(AdbService adb, IosService ios, string[] args)
