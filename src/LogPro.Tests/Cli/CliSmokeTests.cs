@@ -86,7 +86,7 @@ public class CliSmokeTests
         var outDir = Path.Combine(Path.GetTempPath(), $"LogProProfileTest_{Guid.NewGuid():N}");
         try
         {
-            var (exit, stdout, stderr) = await RunCliAsync(home, $"profile --serial FAKE01 --seconds 3 --package fakegame --out \"{outDir}\"", timeoutMs: 120000);
+            var (exit, stdout, stderr) = await RunCliAsync(home, $"profile --serial FAKE01 --seconds 5 --package fakegame --out \"{outDir}\"", timeoutMs: 120000);
             exit.Should().Be(0, because: $"profile should succeed; stdout: {stdout} stderr: {stderr}");
 
             var json = Path.Combine(outDir, "profile-report.json");
@@ -94,7 +94,7 @@ public class CliSmokeTests
 
             using var doc = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(json));
             var sampleCount = doc.RootElement.GetProperty("SampleCount").GetInt32();
-            sampleCount.Should().BeGreaterThanOrEqualTo(2, "at least 2 samples for 3s @1s interval");
+            sampleCount.Should().BeGreaterThanOrEqualTo(3, "at least 3 samples for 5s @1s interval");
 
             var summary = doc.RootElement.GetProperty("Summary");
             summary.GetProperty("AvgFps").GetDouble().Should().BeGreaterThan(30.0, "fake layer streams ~60fps");
