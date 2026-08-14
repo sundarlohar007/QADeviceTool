@@ -24,7 +24,7 @@ public partial class App : Application
             LogPro.ViewModels.UiServices.Dialogs = new Services.AvaloniaDialogService();
             LogPro.ViewModels.UiServices.Clipboard = new Services.AvaloniaClipboardService();
 
-            window.DataContext = new ShellViewModel();
+            window.DataContext = CompositionRoot.CreateMainViewModel();
             desktop.MainWindow = window;
         }
 

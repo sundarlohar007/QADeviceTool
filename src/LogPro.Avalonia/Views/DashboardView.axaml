@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LogPro.ViewModels"
+             xmlns:conv="using:LogPro.Avalonia.Converters"
+             x:Class="LogPro.Avalonia.Views.DashboardView"
+             x:DataType="vm:DashboardViewModel">
+  <DockPanel>
+    <!-- Header -->
+    <Border DockPanel.Dock="Top" Padding="24,20" BorderBrush="#232329" BorderThickness="0,0,0,1">
+      <DockPanel>
+        <StackPanel>
+          <TextBlock Text="Dashboard" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+          <TextBlock Text="Devices, sessions and tool health at a glance" FontSize="12" Foreground="#9AA0A6" Margin="0,4,0,0" />
+        </StackPanel>
+        <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshDevicesCommand}" Padding="14,6" />
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer>
+      <StackPanel Margin="24" Spacing="16">
+        <!-- Stat cards -->
+        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+          <Border Grid.Column="0" Background="#17171C" CornerRadius="10" Padding="16">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Connected Devices" Foreground="#9AA0A6" FontSize="11" />
+              <TextBlock Text="{Binding Devices.Count}" Foreground="#4FD1C5" FontSize="28" FontWeight="Bold" />
+              <TextBlock Text="iOS &amp; Android" Foreground="#9AA0A6" FontSize="11" />
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="1" Background="#17171C" CornerRadius="10" Padding="16">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Active Sessions" Foreground="#9AA0A6" FontSize="11" />
+              <TextBlock Text="{Binding ActiveSessionCount}" Foreground="#4FD1C5" FontSize="28" FontWeight="Bold" />
+              <TextBlock Text="Currently running" Foreground="#9AA0A6" FontSize="11" />
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="2" Background="#17171C" CornerRadius="10" Padding="16">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Welcome" Foreground="#9AA0A6" FontSize="11" />
+              <TextBlock Text="{Binding WelcomeMessage}" Foreground="#E8EAED" FontSize="14" TextWrapping="Wrap" MaxLines="2" />
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <!-- Quick actions -->
+        <WrapPanel>
+          <Button Margin="0,0,8,0" Content="Start Session" Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="16,8" />
+          <Button Margin="0,0,8,0" Content="Mirror Screen" Command="{Binding QuickMirrorCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="16,8" />
+          <Button Margin="0,0,8,0" Content="Snapshot" Command="{Binding QuickSnapshotCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="16,8" />
+        </WrapPanel>
+
+        <!-- Devices -->
+        <Border Background="#17171C" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock Text="CONNECTED DEVICES" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
+            <ItemsControl ItemsSource="{Binding Devices}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Background="#1E1E24" CornerRadius="8" Padding="12" Margin="0,2">
+                    <DockPanel>
+                      <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Fill="#4ADE80" Margin="0,0,10,0" VerticalAlignment="Center" />
+                      <StackPanel>
+                        <TextBlock Text="{Binding DisplayName}" Foreground="#E8EAED" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Serial}" Foreground="#9AA0A6" FontSize="11" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="No devices connected. Connect a device via USB."
+                       Foreground="#9AA0A6" FontSize="12" Margin="0,8,0,0"
+                       IsVisible="{Binding !Devices.Count}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Tool statuses -->
+        <Border Background="#17171C" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock Text="TOOL STATUS" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
+            <ItemsControl ItemsSource="{Binding ToolStatuses}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <DockPanel Margin="0,3">
+                    <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
+                             Fill="{Binding IsInstalled, Converter={x:Static conv:AppConverters.InstalledToBrush}}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Text="{Binding Name}" Foreground="#E8EAED" />
+                      <TextBlock Text="{Binding StatusMessage}" Foreground="#9AA0A6" FontSize="11" />
+                    </StackPanel>
+                  </DockPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="Loading tool status…" Foreground="#9AA0A6" FontSize="11"
+                       IsVisible="{Binding IsLoading}" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

@@ -1,73 +1,90 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:LogPro.Avalonia.ViewModels"
+        xmlns:vm="using:LogPro.ViewModels"
+        xmlns:views="using:LogPro.Avalonia.Views"
+        xmlns:conv="using:LogPro.Avalonia.Converters"
         x:Class="LogPro.Avalonia.Views.MainWindow"
-        x:DataType="vm:ShellViewModel"
-        Title="LogPro (Avalonia)"
-        Width="1100" Height="720"
+        x:DataType="vm:MainViewModel"
+        Title="LogPro"
+        Width="1280" Height="800"
         WindowStartupLocation="CenterScreen">
 
-  <Design.DataContext>
-    <vm:ShellViewModel />
-  </Design.DataContext>
+  <Window.DataTemplates>
+    <DataTemplate DataType="vm:DashboardViewModel"><views:DashboardView /></DataTemplate>
+    <DataTemplate DataType="vm:SessionViewModel"><views:SessionsView /></DataTemplate>
+    <DataTemplate DataType="vm:DeviceViewModel"><views:PlaceholderView Title="Devices" /></DataTemplate>
+    <DataTemplate DataType="vm:AppManagementViewModel"><views:PlaceholderView Title="Apps" /></DataTemplate>
+    <DataTemplate DataType="vm:ShellViewModel"><views:PlaceholderView Title="Shell" /></DataTemplate>
+    <DataTemplate DataType="vm:DeepLinkViewModel"><views:PlaceholderView Title="Deep Link" /></DataTemplate>
+    <DataTemplate DataType="vm:VitalsViewModel"><views:PlaceholderView Title="Vitals (profiler UI lands in phase 1.5)" /></DataTemplate>
+    <DataTemplate DataType="vm:FileExplorerViewModel"><views:PlaceholderView Title="Files" /></DataTemplate>
+    <DataTemplate DataType="vm:MacroViewModel"><views:PlaceholderView Title="Macros" /></DataTemplate>
+    <DataTemplate DataType="vm:StressTestViewModel"><views:PlaceholderView Title="Stress Test" /></DataTemplate>
+    <DataTemplate DataType="vm:SettingsViewModel"><views:PlaceholderView Title="Settings" /></DataTemplate>
+  </Window.DataTemplates>
 
-  <DockPanel>
+  <DockPanel Background="#0E0E12">
     <!-- Sidebar -->
-    <Border DockPanel.Dock="Left" Width="220" Background="#141418" Padding="16">
-      <StackPanel Spacing="4">
-        <TextBlock Text="LogPro" FontSize="22" FontWeight="Bold" Foreground="#4FD1C5" />
-        <TextBlock Text="Cross-platform shell (Phase 4b)" FontSize="11" Foreground="#9AA0A6" Margin="0,0,0,16" />
+    <Border DockPanel.Dock="Left" Width="220" Background="#141418" Padding="0,16,0,8">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="16,0,16,16" Spacing="4">
+          <TextBlock Text="LogPro" FontSize="22" FontWeight="Bold" Foreground="#4FD1C5" />
+          <TextBlock Text="Avalonia shell — phase 4b" FontSize="11" Foreground="#9AA0A6" />
+        </StackPanel>
 
-        <RadioButton Content="Dashboard" IsChecked="True" />
-        <RadioButton Content="Sessions" />
-        <RadioButton Content="Devices" />
-        <RadioButton Content="Performance" IsEnabled="False" />
-        <RadioButton Content="Apps" />
-        <RadioButton Content="Files" />
-        <RadioButton Content="Automation" IsEnabled="False" />
-        <RadioButton Content="Settings" />
-      </StackPanel>
+        <ScrollViewer>
+          <StackPanel Spacing="2">
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="dashboard"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=dashboard}"
+                         Content="Dashboard" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="sessions"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=sessions}"
+                         Content="Sessions" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="device"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=device}"
+                         Content="Devices" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="apps"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=apps}"
+                         Content="Apps" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="files"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=files}"
+                         Content="Files" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="shell"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=shell}"
+                         Content="Shell" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="deeplink"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=deeplink}"
+                         Content="Deep Link" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="vitals"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=vitals}"
+                         Content="Vitals" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="macros"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=macros}"
+                         Content="Macros" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="stresstest"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=stresstest}"
+                         Content="Stress Test" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="settings"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=settings}"
+                         Content="Settings" Padding="16,10" />
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
     </Border>
 
     <!-- Content -->
-    <DockPanel Background="#0E0E12">
-      <Border DockPanel.Dock="Top" Padding="24,20" BorderBrush="#232329" BorderThickness="0,0,0,1">
+    <DockPanel>
+      <Border DockPanel.Dock="Bottom" Background="#141418" Padding="16,6">
         <DockPanel>
-          <StackPanel>
-            <TextBlock Text="Dashboard" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
-            <TextBlock Text="{Binding Status}" FontSize="12" Foreground="#9AA0A6" Margin="0,4,0,0" />
-          </StackPanel>
-          <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" Orientation="Horizontal" Spacing="16">
-            <TextBlock Text="{Binding DeviceCount, StringFormat='Devices: {0}'}" Foreground="#4FD1C5" />
-            <TextBlock Text="{Binding AppVersion, StringFormat='v{0}'}" Foreground="#9AA0A6" />
+          <TextBlock Text="{Binding StatusBarText}" Foreground="#9AA0A6" FontSize="11" />
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="16">
+            <TextBlock Text="{Binding ConnectedDeviceCount, StringFormat='Devices: {0}'}" Foreground="#4FD1C5" FontSize="11" />
+            <TextBlock Text="{Binding SelectedDevice.DisplayName}" Foreground="#9AA0A6" FontSize="11" />
           </StackPanel>
         </DockPanel>
       </Border>
 
-      <!-- Device list (live from the engine) -->
-      <ScrollViewer Padding="24">
-        <StackPanel Spacing="8">
-          <TextBlock Text="CONNECTED DEVICES" FontSize="11" Foreground="#9AA0A6" />
-          <ItemsControl ItemsSource="{Binding Devices}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <Border Background="#17171C" CornerRadius="8" Padding="14" Margin="0,2">
-                  <DockPanel>
-                    <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Fill="#4ADE80" Margin="0,0,10,0" VerticalAlignment="Center" />
-                    <StackPanel>
-                      <TextBlock Text="{Binding DisplayName}" Foreground="#E8EAED" FontWeight="SemiBold" />
-                      <TextBlock Text="{Binding Serial}" Foreground="#9AA0A6" FontSize="11" />
-                    </StackPanel>
-                  </DockPanel>
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-          <TextBlock Text="No devices connected. Connect a device via USB."
-                     Foreground="#9AA0A6" FontSize="12" Margin="0,8,0,0"
-                     IsVisible="{Binding !Devices.Count}" />
-        </StackPanel>
-      </ScrollViewer>
+      <ContentControl Content="{Binding CurrentView}" />
     </DockPanel>
   </DockPanel>
 </Window>
