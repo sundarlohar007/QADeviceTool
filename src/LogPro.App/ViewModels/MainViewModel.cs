@@ -80,18 +80,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         _deviceStore.UpdateDevices(_deviceMonitor.CurrentDevices);
 
-        // Initialize child ViewModels
-        DashboardVM = new DashboardViewModel(_adbService, _iosService, _scrcpyService, _sessionService, _deviceMonitor, _dependencyChecker);
-        SessionVM = new SessionViewModel(_sessionService, _adbService, _iosService, _deviceMonitor);
-        DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor, _sessionService);
-        AppManagementVM = new AppManagementViewModel(_adbService, _iosService, _deviceMonitor, _sessionService);
-        ShellVM = new ShellViewModel(_deviceMonitor, _iosService);
-        DeepLinkVM = new DeepLinkViewModel(_adbService, _iosService, _deviceMonitor);
-        VitalsVM = new VitalsViewModel(_adbService, _deviceMonitor);
-        FileExplorerVM = new FileExplorerViewModel(_adbService, _iosService, _deviceMonitor);
-        MacroVM = new MacroViewModel(new MacroService(_adbService), _adbService, _deviceMonitor);
-        StressTestVM = new StressTestViewModel(_adbService, _deviceMonitor);
-        SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService, _adbService);
+        // Initialize child ViewModels — share the container's dispatcher so the whole graph is headless-testable
+        DashboardVM = new DashboardViewModel(_adbService, _iosService, _scrcpyService, _sessionService, _deviceMonitor, _dependencyChecker, _dispatcher);
+        SessionVM = new SessionViewModel(_sessionService, _adbService, _iosService, _deviceMonitor, _dispatcher);
+        DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor, _sessionService, _dispatcher);
+        AppManagementVM = new AppManagementViewModel(_adbService, _iosService, _deviceMonitor, _sessionService, _dispatcher);
+        ShellVM = new ShellViewModel(_deviceMonitor, _iosService, _dispatcher);
+        DeepLinkVM = new DeepLinkViewModel(_adbService, _iosService, _deviceMonitor, _dispatcher);
+        VitalsVM = new VitalsViewModel(_adbService, _deviceMonitor, _dispatcher);
+        FileExplorerVM = new FileExplorerViewModel(_adbService, _iosService, _deviceMonitor, _dispatcher);
+        MacroVM = new MacroViewModel(new MacroService(_adbService), _adbService, _deviceMonitor, _dispatcher);
+        StressTestVM = new StressTestViewModel(_adbService, _deviceMonitor, _dispatcher);
+        SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService, _adbService, _dispatcher);
 
         // Wire up device monitor events -> single source of truth (IDeviceStore)
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
@@ -159,7 +159,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var normalized = destination?.ToLowerInvariant() ?? "";
         if (CurrentView is VitalsViewModel vvm) vvm.OnNavigatedFrom();
         SelectedNavItem = normalized;
-        AppLogger.Log.Debug($"[MainVM] Navigating to {normalized}");
+        AppLogger.Log.Info($"[MainVM] Navigate({normalized}) — CurrentView: {CurrentView?.GetType().Name}");
         CurrentView = normalized switch
         {
             "dashboard" => DashboardVM,
