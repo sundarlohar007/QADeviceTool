@@ -32,6 +32,7 @@ public static class Program
             {
                 "devices" => await ListDevices(adb, ios),
                 "capture" => await Capture(adb, ios, args),
+                "profile" => await Profile(adb, ios, args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -140,6 +141,48 @@ public static class Program
         sessions.StopCapture(session);
         Console.WriteLine($"Stopped. {session.LogLineCount} lines → {session.LogFilePath}");
         return 0;
+    }
+
+    private static async Task<int> Profile(AdbService adb, IosService ios, string[] args)
+    {
+        var serial = Opt(args, "--serial");
+        if (string.IsNullOrWhiteSpace(serial))
+        {
+            Console.Error.WriteLine("profile requires --serial");
+            return 2;
+        }
+
+        var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 30;
+        var package = Opt(args, "--package");
+        var layer = Opt(args, "--layer");
+        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+
+        var device = await FindDevice(adb, ios, serial);
+        if (device == null)
+        {
+            Console.Error.WriteLine($"device not found: {serial}");
+            return 1;
+        }
+
+        Directory.CreateDirectory(outDir);
+        using var profiler = new LogPro.Services.Profiling.AndroidPerformanceProfiler(
+            adb, serial, package, layer, intervalMs: 1000);
+
+        Console.WriteLine($"Profiling {seconds}s → {outDir}");
+        profiler.Start();
+        await Task.Delay(TimeSpan.FromSeconds(seconds));
+        await profiler.StopAsync();
+
+        var history = profiler.History;
+        var jsonPath = Path.Combine(outDir, "profile-report.json");
+        var csvPath = Path.Combine(outDir, "profile.csv");
+        await LogPro.Services.Profiling.ProfilerReportWriter.WriteJsonAsync(history, jsonPath);
+        await LogPro.Services.Profiling.ProfilerReportWriter.WriteCsvAsync(history, csvPath);
+
+        var sum = LogPro.Services.Profiling.ProfilerReportWriter.Summarize(history);
+        Console.WriteLine($"Samples: {history.Count} | Avg FPS: {sum.AvgFps?.ToString("F1") ?? "n/a"} | Janky: {sum.JankyFrames} | Max CPU: {sum.MaxCpuPercent?.ToString("F0") ?? "n/a"}% | Mem growth: {sum.MemoryGrowthKb / 1024} MB | Slow session: {sum.SlowSession}");
+        Console.WriteLine($"Report: {jsonPath}");
+        return history.Count > 0 ? 0 : 1;
     }
 
     private static async Task<int> Export(AdbService adb, IosService ios, string[] args)

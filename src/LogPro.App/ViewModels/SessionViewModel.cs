@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
+using System.Text.RegularExpressions;
 using LogPro.Services;
 
 namespace LogPro.ViewModels;
@@ -100,6 +101,9 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isColorCodingEnabled = true;
+
+    [ObservableProperty]
+    private bool _isRegexSearch = false;
 
     [ObservableProperty]
     private bool _isRawMode = true;
@@ -780,6 +784,11 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         try
         {
             if (SelectedSession == null) return;
+            if (SelectedSession.Status == SessionStatus.Capturing)
+            {
+                StatusMessage = "[!] Stop the active capture before deleting this session.";
+                return;
+            }
             var confirm = MessageBox.Show(
                 $"Delete session '{SelectedSession.Name}'? This cannot be undone.",
                 "Delete Session", MessageBoxButton.YesNo, MessageBoxImage.Warning);
@@ -1059,12 +1068,26 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
         if (!string.IsNullOrWhiteSpace(SearchText))
         {
+            if (IsRegexSearch)
+            {
+                try
+                {
+                    return Regex.IsMatch(entry.RawLine, SearchText, RegexOptions.IgnoreCase);
+                }
+                catch (ArgumentException) { return false; } // invalid pattern → no matches
+            }
+
             return entry.Message.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
                    entry.Tag.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
                    entry.RawLine.Contains(SearchText, StringComparison.OrdinalIgnoreCase);
         }
 
         return true;
+    }
+
+    partial void OnIsRegexSearchChanged(bool value)
+    {
+        LogEntriesView.Refresh();
     }
 
     private CancellationTokenSource? _searchDebounceCts;

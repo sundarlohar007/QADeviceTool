@@ -80,6 +80,37 @@ public class CliSmokeTests
     }
 
     [Fact]
+    public async Task Profile_WritesPerfReport()
+    {
+        var home = StageCliHome();
+        var outDir = Path.Combine(Path.GetTempPath(), $"LogProProfileTest_{Guid.NewGuid():N}");
+        try
+        {
+            var (exit, stdout, stderr) = await RunCliAsync(home, $"profile --serial FAKE01 --seconds 5 --package fakegame --out \"{outDir}\"", timeoutMs: 120000);
+            exit.Should().Be(0, because: $"profile should succeed; stdout: {stdout} stderr: {stderr}");
+
+            var json = Path.Combine(outDir, "profile-report.json");
+            File.Exists(json).Should().BeTrue("profile-report.json must be written");
+
+            using var doc = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(json));
+            var sampleCount = doc.RootElement.GetProperty("SampleCount").GetInt32();
+            sampleCount.Should().BeGreaterThanOrEqualTo(3, "at least 3 samples for 5s @1s interval");
+
+            var summary = doc.RootElement.GetProperty("Summary");
+            summary.GetProperty("AvgFps").GetDouble().Should().BeGreaterThan(30.0, "fake layer streams ~60fps");
+            summary.GetProperty("JankyFrames").GetInt32().Should().BeGreaterThan(0, "fake layer injects jank frames");
+
+            File.Exists(Path.Combine(outDir, "profile.csv")).Should().BeTrue();
+            stdout.Should().Contain("Avg FPS");
+        }
+        finally
+        {
+            try { Directory.Delete(outDir, true); } catch { /* best effort */ }
+            try { Directory.Delete(home, true); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
     public async Task Capture_WritesLogFile()
     {
         var home = StageCliHome();

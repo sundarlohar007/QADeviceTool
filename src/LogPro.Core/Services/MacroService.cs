@@ -206,6 +206,18 @@ public class MacroService
     }
 
     /// <summary>
+    /// FEAT-34: sanitizes text for `adb shell input text`. Rejects shell metacharacters,
+    /// escapes quotes, and converts spaces to adb's %s encoding. Empty result = rejected.
+    /// </summary>
+    internal static string SafeInputText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        if (text.Contains('`') || text.Contains("$(") || text.Contains('\n') || text.Contains('\r') || text.Contains(";"))
+            return string.Empty;
+        return text.Replace("'", "\\'").Replace(" ", "%s");
+    }
+
+    /// <summary>
     /// Replays high-level input commands (tap/swipe) for simpler macros.
     /// </summary>
     public async Task ReplaySimpleMacroAsync(string serial, List<SimpleMacroStep> steps,
@@ -220,7 +232,7 @@ public class MacroService
                 "tap" => $"shell input tap {step.X} {step.Y}",
                 "swipe" => $"shell input swipe {step.X1} {step.Y1} {step.X2} {step.Y2} {step.DurationMs}",
                 "keyevent" => $"shell input keyevent {step.KeyCode}",
-                "text" => $"shell input text '{step.Text}'",
+                "text" => SafeInputText(step.Text) is { Length: > 0 } safeText ? $"shell input text '{safeText}'" : null,
                 _ => null
             };
 
