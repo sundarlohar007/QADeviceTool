@@ -1,0 +1,14 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LogPro.Avalonia.Views.PlaceholderView"
+             x:Name="Root">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Padding="24,20" BorderBrush="#232329" BorderThickness="0,0,0,1">
+      <TextBlock Text="{Binding #Root.Title}" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+    </Border>
+    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+      <TextBlock Text="{Binding #Root.Title}" FontSize="18" Foreground="#9AA0A6" />
+      <TextBlock Text="Ported in the parity pass — the engine behind this view is already running." FontSize="12" Foreground="#5A6066" />
+    </StackPanel>
+  </DockPanel>
+</UserControl>

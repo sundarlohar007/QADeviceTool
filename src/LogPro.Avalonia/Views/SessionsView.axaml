@@ -1,0 +1,81 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LogPro.ViewModels"
+             xmlns:conv="using:LogPro.Avalonia.Converters"
+             x:Class="LogPro.Avalonia.Views.SessionsView"
+             x:DataType="vm:SessionViewModel">
+  <DockPanel>
+    <!-- Header -->
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+      <DockPanel>
+        <StackPanel>
+          <TextBlock Text="Sessions" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+          <TextBlock Text="Log capture, viewing and export" FontSize="12" Foreground="#9AA0A6" Margin="0,4,0,0" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <Button Content="Start Capture" Command="{Binding StartCaptureCommand}"
+                  IsEnabled="{Binding IsCapturing, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="16,8" />
+          <Button Content="Stop" Command="{Binding StopCaptureCommand}"
+                  IsEnabled="{Binding IsCapturing}" Padding="16,8" />
+          <Button Content="Pause" Command="{Binding TogglePauseCommand}"
+                  IsEnabled="{Binding IsCapturing}" Padding="16,8" />
+          <Button Content="Snapshot" Command="{Binding TakeSnapshotCommand}" Padding="16,8" />
+          <Button Content="New Session" Command="{Binding CreateSessionCommand}" Padding="16,8" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Grid ColumnDefinitions="320,*">
+      <!-- Sessions list -->
+      <Border Grid.Column="0" BorderBrush="#232329" BorderThickness="0,0,1,0" Padding="12">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="SESSIONS" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" Margin="4,0,0,8" />
+          <ScrollViewer>
+            <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}" Background="Transparent">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Margin="0,4">
+                    <TextBlock Text="{Binding Name}" Foreground="#E8EAED" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding StartTime, StringFormat='{}{0:HH:mm:ss}'}" Foreground="#9AA0A6" FontSize="11" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+
+      <!-- Log viewer -->
+      <DockPanel Grid.Column="1">
+        <Border DockPanel.Dock="Top" Padding="12,10" BorderBrush="#232329" BorderThickness="0,0,0,1">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Left" Text="LIVE OUTPUT" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+              <TextBox Watermark="Search logs…" Width="220" Text="{Binding SearchText}" />
+              <ToggleButton Content=".*" IsChecked="{Binding IsRegexSearch}" ToolTip.Tip="Regex search" Padding="10,6" />
+              <Button Content="Clear" Command="{Binding ClearLogCommand}" Padding="10,6" />
+              <Button Content="Save" Command="{Binding SaveLogCommand}" Padding="10,6" />
+              <Button Content="CSV" Command="{Binding ExportCsvCommand}" Padding="10,6" />
+              <Button Content="JSON" Command="{Binding ExportJsonCommand}" Padding="10,6" />
+            </StackPanel>
+          </DockPanel>
+        </Border>
+
+        <ListBox ItemsSource="{Binding LogEntriesView}" Background="#0B0B0E" FontFamily="Consolas, Menlo, monospace" FontSize="12">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Message}" Foreground="#C8CCD0" TextWrapping="NoWrap" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <Border DockPanel.Dock="Bottom" Padding="12,8" BorderBrush="#232329" BorderThickness="0,1,0,0">
+          <DockPanel>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#4FD1C5" FontSize="11" VerticalAlignment="Center" />
+            <TextBlock DockPanel.Dock="Right" Text="{Binding LogEntriesView.Count, StringFormat='{}{0} lines'}" Foreground="#9AA0A6" FontSize="11" />
+          </DockPanel>
+        </Border>
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</UserControl>
