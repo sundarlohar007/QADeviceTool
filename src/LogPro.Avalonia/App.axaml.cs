@@ -17,10 +17,15 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow
-            {
-                DataContext = new ShellViewModel(),
-            };
+            var window = new MainWindow();
+            Services.AvaloniaDialogService.Owner = window;
+
+            LogPro.ViewModels.UiServices.Dispatcher = new Services.AvaloniaUiDispatcher();
+            LogPro.ViewModels.UiServices.Dialogs = new Services.AvaloniaDialogService();
+            LogPro.ViewModels.UiServices.Clipboard = new Services.AvaloniaClipboardService();
+
+            window.DataContext = new ShellViewModel();
+            desktop.MainWindow = window;
         }
 
         base.OnFrameworkInitializationCompleted();

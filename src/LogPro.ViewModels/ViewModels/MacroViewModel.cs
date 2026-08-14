@@ -3,8 +3,6 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
@@ -56,7 +54,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
         _macroService = macroService;
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         _macroDir = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "Macros");
         Directory.CreateDirectory(_macroDir);
@@ -218,10 +216,10 @@ public partial class MacroViewModel : ObservableObject, IDisposable
     private async Task DeleteMacroAsync()
     {
         if (SelectedMacro == null) return;
-        var confirm = MessageBox.Show(
-            $"Delete macro '{SelectedMacro.Name}'?",
-            "Delete Macro", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (confirm != MessageBoxResult.Yes) return;
+        var confirm = UiServices.Dialogs.Confirm(
+            "Delete Macro",
+            $"Delete macro '{SelectedMacro.Name}'?");
+        if (!confirm) return;
         try
         {
             if (File.Exists(SelectedMacro.FilePath))

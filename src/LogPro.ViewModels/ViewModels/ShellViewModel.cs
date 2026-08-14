@@ -1,7 +1,5 @@
 using System;
 using System.Collections.ObjectModel;
-using System.Windows;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
@@ -36,7 +34,7 @@ public partial class ShellViewModel : ObservableObject, IDisposable
     {
         _deviceMonitor = deviceMonitor;
         _iosService = iosService;
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
