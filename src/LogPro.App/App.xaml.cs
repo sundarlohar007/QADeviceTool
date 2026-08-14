@@ -145,7 +145,7 @@ public partial class App : Application
         Services.AppLogger.Log.Fatal(e.Exception, "DispatcherUnhandledException");
         WriteCrashReport(e.Exception);
 
-        var technicalDetails = $"{e.Exception.GetType().Name}: {e.Exception.Message}\n\n{e.Exception.StackTrace}";
+        var technicalDetails = e.Exception.ToString(); // full chain incl. inner exceptions (e.g. XamlParseException inner)
         var result = MessageBox.Show(
             "An unexpected error occurred. The application will try to continue.\n\nWould you like to copy technical details to clipboard?",
             "LogPro - Error",

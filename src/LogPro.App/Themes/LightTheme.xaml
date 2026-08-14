@@ -124,8 +124,6 @@
     <Style TargetType="ToolTip"><Setter Property="Background" Value="{StaticResource BrushOverlay}"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="FontSize" Value="11"/><Setter Property="Padding" Value="10,6"/><Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="BorderThickness" Value="1"/></Style>
 
     <Style x:Key="GlassCard" TargetType="Border"><Setter Property="Background" Value="{StaticResource BrushSurface}"/><Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/><Setter Property="BorderThickness" Value="{StaticResource CardBorderThickness}"/><Setter Property="CornerRadius" Value="{StaticResource CornerRadiusCardValue}"/><Setter Property="Padding" Value="20"/><Setter Property="Margin" Value="0"/><Setter Property="Effect" Value="{StaticResource CardShadowEffect}"/></Style>
-    <Style x:Key="AppleCard" TargetType="Border" BasedOn="{StaticResource GlassCard}"/>
-    <Style x:Key="DeviceCard" TargetType="Border" BasedOn="{StaticResource GlassCard}"/>
 
     <Style x:Key="SectionHeader" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontHeader}"/><Setter Property="FontSize" Value="{StaticResource FontSize14}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/><Setter Property="Margin" Value="0,0,0,12"/></Style>
     <Style x:Key="CardTitle" TargetType="TextBlock"><Setter Property="FontFamily" Value="{StaticResource FontHeader}"/><Setter Property="FontSize" Value="{StaticResource FontSize14}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}"/></Style>
@@ -164,11 +162,9 @@
                                 Background="{StaticResource BrushOverlay}" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1">
                             <Canvas>
                                 <Ellipse x:Name="knob" Width="14" Height="14" Canvas.Left="2" Canvas.Top="2"
-                                         Fill="{StaticResource BrushTextMuted}">
-                                    <Ellipse.RenderTransform>
-                                        <TranslateTransform x:Name="knobTranslate" X="0" />
-                                    </Ellipse.RenderTransform>
-                                </Ellipse>
+                                         Fill="{StaticResource BrushTextMuted}" />
+                                <Ellipse x:Name="knobOn" Width="14" Height="14" Canvas.Left="16" Canvas.Top="2"
+                                         Fill="{StaticResource BrushCyan}" Visibility="Hidden" />
                             </Canvas>
                         </Border>
                         <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center"
@@ -178,8 +174,8 @@
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="track" Property="Background" Value="{StaticResource BrushCyanGlow}" />
                             <Setter TargetName="track" Property="BorderBrush" Value="{StaticResource BrushCyanDim}" />
-                            <Setter TargetName="knob" Property="Fill" Value="{StaticResource BrushCyan}" />
-                            <Setter TargetName="knobTranslate" Property="X" Value="16" />
+                            <Setter TargetName="knob" Property="Visibility" Value="Hidden" />
+                            <Setter TargetName="knobOn" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="track" Property="BorderBrush" Value="{StaticResource BrushBorderEmphasis}" />
