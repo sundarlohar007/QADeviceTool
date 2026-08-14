@@ -15,8 +15,14 @@ This tool bundles or invokes the following third-party components:
 3. pymobiledevice3
    License: GPL-3.0
    https://github.com/doronz88/pymobiledevice3
-   NOTE: Invoked as a subprocess, NOT bundled. Process-isolation model preserves
-   independent licensing. Users must install pymobiledevice3 separately.
+   NOTE: Invoked as a subprocess (process-isolation model — see GPL_COMPLIANCE.md).
+   An unmodified PyInstaller build is distributed alongside the application for
+   out-of-the-box iOS support; source available from the upstream repository.
+
+4. SDL2, FFmpeg libraries (bundled with scrcpy)
+   License: SDL2 zlib license; FFmpeg LGPL/GPL components per the scrcpy build.
+   https://github.com/Genymobile/scrcpy
+   See LICENSE file shipped in the scrcpy tool directory.
 
 4. CommunityToolkit.Mvvm
    License: MIT
