@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Windows;
 
@@ -94,11 +95,42 @@ public static class ThemeService
         foreach (var rd in toRemove)
             merged.Remove(rd);
 
-        var path = themeName == ThemeLight ? LightThemeSource : DarkThemeSource;
-        var dict = new ResourceDictionary
+        var requested = themeName == ThemeLight ? LightThemeSource : DarkThemeSource;
+        var fallback = themeName == ThemeLight ? DarkThemeSource : LightThemeSource;
+
+        try
         {
-            Source = new Uri(path, UriKind.Relative)
-        };
-        merged.Insert(0, dict);
+            var dict = new ResourceDictionary { Source = new Uri(requested, UriKind.Relative) };
+            merged.Insert(0, dict);
+        }
+        catch (Exception ex)
+        {
+            // Never let a broken theme dictionary kill startup (XamlParseException at boot).
+            // Log the FULL chain (inner exceptions carry the failing resource/value) and fall back.
+            var fullChain = ex.ToString();
+            LogToEarlyLog(fullChain);
+            try { AppLogger.Log.Error(ex, $"[ThemeService] Failed to load {requested}, falling back to {fallback}"); } catch { /* logger may not be ready */ }
+            try
+            {
+                var fbDict = new ResourceDictionary { Source = new Uri(fallback, UriKind.Relative) };
+                merged.Insert(0, fbDict);
+            }
+            catch (Exception fbEx)
+            {
+                LogToEarlyLog(fbEx.ToString());
+                try { AppLogger.Log.Error(fbEx, "[ThemeService] Fallback theme also failed — starting with default WPF styles"); } catch { /* logger may not be ready */ }
+            }
+        }
+    }
+
+    /// <summary>Appends diagnostics to the pre-NLog startup log so failures are recoverable even if logging isn't initialized yet.</summary>
+    private static void LogToEarlyLog(string message)
+    {
+        try
+        {
+            var path = Path.Combine(Path.GetTempPath(), "LogPro_startup-debug.log");
+            File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [ThemeService]\n{message}\n\n");
+        }
+        catch { /* cannot log the logging failure */ }
     }
 }
