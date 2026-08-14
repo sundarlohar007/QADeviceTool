@@ -163,7 +163,7 @@ jobs:
   release:
     name: GitHub Release
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
-    needs: [installer, portable]
+    needs: [build, installer, portable]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -171,16 +171,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download Artifacts
+      - name: Download Installer
         uses: actions/download-artifact@v4
         with:
+          name: setup-exe
           path: dist/
 
-      - name: Flatten Artifacts
+      - name: Download Zips
+        uses: actions/download-artifact@v4
+        with:
+          name: portable-zip
+          path: dist/
+
+      - name: List Assets
         shell: bash
         run: |
-          find dist/ -type f \( -name '*.exe' -o -name '*.zip' \) -exec mv {} dist/ \;
-          rm -rf dist/setup-exe dist/portable-zip dist/app-published dist/cli-published
           echo "=== Release Assets ==="
           ls -la dist/
 
