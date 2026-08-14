@@ -1,11 +1,8 @@
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Windows;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Win32;
 using LogPro.Models;
 using LogPro.Services;
 
@@ -42,7 +39,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         _adbService = adbService;
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
 
@@ -220,13 +217,8 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         if (SelectedDevice == null || SelectedFile == null) return;
         if (SelectedFile.Name == "..") return;
 
-        var saveDialog = new SaveFileDialog
-        {
-            FileName = SelectedFile.Name,
-            Title = "Download File from Device"
-        };
-
-        if (saveDialog.ShowDialog() == true)
+        var savePath = UiServices.Files.SaveFile("Download File from Device", "All files (*.*)|*.*", SelectedFile.Name);
+        if (savePath != null)
         {
             IsLoading = true;
             try
@@ -234,10 +226,10 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 StatusMessage = $"Downloading {SelectedFile.Name}...";
 
                 var success = SelectedDevice.Platform == DevicePlatform.Android
-                    ? await _adbService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, saveDialog.FileName)
-                    : await _iosService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, saveDialog.FileName);
+                    ? await _adbService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, savePath)
+                    : await _iosService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, savePath);
 
-                StatusMessage = success ? $"Downloaded successfully to {saveDialog.FileName}" : "Download failed.";
+                StatusMessage = success ? $"Downloaded successfully to {savePath}" : "Download failed.";
             }
             catch (Exception ex)
             {
@@ -256,18 +248,13 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     {
         if (SelectedDevice == null) return;
 
-        var openDialog = new OpenFileDialog
-        {
-            Title = "Upload File to Device",
-            Multiselect = false
-        };
-
-        if (openDialog.ShowDialog() == true)
+        var openPath = UiServices.Files.OpenFile("Upload File to Device", "All files (*.*)|*.*");
+        if (openPath != null)
         {
             IsLoading = true;
             try
             {
-                var fileName = Path.GetFileName(openDialog.FileName);
+                var fileName = Path.GetFileName(openPath);
                 if (fileName.Contains("/") || fileName.Contains("\\") || fileName.Contains(".."))
                 {
                     StatusMessage = "[!] Invalid file name.";
@@ -279,8 +266,8 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 StatusMessage = $"Uploading {fileName}...";
 
                 var success = SelectedDevice.Platform == DevicePlatform.Android
-                    ? await _adbService.PushFileAsync(SelectedDevice.Serial, openDialog.FileName, remotePath)
-                    : await _iosService.PushFileAsync(SelectedDevice.Serial, openDialog.FileName, remotePath);
+                    ? await _adbService.PushFileAsync(SelectedDevice.Serial, openPath, remotePath)
+                    : await _iosService.PushFileAsync(SelectedDevice.Serial, openPath, remotePath);
 
                 StatusMessage = success ? $"Uploaded successfully." : "Upload failed.";
 
@@ -307,10 +294,11 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         if (SelectedDevice == null || SelectedFile == null) return;
         if (SelectedFile.Name == "..") return;
 
-        var confirm = MessageBox.Show($"Are you sure you want to permanently delete from device:\n\n{SelectedFile.Path}",
-            "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        var confirm = UiServices.Dialogs.Confirm(
+            "Confirm Delete",
+            $"Are you sure you want to permanently delete from device:\n\n{SelectedFile.Path}");
 
-        if (confirm == MessageBoxResult.Yes)
+        if (confirm)
         {
             IsLoading = true;
             try

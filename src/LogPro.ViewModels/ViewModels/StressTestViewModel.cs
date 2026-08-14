@@ -6,8 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Helpers;
@@ -69,7 +67,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         TargetPackage = PreferencesService.Current.TargetPackageName;
 

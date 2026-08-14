@@ -1,7 +1,5 @@
 using System;
 using System.Collections.ObjectModel;
-using System.Windows;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
@@ -54,7 +52,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         _scrcpyService = scrcpyService;
         _deviceMonitor = deviceMonitor;
         _sessionService = sessionService;
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
@@ -201,7 +199,15 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // Security warning: tcpip opens the device to all machines on the network         var confirm = System.Windows.MessageBox.Show(             "Enabling wireless ADB will open your device to TCP connections on port 5555. Any machine on the same network can connect to and control this device. Are you sure you want to continue?",             "Security Warning — Wireless ADB",             System.Windows.MessageBoxButton.YesNo,             System.Windows.MessageBoxImage.Warning);         if (confirm != System.Windows.MessageBoxResult.Yes)         {             StatusMessage = "Wireless ADB cancelled.";             return;         } 
+        // Security warning: tcpip opens the device to all machines on the network
+        var confirm = UiServices.Dialogs.Confirm(
+            "Security Warning — Wireless ADB",
+            "Enabling wireless ADB will open your device to TCP connections on port 5555. Any machine on the same network can connect to and control this device. Are you sure you want to continue?");
+        if (!confirm)
+        {
+            StatusMessage = "Wireless ADB cancelled.";
+            return;
+        }
         StatusMessage = "Enabling wireless ADB mode...";
 
         try

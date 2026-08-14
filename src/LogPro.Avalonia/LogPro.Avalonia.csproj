@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LogPro.Core\LogPro.Core.csproj" />
+    <ProjectReference Include="..\LogPro.ViewModels\LogPro.ViewModels.csproj" />
   </ItemGroup>
 
   <ItemGroup>
