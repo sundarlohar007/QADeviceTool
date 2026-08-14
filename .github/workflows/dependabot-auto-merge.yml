@@ -1,0 +1,38 @@
+# Auto-merges dependabot PRs (squash) as soon as required checks pass.
+# Requires the repository setting: Settings → General → Pull Requests → "Allow auto-merge".
+# Major-version bumps (e.g. FluentAssertions 8.x) are excluded from grouping and
+# therefore excluded here too — they stay for human review.
+name: Dependabot auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-auto-merge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # Minor/patch bumps: enable auto-merge (squash). Grouped PRs from our
+      # dependabot.yml land here and merge themselves once CI passes.
+      - name: Enable auto-merge for minor/patch
+        if: steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.update-type == 'version-update:semver-patch'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log major-version skip
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: |
+          echo "Major version bump — leaving for human review: ${{ github.event.pull_request.html_url }}"
