@@ -58,7 +58,12 @@ public class ProfilerViewModelTests
 
             var vm = new ProfilerViewModel(adb.Object, store, new ImmediateUiDispatcher());
             vm.StartProfilingCommand.Execute(null);
-            await Task.Delay(2500);
+
+            // Wait for the CONDITION (2 samples) with a generous deadline — fixed sleeps flake under CI load.
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (vm.History.Count < 2 && DateTime.UtcNow < deadline)
+                await Task.Delay(200);
+
             await vm.StopProfilingCommand.ExecuteAsync(null);
 
             vm.History.Count.Should().BeGreaterThanOrEqualTo(2, "sampler runs at ~1s intervals");
