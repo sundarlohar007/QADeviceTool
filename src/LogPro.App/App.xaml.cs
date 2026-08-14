@@ -54,6 +54,13 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
 
+        // Register host UI services for the shared ViewModel layer (§8.1)
+        ViewModels.UiServices.Dispatcher = new Services.WpfUiDispatcher(Dispatcher);
+        ViewModels.UiServices.Dialogs = new Services.WpfDialogService();
+        ViewModels.UiServices.Files = new Services.WpfFileDialogService();
+        ViewModels.UiServices.Theme = new Services.WpfThemeServiceAdapter();
+        ViewModels.UiServices.Clipboard = new Services.WpfClipboardService();
+
         EarlyLog($"Executable Path: {Environment.ProcessPath}");
         EarlyLog($"Base Directory: {AppContext.BaseDirectory}");
         EarlyLog($"Current Directory: {Environment.CurrentDirectory}");

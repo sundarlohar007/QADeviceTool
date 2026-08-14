@@ -1,7 +1,5 @@
 using System;
 using System.Collections.ObjectModel;
-using System.Windows;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
@@ -78,7 +76,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         _sessionService = sessionService;
         _deviceMonitor = deviceMonitor;
         _dependencyChecker = dependencyChecker;
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
 

@@ -1,10 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Windows;
-using System.Windows.Threading;
-using System.Windows.Data;
-using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.IO.Compression;
@@ -32,7 +28,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     // ── Log Viewer Properties ──
     public BulkObservableCollection<LogEntry> LogEntries { get; } = new();
-    public ICollectionView LogEntriesView { get; }
+    public BulkObservableCollection<LogEntry> LogEntriesView { get; } = new();
 
     // UI scroll scroll-to-end event
     public event Action? ScrollToEndRequested;
@@ -124,10 +120,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
         _bugReportService = new BugReportService(adbService, iosService);
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
-
-        LogEntriesView = CollectionViewSource.GetDefaultView(LogEntries);
-        LogEntriesView.Filter = FilterLogEntry;
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         InitializeLogLevelFilters();
 
@@ -175,7 +168,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 if (e.PropertyName == nameof(LogLevelFilterItem.IsSelected))
                 {
                     _selectedLevelsCache = null; // invalidate cache
-                    LogEntriesView.Refresh();
+                    RebuildFilteredView();
                 }
             };
         }
@@ -380,6 +373,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
 
             LogEntries.AddRange(entries);
+
+            // Incremental filtering: append only entries matching the active filter
+            foreach (var entry in entries)
+            {
+                if (FilterLogEntry(entry))
+                    LogEntriesView.Add(entry);
+            }
 
             if (LogEntries.Count > 200000)
                 TrimLogEntries(150000);
@@ -617,19 +617,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var dialog = new Microsoft.Win32.SaveFileDialog
-            {
-                Title = "Export Log to CSV",
-                Filter = "CSV Files (*.csv)|*.csv",
-                FileName = $"{SelectedSession.Name}_log.csv"
-            };
-
-            if (dialog.ShowDialog() == true)
+            var csvPath = UiServices.Files.SaveFile("Export Log to CSV", "CSV Files (*.csv)|*.csv", $"{SelectedSession.Name}_log.csv");
+            if (csvPath != null)
             {
                 StatusMessage = "Exporting to CSV...";
-                var success = await _sessionService.ExportToCsvAsync(SelectedSession, dialog.FileName, AnonymizeExport);
+                var success = await _sessionService.ExportToCsvAsync(SelectedSession, csvPath, AnonymizeExport);
                 StatusMessage = success
-                    ? $"Exported to: {dialog.FileName}"
+                    ? $"Exported to: {csvPath}"
                     : "[!] Export failed.";
             }
         }
@@ -651,19 +645,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var dialog = new Microsoft.Win32.SaveFileDialog
-            {
-                Title = "Export Log to JSON",
-                Filter = "JSON Files (*.json)|*.json",
-                FileName = $"{SelectedSession.Name}_log.json"
-            };
-
-            if (dialog.ShowDialog() == true)
+            var jsonPath = UiServices.Files.SaveFile("Export Log to JSON", "JSON Files (*.json)|*.json", $"{SelectedSession.Name}_log.json");
+            if (jsonPath != null)
             {
                 StatusMessage = "Exporting to JSON...";
-                var success = await _sessionService.ExportToJsonAsync(SelectedSession, dialog.FileName, AnonymizeExport);
+                var success = await _sessionService.ExportToJsonAsync(SelectedSession, jsonPath, AnonymizeExport);
                 StatusMessage = success
-                    ? $"Exported to: {dialog.FileName}"
+                    ? $"Exported to: {jsonPath}"
                     : "[!] Export failed.";
             }
         }
@@ -789,10 +777,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 StatusMessage = "[!] Stop the active capture before deleting this session.";
                 return;
             }
-            var confirm = MessageBox.Show(
-                $"Delete session '{SelectedSession.Name}'? This cannot be undone.",
-                "Delete Session", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (confirm != MessageBoxResult.Yes) return;
+            var confirm = UiServices.Dialogs.Confirm(
+                "Delete Session",
+                $"Delete session '{SelectedSession.Name}'? This cannot be undone.");
+            if (!confirm) return;
             if (_isSubscribedToLogBatch)
             {
                 _sessionService.LogBatchReceived -= OnLogBatchReceived;
@@ -968,13 +956,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var entries = LogEntriesView.Cast<LogEntry>().TakeLast(10000).ToList();
+            var entries = LogEntriesView.TakeLast(10000).ToList();
             if (entries.Count == 0)
             {
                 StatusMessage = "[!] No logs to copy.";
                 return;
             }
-            var totalCount = LogEntriesView.Cast<LogEntry>().Count();
+            var totalCount = LogEntriesView.Count;
             if (totalCount > entries.Count)
                 StatusMessage = $"Copied last {entries.Count} of {totalCount} log entries to clipboard. (Truncated for performance)";
             else
@@ -984,7 +972,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 ? string.Join(Environment.NewLine, entries.Select(e => e.RawLine))
                 : string.Join(Environment.NewLine, entries.Select(e => $"[{e.Timestamp}] [{e.Level}] {e.Message}"));
 
-            Clipboard.SetText(text);
+            UiServices.Clipboard.SetText(text);
         }
         catch (Exception ex)
         {
@@ -1054,7 +1042,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         foreach (var entry in LogEntries)
             entry.IsBookmarked = false;
         _currentBookmarkIndex = -1;
-        LogEntriesView.Refresh();
+        RebuildFilteredView();
     }
 
     private bool FilterLogEntry(object obj)
@@ -1087,7 +1075,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     partial void OnIsRegexSearchChanged(bool value)
     {
-        LogEntriesView.Refresh();
+        RebuildFilteredView();
     }
 
     private CancellationTokenSource? _searchDebounceCts;
@@ -1107,7 +1095,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             {
                 await Task.Delay(300, token);
                 if (!token.IsCancellationRequested)
-                    _dispatcher.Post(() => LogEntriesView.Refresh());
+                    _dispatcher.Post(RebuildFilteredView);
             }
             catch (OperationCanceledException) { /* debounced */ }
         });
@@ -1115,7 +1103,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedLogLevelChanged(LogLevel value)
     {
-        LogEntriesView.Refresh();
+        RebuildFilteredView();
     }
 
     partial void OnSelectedSessionChanged(LogSession? value)
@@ -1210,6 +1198,21 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         if (LogEntries.Count <= maxEntries) return;
         var removeCount = LogEntries.Count - maxEntries;
         LogEntries.RemoveRange(0, removeCount);
+        // The filtered view also holds trimmed entries — rebuild it (rare, cap-only path).
+        RebuildFilteredView();
+    }
+
+    /// <summary>Re-applies the active filter over the whole base collection (used on filter changes).</summary>
+    private void RebuildFilteredView()
+    {
+        var filtered = new List<LogEntry>();
+        foreach (var entry in LogEntries)
+        {
+            if (FilterLogEntry(entry))
+                filtered.Add(entry);
+        }
+        LogEntriesView.Clear();
+        LogEntriesView.AddRange(filtered);
     }
 
     public void Dispose()

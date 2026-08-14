@@ -2,8 +2,6 @@ using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
@@ -51,7 +49,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         _iosService = iosService;
         _deviceMonitor = deviceMonitor;
         _sessionService = sessionService;
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
     }
@@ -164,22 +162,14 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var dialog = new Microsoft.Win32.OpenFileDialog();
+        var (fileFilter, fileTitle) = SelectedDevice.Platform == DevicePlatform.Android
+            ? ("Android Package (*.apk)|*.apk", "Select APK to install")
+            : ("iOS App (*.ipa)|*.ipa", "Select IPA to install");
 
-        if (SelectedDevice.Platform == DevicePlatform.Android)
-        {
-            dialog.Filter = "Android Package (*.apk)|*.apk";
-            dialog.Title = "Select APK to install";
-        }
-        else
-        {
-            dialog.Filter = "iOS App (*.ipa)|*.ipa";
-            dialog.Title = "Select IPA to install";
-        }
+        var filePath = UiServices.Files.OpenFile(fileTitle, fileFilter);
+        if (filePath == null) return;
 
-        if (dialog.ShowDialog() != true) return;
-
-        var fileName = System.IO.Path.GetFileName(dialog.FileName);
+        var fileName = System.IO.Path.GetFileName(filePath);
         IsLoading = true;
         ConsoleOutput = string.Empty;
 
@@ -205,7 +195,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
             if (SelectedDevice.Platform == DevicePlatform.Android)
             {
-                result = await _adbService.InstallApkAsync(SelectedDevice.Serial, dialog.FileName, updateProgress);
+                result = await _adbService.InstallApkAsync(SelectedDevice.Serial, filePath, updateProgress);
             }
             else
             {
@@ -217,7 +207,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                     await Task.Delay(1500);
                 }
 
-                result = await _iosService.InstallIpaAsync(SelectedDevice.Serial, dialog.FileName, updateProgress);
+                result = await _iosService.InstallIpaAsync(SelectedDevice.Serial, filePath, updateProgress);
 
                 if (activeSession != null)
                 {
@@ -250,13 +240,11 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         if (SelectedDevice == null || SelectedApp == null) return;
 
         var pkg = SelectedApp.PackageId;
-        var confirm = MessageBox.Show(
-            $"Are you sure you want to uninstall '{SelectedApp.Name}'?",
+        var confirm = UiServices.Dialogs.Confirm(
             "Confirm Uninstall",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+            $"Are you sure you want to uninstall '{SelectedApp.Name}'?");
 
-        if (confirm != MessageBoxResult.Yes) return;
+        if (!confirm) return;
 
         IsLoading = true;
         ConsoleOutput = $"Uninstalling {pkg} ({SelectedApp.Name}) from {SelectedDevice.DisplayName}...{Environment.NewLine}";
@@ -329,10 +317,10 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var confirm = MessageBox.Show(
-            $"Clear all data for '{SelectedApp.Name}' ({SelectedApp.PackageId})?",
-            "Confirm Clear Data", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (confirm != MessageBoxResult.Yes) return;
+        var confirm = UiServices.Dialogs.Confirm(
+            "Confirm Clear Data",
+            $"Clear all data for '{SelectedApp.Name}' ({SelectedApp.PackageId})?");
+        if (!confirm) return;
 
         IsLoading = true;
         StatusMessage = $"Clearing data for {SelectedApp.PackageId}...";

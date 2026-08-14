@@ -1,6 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Windows;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
@@ -75,13 +73,13 @@ public partial class SettingsViewModel : ObservableObject
         _dependencyChecker = dependencyChecker;
         _sessionService = sessionService;
         _adbService = adbService;
-        _dispatcher = dispatcher ?? new WpfUiDispatcher(Application.Current.Dispatcher);
+        _dispatcher = dispatcher ?? UiServices.Dispatcher;
         _sessionsDirectory = sessionService.SessionsRootDirectory;
 
         InitializeLogRetentionOptions();
 
 
-        IsDarkTheme = Services.ThemeService.CurrentTheme == Services.ThemeService.ThemeDark;
+        IsDarkTheme = UiServices.Theme.CurrentTheme == UiServices.Theme.ThemeDark;
         IsLightTheme = !IsDarkTheme;
         // Execute all heavy startup IO away from the main UI thread.
         Task.Run(async () =>
@@ -119,13 +117,11 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void ClearAllData()
     {
-        var result = MessageBox.Show(
-            "This will delete all preferences, logs, and cached data. This action cannot be undone.\n\nAre you sure you want to continue?",
+        var result = UiServices.Dialogs.Confirm(
             "Clear All Data",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+            "This will delete all preferences, logs, and cached data. This action cannot be undone.\n\nAre you sure you want to continue?");
 
-        if (result == MessageBoxResult.Yes)
+        if (result)
         {
             PreferencesService.ClearAllData();
             ClearDataStatus = "All data has been cleared. Please restart the application.";
@@ -180,16 +176,12 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void BrowseSessionsFolder()
     {
-        var dialog = new Microsoft.Win32.OpenFolderDialog
+        var folder = UiServices.Files.OpenFolder("Select Sessions Directory");
+        if (folder != null)
         {
-            Title = "Select Sessions Directory"
-        };
-
-        if (dialog.ShowDialog() == true)
-        {
-            SessionsDirectory = dialog.FolderName;
-            _sessionService.SessionsRootDirectory = dialog.FolderName;
-            PreferencesService.Current.SessionsRootDirectory = dialog.FolderName;
+            SessionsDirectory = folder;
+            _sessionService.SessionsRootDirectory = folder;
+            PreferencesService.Current.SessionsRootDirectory = folder;
             PreferencesService.Save();
         }
     }
@@ -268,7 +260,7 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void SwitchToDarkTheme()
     {
-        Services.ThemeService.SwitchTheme(Services.ThemeService.ThemeDark);
+        UiServices.Theme.SwitchTheme(UiServices.Theme.ThemeDark);
         IsDarkTheme = true;
         IsLightTheme = false;
     }
@@ -276,7 +268,7 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void SwitchToLightTheme()
     {
-        Services.ThemeService.SwitchTheme(Services.ThemeService.ThemeLight);
+        UiServices.Theme.SwitchTheme(UiServices.Theme.ThemeLight);
         IsDarkTheme = false;
         IsLightTheme = true;
     }
