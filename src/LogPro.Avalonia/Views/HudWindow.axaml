@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:LogPro.ViewModels"
+        x:Class="LogPro.Avalonia.Views.HudWindow"
+        x:DataType="vm:ProfilerViewModel"
+        Title="LogPro HUD"
+        Width="240" SizeToContent="Height"
+        Topmost="True" ShowInTaskbar="False" CanResize="False"
+        Background="#CC0B0B0E" SystemDecorations="BorderOnly">
+  <StackPanel Margin="14" Spacing="6">
+    <DockPanel>
+      <TextBlock Text="PERF HUD" Foreground="#9AA0A6" FontSize="10" FontWeight="SemiBold" />
+      <Button DockPanel.Dock="Right" Content="×" Click="OnCloseClick" Padding="6,0" />
+    </DockPanel>
+    <TextBlock Text="{Binding Fps, StringFormat='FPS  {0:F1}'}" Foreground="#4FD1C5" FontSize="22" FontWeight="Bold" />
+    <TextBlock Text="{Binding FrameP90Ms, StringFormat='p90  {0:F1} ms'}" Foreground="#E8EAED" FontSize="12" />
+    <TextBlock Text="{Binding CpuPercent, StringFormat='CPU  {0:F0}%'}" Foreground="#F59E0B" FontSize="14" />
+    <TextBlock Text="{Binding PssKb, StringFormat='MEM  {0} KB'}" Foreground="#E879F9" FontSize="14" />
+    <TextBlock Text="{Binding JankyFrames, StringFormat='JANK {0}'}" Foreground="#F59E0B" FontSize="14" />
+    <TextBlock Text="{Binding BatteryLevel, StringFormat='BAT  {0}%'}" Foreground="#E8EAED" FontSize="12" />
+  </StackPanel>
+</Window>

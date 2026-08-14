@@ -62,6 +62,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public MacroViewModel MacroVM { get; }
     public StressTestViewModel StressTestVM { get; }
     public SettingsViewModel SettingsVM { get; }
+    public ProfilerViewModel ProfilerVM { get; }
 
     public MainViewModel(IServiceProvider services)
     {
@@ -90,6 +91,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         MacroVM = new MacroViewModel(new MacroService(_adbService), _adbService, _deviceMonitor, _dispatcher);
         StressTestVM = new StressTestViewModel(_adbService, _deviceMonitor, _dispatcher);
         SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService, _adbService, _dispatcher);
+        ProfilerVM = new ProfilerViewModel(_adbService, _deviceStore, _dispatcher);
 
         // Wire up device monitor events -> single source of truth (IDeviceStore)
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
@@ -170,6 +172,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             "files" => FileExplorerVM,
             "macros" => MacroVM,
             "stresstest" => StressTestVM,
+            "performance" => ProfilerVM,
             "settings" => SettingsVM,
             _ => DashboardVM
         };
@@ -189,7 +192,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         foreach (var child in new IDisposable[]
         {
             DashboardVM, SessionVM, DeviceVM, AppManagementVM, ShellVM,
-            DeepLinkVM, VitalsVM, FileExplorerVM, MacroVM, StressTestVM
+            DeepLinkVM, VitalsVM, FileExplorerVM, MacroVM, StressTestVM, ProfilerVM
         })
         {
             child?.Dispose();

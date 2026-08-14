@@ -20,6 +20,7 @@
     <DataTemplate DataType="vm:FileExplorerViewModel"><views:FileExplorerView /></DataTemplate>
     <DataTemplate DataType="vm:MacroViewModel"><views:MacroView /></DataTemplate>
     <DataTemplate DataType="vm:StressTestViewModel"><views:StressTestView /></DataTemplate>
+    <DataTemplate DataType="vm:ProfilerViewModel"><views:PerformanceView /></DataTemplate>
     <DataTemplate DataType="vm:SettingsViewModel"><views:SettingsView /></DataTemplate>
   </Window.DataTemplates>
 
@@ -64,6 +65,9 @@
             <RadioButton Command="{Binding NavigateCommand}" CommandParameter="stresstest"
                          IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=stresstest}"
                          Content="Stress Test" Padding="16,10" />
+            <RadioButton Command="{Binding NavigateCommand}" CommandParameter="performance"
+                         IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=performance}"
+                         Content="Performance" Padding="16,10" />
             <RadioButton Command="{Binding NavigateCommand}" CommandParameter="settings"
                          IsChecked="{Binding SelectedNavItem, Converter={x:Static conv:AppConverters.StringEquals}, ConverterParameter=settings}"
                          Content="Settings" Padding="16,10" />
