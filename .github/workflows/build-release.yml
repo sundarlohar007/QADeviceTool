@@ -88,7 +88,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Download App
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: app-published
           path: publish/app/
@@ -135,13 +135,13 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Download App
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: app-published
           path: publish/app/
 
       - name: Download CLI
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cli-published
           path: publish/cli/
@@ -173,13 +173,13 @@ jobs:
           fetch-depth: 0
 
       - name: Download Installer
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: setup-exe
           path: dist/
 
       - name: Download Zips
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: portable-zip
           path: dist/
