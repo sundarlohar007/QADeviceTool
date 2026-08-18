@@ -61,8 +61,11 @@ public static class ToolLauncher
         var m = _deviceKeyRegex.Match(arguments);
         if (!m.Success)
         {
-            return await _globalOnly.WaitAsync(waitMs).ConfigureAwait(false)
-                ? new GateRelease(_globalOnly, null) : null;
+            if (waitMs > 0)
+                return await _globalOnly.WaitAsync(waitMs).ConfigureAwait(false)
+                    ? new GateRelease(_globalOnly, null) : null;
+            await _globalOnly.WaitAsync().ConfigureAwait(false);
+            return new GateRelease(_globalOnly, null);
         }
 
         var deviceLock = _deviceLocks.GetOrAdd(m.Groups[1].Value, _ => new SemaphoreSlim(1, 1));
@@ -70,6 +73,7 @@ public static class ToolLauncher
         {
             var ok = await _globalCap.WaitAsync(waitMs).ConfigureAwait(false);
             var deviceOk = ok && await deviceLock.WaitAsync(waitMs).ConfigureAwait(false);
+            if (ok && !deviceOk) _globalCap.Release(); // don't leak the global slot
             return (ok && deviceOk) ? new GateRelease(_globalCap, deviceLock) : null;
         }
 
