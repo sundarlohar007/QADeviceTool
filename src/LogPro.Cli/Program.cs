@@ -36,6 +36,7 @@ public static class Program
                 "soak" => await Soak(adb, ios, args),
                 "serve" => await Serve(adb, ios, args),
                 "report" => await Report(args),
+                "matrix" => await Matrix(adb, args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -138,7 +139,7 @@ public static class Program
             PreferencesService.Current.TargetPackageName = package;
 
         var session = sessions.CreateSession(device);
-        Console.WriteLine($"Capturing {seconds}s from {device.DisplayName} → {session.SessionDirectory}");
+        Console.WriteLine($"Capturing {seconds}s from {device.DisplayName} -> {session.SessionDirectory}");
         if (!await sessions.StartCaptureAsync(session))
         {
             Console.Error.WriteLine("failed to start capture (tool missing or device offline)");
@@ -147,7 +148,7 @@ public static class Program
 
         await Task.Delay(TimeSpan.FromSeconds(seconds));
         sessions.StopCapture(session);
-        Console.WriteLine($"Stopped. {session.LogLineCount} lines → {session.LogFilePath}");
+        Console.WriteLine($"Stopped. {session.LogLineCount} lines -> {session.LogFilePath}");
         return 0;
     }
 
@@ -176,7 +177,7 @@ public static class Program
         using var profiler = new LogPro.Services.Profiling.AndroidPerformanceProfiler(
             adb, serial, package, layer, intervalMs: 1000);
 
-        Console.WriteLine($"Profiling {seconds}s → {outDir}");
+        Console.WriteLine($"Profiling {seconds}s -> {outDir}");
         profiler.Start();
         await Task.Delay(TimeSpan.FromSeconds(seconds));
         await profiler.StopAsync();
@@ -232,7 +233,7 @@ public static class Program
                 }
             };
 
-        Console.WriteLine($"Soaking {seconds}s on {device.DisplayName} → {outDir}");
+        Console.WriteLine($"Soaking {seconds}s on {device.DisplayName} -> {outDir}");
         var duration = TimeSpan.FromSeconds(seconds);
         var report = await LogPro.Services.Profiling.SoakRunner.RunAsync(adb, serial, package, duration, load);
 
@@ -297,7 +298,7 @@ public static class Program
         var title = Opt(args, "--title") ?? $"LogPro Session Report";
         var html = LogPro.Services.Profiling.ProfilerReportHtml.Render(title, snapshots);
         await File.WriteAllTextAsync(outPath, html);
-        Console.WriteLine($"Report written → {outPath} ({snapshots.Count} samples)");
+        Console.WriteLine($"Report written -> {outPath} ({snapshots.Count} samples)");
         return 0;
 
         static DateTime ReadDate(System.Text.Json.JsonElement e, string name)
@@ -306,6 +307,49 @@ public static class Program
             => e.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetDouble() : null;
         static int? ReadInt(System.Text.Json.JsonElement e, string name)
             => e.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetInt32() : null;
+    }
+
+    /// <summary>Device-tier matrix — profiles several devices in parallel and compares (§12.2).</summary>
+    private static async Task<int> Matrix(AdbService adb, string[] args)
+    {
+        var serialsArg = Opt(args, "--serials");
+        if (string.IsNullOrWhiteSpace(serialsArg))
+        {
+            Console.Error.WriteLine("matrix requires --serials A,B,C");
+            return 2;
+        }
+
+        var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 60;
+        var package = Opt(args, "--package");
+        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+        var labels = (Opt(args, "--labels") ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var chipsets = (Opt(args, "--chipsets") ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+        var serials = serialsArg.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var profiles = serials.Select((serial, i) => new LogPro.Services.Profiling.DeviceTierProfile
+        {
+            Serial = serial,
+            Label = i < labels.Length ? labels[i] : serial,
+            Chipset = i < chipsets.Length ? chipsets[i] : string.Empty
+        }).ToList();
+
+        Directory.CreateDirectory(outDir);
+        var deviceCount = serials.Length;
+        Console.WriteLine("Comparing " + deviceCount + " devices for " + seconds + "s -> " + outDir);
+
+        var results = await LogPro.Services.Profiling.TierMatrix.CompareAsync(
+            adb, profiles, package, TimeSpan.FromSeconds(seconds));
+
+        var jsonPath = Path.Combine(outDir, "tier-comparison.json");
+        await LogPro.Services.Profiling.TierMatrix.WriteJsonAsync(results, jsonPath);
+
+        Console.WriteLine($"{"Device",-14} {"Label",-12} {"AvgFPS",8} {"MinFPS",8} {"Jank",6} {"MaxCPU",8} {"MemGrw",8} {"Slow",6}");
+        foreach (var r in results)
+        {
+            Console.WriteLine($"{r.Profile.Serial,-14} {r.Profile.Label,-12} {(r.AvgFps?.ToString("F1") ?? "n/a"),8} {(r.MinFps?.ToString("F1") ?? "n/a"),8} {r.JankyFrames,6} {(r.MaxCpuPercent?.ToString("F0") ?? "n/a"),8} {$"{r.MemoryGrowthKb / 1024} MB",8} {(r.SlowSession ? "YES" : "no"),6}");
+        }
+        Console.WriteLine($"Report: {jsonPath}");
+        return results.Count > 0 ? 0 : 1;
     }
 
     private static async Task<int> Export(AdbService adb, IosService ios, string[] args)
@@ -327,7 +371,7 @@ public static class Program
             ? await sessions.ExportToJsonAsync(session, outPath, anonymize)
             : await sessions.ExportToCsvAsync(session, outPath, anonymize);
 
-        Console.WriteLine(ok ? $"Exported → {outPath}" : "export failed");
+        Console.WriteLine(ok ? $"Exported -> {outPath}" : "export failed");
         return ok ? 0 : 1;
     }
 

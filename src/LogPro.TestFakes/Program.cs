@@ -1,18 +1,28 @@
 // Fake adb: enough of the CLI surface for hardware-free end-to-end tests.
-// - devices -l                       one fake online Android device (FAKE01)
+// - devices -l                       three fake online Android devices (FAKE01-03)
 // - -s X logcat ...                  streams synthetic logcat lines forever (killed by caller)
 // - SurfaceFlinger --list            one fake game layer
-// - SurfaceFlinger --latency <layer> synthetic 60fps stream with occasional jank
+// - SurfaceFlinger --latency <layer> synthetic stream; per-serial frame pacing
 // - cpuinfo / meminfo / thermalservice / battery   synthetic dumpsys outputs
 // - version                          banner
 // - anything else                    empty success
 
 var joined = string.Join(' ', Environment.GetCommandLineArgs().Skip(1));
 
+static string? ExtractSerial(string args)
+{
+    var idx = args.IndexOf("-s ", StringComparison.Ordinal);
+    if (idx < 0) return null;
+    var rest = args[(idx + 3)..].TrimStart();
+    return rest.Split(' ')[0];
+}
+
 if (joined.StartsWith("devices", StringComparison.Ordinal))
 {
     Console.WriteLine("List of devices attached");
     Console.WriteLine("FAKE01\tdevice product:sdk_gphone_x86_64 model:Pixel_7 device:panther transport_id:1");
+    Console.WriteLine("FAKE02\tdevice product:sdk_gphone_x86_64 model:Pixel_6a device:bluejay transport_id:2");
+    Console.WriteLine("FAKE03\tdevice product:sdk_gphone_x86_64 model:Pixel_5 device:redfin transport_id:3");
     Console.WriteLine();
     return 0;
 }
@@ -27,12 +37,16 @@ if (joined.Contains("SurfaceFlinger --list", StringComparison.Ordinal))
 if (joined.Contains("SurfaceFlinger --latency", StringComparison.Ordinal))
 {
     Console.WriteLine("16666666"); // refresh period ns (60Hz)
+    // Per-device frame pacing: FAKE02 is the slower tier (fewer FPS), FAKE03 the fastest.
+    var serial = ExtractSerial(joined);
+    var frameNs = serial == "FAKE02" ? 27_000_000L : serial == "FAKE03" ? 14_000_000L : 16_666_666L;
+    var jankEvery = serial == "FAKE02" ? 5 : 10;
     long present = 10_000_000_000L;
     for (var i = 0; i < 90; i++)
     {
-        present += 16_666_666L;                       // ~60fps
-        if (i % 10 == 0) present += 20_000_000L;      // periodic jank frame (+20ms)
-        Console.WriteLine($"{(i * 16_666_666):D14}\t{(i * 16_666_666 + 2_000_000):D14}\t{present:D14}");
+        present += frameNs;
+        if (i % jankEvery == 0) present += 25_000_000L;
+        Console.WriteLine($"{(i * frameNs):D14}\t{(i * frameNs + 2_000_000):D14}\t{present:D14}");
     }
     return 0;
 }

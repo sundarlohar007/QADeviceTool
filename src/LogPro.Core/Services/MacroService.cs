@@ -256,14 +256,14 @@ public class MacroService
         try
         {
             var json = await File.ReadAllTextAsync(filePath);
-            return JsonSerializer.Deserialize<MacroFile>(json);
+            return JsonSerializer.Deserialize(json, LogProJsonContext.Default.MacroFile);
         }
         catch (Exception ex) { AppLogger.Log.Warn(ex, "[MacroService] Replay failed"); return null; }
     }
 
     public static async Task SaveMacroAsync(MacroFile macro, string filePath)
     {
-        var json = JsonSerializer.Serialize(macro, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(macro, LogProJsonContext.Default.MacroFile);
         await File.WriteAllTextAsync(filePath, json);
     }
 }
