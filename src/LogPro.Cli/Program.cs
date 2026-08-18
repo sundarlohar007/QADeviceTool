@@ -38,6 +38,8 @@ public static class Program
                 "report" => await Report(args),
                 "matrix" => await Matrix(adb, args),
                 "tools" => await Tools(args),
+                "location" => await Location(adb, args),
+                "network" => await Network(adb, args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -380,6 +382,104 @@ public static class Program
         foreach (var m in result.Missing) Console.WriteLine($"  MISSING  {m}");
         foreach (var u in result.Unexpected) Console.WriteLine($"  UNEXPECTED {u}");
         return result.IsHealthy ? 0 : 1;
+    }
+
+    /// <summary>Mock-location simulation (§12.4) with a mandatory reset.</summary>
+    private static async Task<int> Location(AdbService adb, string[] args)
+    {
+        var sub = args.Length > 1 ? args[1] : "";
+        var serial = Opt(args, "--serial");
+        var app = Opt(args, "--app");
+        if (string.IsNullOrWhiteSpace(serial) || string.IsNullOrWhiteSpace(app))
+        {
+            Console.Error.WriteLine("location requires --serial and --app");
+            return 2;
+        }
+
+        var sim = new LogPro.Services.ConditionSimulator(adb);
+
+        if (sub == "reset")
+        {
+            var ok = await sim.ResetLocationAsync(serial, app);
+            Console.WriteLine(ok ? $"Mock location revoked from {app}." : "Reset failed.");
+            return ok ? 0 : 1;
+        }
+
+        if (sub == "route")
+        {
+            var waypointsArg = Opt(args, "--waypoints");
+            var speed = double.TryParse(Opt(args, "--speed"), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var spd) ? spd : 5.0;
+            var seconds = int.TryParse(Opt(args, "--seconds"), out var secs) ? secs : 60;
+            if (string.IsNullOrWhiteSpace(waypointsArg))
+            {
+                Console.Error.WriteLine("route requires --waypoints \"lat,lon;lat,lon\"");
+                return 2;
+            }
+
+            var waypoints = waypointsArg.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(w => w.Split(',', StringSplitOptions.TrimEntries))
+                .Select(p => (double.Parse(p[0], System.Globalization.CultureInfo.InvariantCulture),
+                              double.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture)))
+                .ToList();
+
+            await sim.SetMockLocationAppAsync(serial, app);
+            var fixes = LogPro.Services.ConditionPlanners.PlanRoute(waypoints, speed, TimeSpan.FromSeconds(seconds));
+            Console.WriteLine($"Injecting {fixes.Count} fixes at {speed} m/s for {seconds}s (mock provider must be running on-device)");
+            foreach (var fix in fixes)
+            {
+                await sim.InjectFixAsync(serial, fix.Latitude, fix.Longitude);
+                await Task.Delay(1000);
+            }
+            Console.WriteLine("Route complete. Run 'logpro-cli location reset --serial " + serial + " --app " + app + "' to revoke mock location.");
+            return 0;
+        }
+
+        Console.Error.WriteLine("usage: location route|reset --serial S --app P [...]");
+        return 2;
+    }
+
+    /// <summary>Network conditioning via root tc/netem (§12.3).</summary>
+    private static async Task<int> Network(AdbService adb, string[] args)
+    {
+        var sub = args.Length > 1 ? args[1] : "";
+        var serial = Opt(args, "--serial");
+        var iface = Opt(args, "--interface") ?? "wlan0";
+        if (string.IsNullOrWhiteSpace(serial))
+        {
+            Console.Error.WriteLine("network requires --serial");
+            return 2;
+        }
+
+        var sim = new LogPro.Services.ConditionSimulator(adb);
+
+        if (sub == "reset")
+        {
+            var ok = await sim.ResetNetworkConditionAsync(serial, iface);
+            Console.WriteLine(ok ? $"Network conditioning reset on {iface}." : "Reset failed.");
+            return ok ? 0 : 1;
+        }
+
+        if (sub == "apply")
+        {
+            var presetName = Opt(args, "--preset") ?? "4g";
+            var preset = LogPro.Services.ConditionPlanners.Presets.FirstOrDefault(p =>
+                p.Name.Equals(presetName, StringComparison.OrdinalIgnoreCase));
+            if (preset == null)
+            {
+                Console.Error.WriteLine($"unknown preset '{presetName}' — use: {string.Join(", ", LogPro.Services.ConditionPlanners.Presets.Select(p => p.Name))}");
+                return 2;
+            }
+
+            var ok = await sim.ApplyNetworkConditionAsync(serial, preset, iface);
+            Console.WriteLine(ok
+                ? $"Applied {preset.Name}: {preset.LatencyMs}ms±{preset.JitterMs}ms, {preset.LossPercent}% loss, {preset.BandwidthMbps} Mbps on {iface}"
+                : "Failed — device needs root (su) for tc/netem conditioning.");
+            return ok ? 0 : 1;
+        }
+
+        Console.Error.WriteLine("usage: network apply|reset --serial S [--preset 3g|4g|5g|edge|metro] [--interface wlan0]");
+        return 2;
     }
 
     private static async Task<int> Export(AdbService adb, IosService ios, string[] args)
