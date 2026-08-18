@@ -112,6 +112,73 @@ public class CliSmokeTests
     }
 
     [Fact]
+    public async Task Serve_ControlApi_HealthDevicesProfile()
+    {
+        var home = StageCliHome();
+        var port = 18000 + Random.Shared.Next(100, 900);
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"exec \"{Path.Combine(home, "logpro-cli.dll")}\" serve --port {port}",
+            WorkingDirectory = home,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        psi.Environment["PATH"] = home + Path.PathSeparator + (Environment.GetEnvironmentVariable("PATH") ?? "");
+
+        using var process = Process.Start(psi)!;
+        try
+        {
+            using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+
+            // wait for the server to come up
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (true)
+            {
+                try { var h = await client.GetAsync("/health"); if (h.IsSuccessStatusCode) break; }
+                catch (HttpRequestException) { }
+                if (DateTime.UtcNow > deadline) throw new TimeoutException("control API did not come up");
+                await Task.Delay(300);
+            }
+
+            var devicesJson = await client.GetStringAsync("/devices");
+            devicesJson.Should().Contain("FAKE01");
+
+            var start = await client.GetAsync("/profile/start?serial=FAKE01&package=fakegame");
+            start.IsSuccessStatusCode.Should().BeTrue();
+            await Task.Delay(3500);
+
+            var snapshotJson = await client.GetStringAsync("/profile/snapshot");
+            using (var doc = System.Text.Json.JsonDocument.Parse(snapshotJson))
+                doc.RootElement.GetProperty("fps").GetDouble().Should().BeGreaterThan(30, "fake layer streams ~60fps");
+
+            var stopJson = await client.GetStringAsync("/profile/stop");
+            using (var doc = System.Text.Json.JsonDocument.Parse(stopJson))
+                doc.RootElement.GetProperty("samples").GetInt32().Should().BeGreaterThanOrEqualTo(2);
+
+            // capture start/stop round-trip
+            var captureBody = new StringContent("{\"serial\":\"FAKE01\"}", System.Text.Encoding.UTF8, "application/json");
+            var captureStart = await client.PostAsync("/capture/start", captureBody);
+            captureStart.IsSuccessStatusCode.Should().BeTrue();
+            var captureInfo = System.Text.Json.JsonDocument.Parse(await captureStart.Content.ReadAsStringAsync()).RootElement;
+            var sessionId = captureInfo.GetProperty("sessionId").GetString()!;
+            await Task.Delay(1500);
+
+            var captureStop = await client.PostAsync("/capture/stop", new StringContent(
+                System.Text.Json.JsonSerializer.Serialize(new { sessionId }),
+                System.Text.Encoding.UTF8, "application/json"));
+            captureStop.IsSuccessStatusCode.Should().BeTrue();
+        }
+        finally
+        {
+            try { process.Kill(true); } catch { /* best effort */ }
+            try { Directory.Delete(home, true); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
     public async Task Capture_WritesLogFile()
     {
         var home = StageCliHome();

@@ -34,6 +34,7 @@ public static class Program
                 "capture" => await Capture(adb, ios, args),
                 "profile" => await Profile(adb, ios, args),
                 "soak" => await Soak(adb, ios, args),
+                "serve" => await Serve(adb, ios, args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -75,6 +76,11 @@ public static class Program
           devices                                   List connected devices
           capture --serial S [--seconds N] [--out DIR] [--package P]
                                                     Capture device logs (default 30s)
+          profile --serial S [--seconds N] [--package P] --out DIR
+                                                    Performance profiling (FPS/CPU/mem/thermal)
+          soak --serial S --seconds N [--macro FILE] [--package P] --out DIR
+                                                    Endurance run with decay flags
+          serve [--port P]                          Loopback control API for CI/Appium
           export --log FILE --format csv|json --out FILE [--anonymize]
                                                     Export a session log file
           bugreport --serial S [--out DIR]          Generate a zipped bug report
@@ -236,6 +242,17 @@ public static class Program
 
         var summary = LogPro.Services.Profiling.ProfilerReportWriter.Summarize(new List<LogPro.Services.Profiling.ProfilerSnapshot>());
         return report.SampleCount > 0 ? 0 : 1;
+    }
+
+    /// <summary>Runs the loopback control API (§16) for CI/Appium harnesses.</summary>
+    private static async Task<int> Serve(AdbService adb, IosService ios, string[] args)
+    {
+        var port = int.TryParse(Opt(args, "--port"), out var p) ? p : 8417;
+        using var server = new ControlApiServer(adb, ios);
+        server.Start(port);
+        Console.WriteLine($"Control API listening on http://127.0.0.1:{port} (Ctrl+C to stop)");
+        await Task.Delay(Timeout.Infinite);
+        return 0;
     }
 
     private static async Task<int> Export(AdbService adb, IosService ios, string[] args)

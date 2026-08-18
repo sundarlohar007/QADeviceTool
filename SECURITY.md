@@ -18,6 +18,9 @@ LogPro is a **local, single-user desktop tool**. Its trust boundary is:
 - **USB devices:** device output (logcat, dumpsys, AFC listings) is untrusted input.
   Device-targeted commands are built with strict allowlists (`IsSafePath`,
   package-name validation, quoted arguments) to prevent shell injection.
+- **Local control API** (`logpro-cli serve`): binds to `127.0.0.1` only, no
+  authentication — intended for same-user CI/Appium harnesses. Never expose it by
+  forwarding the port or binding non-loopback interfaces.
 
 ## Data sensitivity
 
