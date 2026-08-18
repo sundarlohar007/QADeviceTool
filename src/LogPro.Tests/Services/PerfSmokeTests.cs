@@ -10,6 +10,7 @@ namespace LogPro.Tests.Services;
 /// not micro-perf. Run/filter via: dotnet test --filter "Category=Perf"
 /// </summary>
 [Trait("Category", "Perf")]
+[Collection("HeavyE2E")]
 public class PerfSmokeTests : IDisposable
 {
     private const int LineCount = 1_000_000;

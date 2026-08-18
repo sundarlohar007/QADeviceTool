@@ -45,38 +45,29 @@ public class ProfilerViewModelTests
     [Fact]
     public async Task StartStop_CapturesSnapshots()
     {
-        var originalPackage = PreferencesService.Current.TargetPackageName;
-        PreferencesService.Current.TargetPackageName = "com.fakegame";
-        try
+        var adb = CreateFakeAdb();
+        var store = new DeviceStore(new ImmediateUiDispatcher());
+        store.UpdateDevices(new[]
         {
-            var adb = CreateFakeAdb();
-            var store = new DeviceStore(new ImmediateUiDispatcher());
-            store.UpdateDevices(new[]
-            {
-                new LogPro.Models.DeviceInfo { Serial = "FAKE01", Model = "Pixel", Platform = LogPro.Models.DevicePlatform.Android }
-            });
+            new LogPro.Models.DeviceInfo { Serial = "FAKE01", Model = "Pixel", Platform = LogPro.Models.DevicePlatform.Android }
+        });
 
-            var vm = new ProfilerViewModel(adb.Object, store, new ImmediateUiDispatcher());
-            vm.StartProfilingCommand.Execute(null);
+        var vm = new ProfilerViewModel(adb.Object, store, new ImmediateUiDispatcher(), packageOverride: "com.fakegame");
+        vm.StartProfilingCommand.Execute(null);
 
-            // Wait for the CONDITION (2 samples) with a generous deadline — fixed sleeps flake under CI load.
-            var deadline = DateTime.UtcNow.AddSeconds(10);
-            while (vm.History.Count < 2 && DateTime.UtcNow < deadline)
-                await Task.Delay(200);
+        // Wait for the CONDITION (2 samples) with a generous deadline — fixed sleeps flake under CI load.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (vm.History.Count < 2 && DateTime.UtcNow < deadline)
+            await Task.Delay(200);
 
-            await vm.StopProfilingCommand.ExecuteAsync(null);
+        await vm.StopProfilingCommand.ExecuteAsync(null);
 
-            vm.History.Count.Should().BeGreaterThanOrEqualTo(2, "sampler runs at ~1s intervals");
-            vm.Fps.Should().HaveValue();
-            vm.Fps!.Value.Should().BeGreaterThan(30, "fake SurfaceFlinger streams ~60fps with jank");
-            vm.JankyFrames.Should().BeGreaterThan(0, "fake stream injects jank frames");
-            vm.CpuPercent.Should().Be(38.0);
-            vm.PssKb.Should().Be(384000);
-        }
-        finally
-        {
-            PreferencesService.Current.TargetPackageName = originalPackage;
-        }
+        vm.History.Count.Should().BeGreaterThanOrEqualTo(2, "sampler runs at ~1s intervals");
+        vm.Fps.Should().HaveValue();
+        vm.Fps!.Value.Should().BeGreaterThan(30, "fake SurfaceFlinger streams ~60fps with jank");
+        vm.JankyFrames.Should().BeGreaterThan(0, "fake stream injects jank frames");
+        vm.CpuPercent.Should().Be(38.0);
+        vm.PssKb.Should().Be(384000);
     }
 
     [Fact]
