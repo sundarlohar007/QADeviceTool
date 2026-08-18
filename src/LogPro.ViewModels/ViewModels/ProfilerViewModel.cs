@@ -16,13 +16,15 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
     private readonly IAdbService _adb;
     private readonly IDeviceStore _store;
     private readonly IUiDispatcher _dispatcher;
+    private readonly string? _packageOverride;
     private AndroidPerformanceProfiler? _profiler;
 
-    public ProfilerViewModel(IAdbService adb, IDeviceStore store, IUiDispatcher dispatcher)
+    public ProfilerViewModel(IAdbService adb, IDeviceStore store, IUiDispatcher dispatcher, string? packageOverride = null)
     {
         _adb = adb;
         _store = store;
         _dispatcher = dispatcher;
+        _packageOverride = packageOverride;
     }
 
     public ObservableCollection<ProfilerSnapshot> History { get; } = new();
@@ -57,7 +59,7 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
 
         History.Clear();
         JankyFrames = 0;
-        var package = PreferencesService.Current.TargetPackageName;
+        var package = _packageOverride ?? PreferencesService.Current.TargetPackageName;
         _profiler = new AndroidPerformanceProfiler(_adb, device.Serial,
             string.IsNullOrWhiteSpace(package) ? null : package, intervalMs: 1000);
         _profiler.SnapshotSampled += OnSnapshot;

@@ -59,7 +59,20 @@ public sealed class AvaloniaClipboardService : IClipboardService
 {
     public void SetText(string text)
     {
-        // Avalonia 12 clipboard uses SetDataAsync(IAsyncDataTransferObject) — wired during view parity.
-        // Best-effort noop until then (WPF remains the shipping UI).
+        try
+        {
+            var top = AvaloniaDialogService.Owner != null
+                ? global::Avalonia.Controls.TopLevel.GetTopLevel(AvaloniaDialogService.Owner)
+                : null;
+            if (top?.Clipboard == null) return;
+
+            var data = new global::Avalonia.Input.DataTransfer();
+            data.Add(global::Avalonia.Input.DataTransferItem.CreateText(text));
+            top.Clipboard.SetDataAsync(data).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            LogPro.Services.AppLogger.Log.Debug(ex, "[AvaloniaUi] Clipboard set failed");
+        }
     }
 }

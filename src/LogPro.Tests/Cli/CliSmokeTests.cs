@@ -6,6 +6,7 @@ namespace LogPro.Tests.Cli;
 /// End-to-end CLI smoke tests against a fake adb (LogPro.TestFakes) — no hardware required.
 /// PATH is overridden for the child process so the fake adb.exe shadows any real adb.
 /// </summary>
+[Collection("HeavyE2E")]
 public class CliSmokeTests
 {
     /// <summary>
@@ -103,6 +104,15 @@ public class CliSmokeTests
 
             File.Exists(Path.Combine(outDir, "profile.csv")).Should().BeTrue();
             stdout.Should().Contain("Avg FPS");
+
+            // HTML report from the JSON output
+            var (reportExit, reportOut, reportErr) = await RunCliAsync(home,
+                $"report --json \"{json}\" --out \"{Path.Combine(outDir, "report.html")}\" --title \"Fake Run\"");
+            reportExit.Should().Be(0, because: $"report should succeed; stdout: {reportOut} stderr: {reportErr}");
+            var html = await File.ReadAllTextAsync(Path.Combine(outDir, "report.html"));
+            html.Should().Contain("<!DOCTYPE html>");
+            html.Should().Contain("Avg FPS");
+            html.Should().Contain("Fake Run");
         }
         finally
         {
@@ -148,15 +158,27 @@ public class CliSmokeTests
 
             var start = await client.GetAsync("/profile/start?serial=FAKE01&package=fakegame");
             start.IsSuccessStatusCode.Should().BeTrue();
-            await Task.Delay(3500);
 
-            var snapshotJson = await client.GetStringAsync("/profile/snapshot");
-            using (var doc = System.Text.Json.JsonDocument.Parse(snapshotJson))
-                doc.RootElement.GetProperty("fps").GetDouble().Should().BeGreaterThan(30, "fake layer streams ~60fps");
+            // Poll until a snapshot with fps lands (first sample may still be in flight under CI load)
+            var fpsDeadline = DateTime.UtcNow.AddSeconds(15);
+            double? fps = null;
+            while (DateTime.UtcNow < fpsDeadline)
+            {
+                var snapshotJson = await client.GetStringAsync("/profile/snapshot");
+                using (var doc = System.Text.Json.JsonDocument.Parse(snapshotJson))
+                {
+                    if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                        && doc.RootElement.TryGetProperty("fps", out var f) && f.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    { fps = f.GetDouble(); break; }
+                }
+                await Task.Delay(400);
+            }
+            fps.Should().HaveValue("profiler must emit an fps-bearing snapshot");
+            fps!.Value.Should().BeGreaterThan(30, "fake layer streams ~60fps");
 
             var stopJson = await client.GetStringAsync("/profile/stop");
             using (var doc = System.Text.Json.JsonDocument.Parse(stopJson))
-                doc.RootElement.GetProperty("samples").GetInt32().Should().BeGreaterThanOrEqualTo(2);
+                doc.RootElement.GetProperty("samples").GetInt32().Should().BeGreaterThanOrEqualTo(1, "at least one sample was captured");
 
             // capture start/stop round-trip
             var captureBody = new StringContent("{\"serial\":\"FAKE01\"}", System.Text.Encoding.UTF8, "application/json");

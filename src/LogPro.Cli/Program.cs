@@ -35,6 +35,7 @@ public static class Program
                 "profile" => await Profile(adb, ios, args),
                 "soak" => await Soak(adb, ios, args),
                 "serve" => await Serve(adb, ios, args),
+                "report" => await Report(args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -253,6 +254,58 @@ public static class Program
         Console.WriteLine($"Control API listening on http://127.0.0.1:{port} (Ctrl+C to stop)");
         await Task.Delay(Timeout.Infinite);
         return 0;
+    }
+
+    /// <summary>Renders an HTML session report from a profile-report.json (§12.9).</summary>
+    private static async Task<int> Report(string[] args)
+    {
+        var jsonPath = Opt(args, "--json");
+        var outPath = Opt(args, "--out");
+        if (string.IsNullOrWhiteSpace(jsonPath) || string.IsNullOrWhiteSpace(outPath))
+        {
+            Console.Error.WriteLine("report requires --json and --out");
+            return 2;
+        }
+        if (!File.Exists(jsonPath))
+        {
+            Console.Error.WriteLine($"file not found: {jsonPath}");
+            return 1;
+        }
+
+        var snapshots = new List<LogPro.Services.Profiling.ProfilerSnapshot>();
+        using (var doc = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(jsonPath)))
+        {
+            if (doc.RootElement.TryGetProperty("Samples", out var samples))
+            {
+                foreach (var s in samples.EnumerateArray())
+                {
+                    snapshots.Add(new LogPro.Services.Profiling.ProfilerSnapshot
+                    {
+                        Timestamp = ReadDate(s, "Timestamp"),
+                        Fps = ReadDouble(s, "Fps"),
+                        FrameTimeP90Ms = ReadDouble(s, "FrameTimeP90Ms"),
+                        CpuPercent = ReadDouble(s, "CpuPercent"),
+                        PssKb = ReadInt(s, "PssKb"),
+                        JankyFrames = ReadInt(s, "JankyFrames"),
+                        ThermalStatus = ReadInt(s, "ThermalStatus"),
+                        BatteryLevel = ReadInt(s, "BatteryLevel")
+                    });
+                }
+            }
+        }
+
+        var title = Opt(args, "--title") ?? $"LogPro Session Report";
+        var html = LogPro.Services.Profiling.ProfilerReportHtml.Render(title, snapshots);
+        await File.WriteAllTextAsync(outPath, html);
+        Console.WriteLine($"Report written → {outPath} ({snapshots.Count} samples)");
+        return 0;
+
+        static DateTime ReadDate(System.Text.Json.JsonElement e, string name)
+            => e.TryGetProperty(name, out var v) && DateTime.TryParse(v.GetString(), out var d) ? d : DateTime.UtcNow;
+        static double? ReadDouble(System.Text.Json.JsonElement e, string name)
+            => e.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetDouble() : null;
+        static int? ReadInt(System.Text.Json.JsonElement e, string name)
+            => e.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetInt32() : null;
     }
 
     private static async Task<int> Export(AdbService adb, IosService ios, string[] args)
