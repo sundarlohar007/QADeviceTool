@@ -37,6 +37,7 @@ public static class Program
                 "serve" => await Serve(adb, ios, args),
                 "report" => await Report(args),
                 "matrix" => await Matrix(adb, args),
+                "tools" => await Tools(args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -350,6 +351,35 @@ public static class Program
         }
         Console.WriteLine($"Report: {jsonPath}");
         return results.Count > 0 ? 0 : 1;
+    }
+
+    /// <summary>Bundled-tool integrity (§7.1): write or verify the sha256 manifest.</summary>
+    private static async Task<int> Tools(string[] args)
+    {
+        var sub = args.Length > 1 ? args[1] : "verify";
+        var toolsRoot = LogPro.Helpers.ToolLauncher.ToolsDirectory;
+        if (!Directory.Exists(toolsRoot))
+        {
+            Console.Error.WriteLine($"no bundled tools directory: {toolsRoot}");
+            return 1;
+        }
+
+        var manifestPath = Opt(args, "--manifest") ?? Path.Combine(toolsRoot, LogPro.Services.ToolManifest.DefaultFileName);
+
+        if (sub == "manifest")
+        {
+            await LogPro.Services.ToolManifest.WriteAsync(toolsRoot, manifestPath);
+            Console.WriteLine($"Manifest written → {manifestPath}");
+            return 0;
+        }
+
+        var result = await LogPro.Services.ToolManifest.VerifyAsync(toolsRoot, manifestPath);
+        Console.WriteLine($"Tools root: {toolsRoot}");
+        Console.WriteLine($"OK: {result.Ok.Count} | mismatched: {result.Mismatched.Count} | missing: {result.Missing.Count} | unexpected: {result.Unexpected.Count}");
+        foreach (var m in result.Mismatched) Console.WriteLine($"  MISMATCH {m.Path} (expected {m.Sha256[..12]}…)");
+        foreach (var m in result.Missing) Console.WriteLine($"  MISSING  {m}");
+        foreach (var u in result.Unexpected) Console.WriteLine($"  UNEXPECTED {u}");
+        return result.IsHealthy ? 0 : 1;
     }
 
     private static async Task<int> Export(AdbService adb, IosService ios, string[] args)
