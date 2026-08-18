@@ -240,7 +240,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
             try
             {
                 var json = File.ReadAllText(file);
-                var macro = System.Text.Json.JsonSerializer.Deserialize<MacroFile>(json);
+                var macro = System.Text.Json.JsonSerializer.Deserialize(json, LogPro.Services.LogProJsonContext.Default.MacroFile);
                 if (macro != null)
                 {
                     Macros.Add(new MacroFileItem

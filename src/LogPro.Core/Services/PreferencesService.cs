@@ -45,7 +45,7 @@ public static class PreferencesService
             if (File.Exists(_settingsFilePath))
             {
                 var json = File.ReadAllText(_settingsFilePath);
-                Current = JsonSerializer.Deserialize<AppPreferences>(json) ?? new AppPreferences();
+                Current = JsonSerializer.Deserialize(json, LogProJsonContext.Default.AppPreferences) ?? new AppPreferences();
             }
         }
         catch (JsonException ex)
@@ -93,7 +93,7 @@ public static class PreferencesService
     {
         try
         {
-            var json = JsonSerializer.Serialize(Current, new JsonSerializerOptions { WriteIndented = true });
+            var json = JsonSerializer.Serialize(Current, LogProJsonContext.Default.AppPreferences);
             var tmpPath = _settingsFilePath + ".tmp";
             File.WriteAllText(tmpPath, json);
             File.Move(tmpPath, _settingsFilePath, overwrite: true);
