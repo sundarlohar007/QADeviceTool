@@ -248,7 +248,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
             process.ErrorDataReceived += (_, e) => { if (e.Data != null) HandleOutputLine(e.Data); };
 
             process.Start();
-            ProcessManagerService.TrackProcess(process);
+            LogPro.Services.ProcessManager.Instance.TrackProcess(process);
             _adbProcess = process;
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();

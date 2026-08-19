@@ -46,7 +46,7 @@ public class MacroService
         try
         {
             process.Start();
-            ProcessManagerService.TrackProcess(process);
+            ProcessManager.Instance.TrackProcess(process);
 
             // Drain stdout to file asynchronously to prevent buffer deadlock
             _ = Task.Run(async () =>

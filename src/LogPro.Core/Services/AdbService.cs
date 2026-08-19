@@ -337,7 +337,8 @@ public class AdbService : IAdbService
 
             // Store process reference for later stop
             _activeRecordProcess = process;
-            ProcessManagerService.TrackProcess(process);
+            ProcessManager.Instance.TrackProcess(process);
+            ProcessManager.Instance.TrackProcess(process);
             return remotePath;
         }
         catch (Exception ex)

@@ -148,7 +148,7 @@ public static class ToolLauncher
             };
 
             process.Start();
-            Services.ProcessManagerService.TrackProcess(process);
+            Services.ProcessManager.Instance.TrackProcess(process);
 
             var fullOutput = new System.Text.StringBuilder();
             var fullError = new System.Text.StringBuilder();
@@ -238,7 +238,7 @@ public static class ToolLauncher
 
             process.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
             process.Start();
-            Services.ProcessManagerService.TrackProcess(process);
+            Services.ProcessManager.Instance.TrackProcess(process);
 
             // Drain stdout in background to prevent pipe buffer deadlock (4KB on Windows).
             // Callers that attach own OutputDataReceived handler (SessionService) pass drainStdout: false.
