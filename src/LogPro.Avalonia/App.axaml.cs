@@ -23,6 +23,7 @@ public partial class App : Application
             LogPro.ViewModels.UiServices.Dispatcher = new Services.AvaloniaUiDispatcher();
             LogPro.ViewModels.UiServices.Dialogs = new Services.AvaloniaDialogService();
             LogPro.ViewModels.UiServices.Clipboard = new Services.AvaloniaClipboardService();
+            LogPro.ViewModels.UiServices.Theme = new Services.AvaloniaThemeService();
 
             window.DataContext = CompositionRoot.CreateMainViewModel();
             desktop.MainWindow = window;

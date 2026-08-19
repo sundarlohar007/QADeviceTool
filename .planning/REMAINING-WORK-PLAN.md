@@ -3,6 +3,17 @@
 > Audit source: `.planning/MODERNIZATION-AND-REWORK-BLUEPRINT-CONSOLIDATED.md` (sections cross-referenced).
 > Audit date: 2026-08-14. Track A engineering is complete; this plan covers the gaps and all of Track B.
 
+## PRIVACY HARD GATE (mandatory, supersedes any feature)
+
+This tool processes **unannounced, unreleased game content**. The following are NON-NEGOTIABLE:
+
+- **Zero outbound network calls** — no telemetry, no analytics, no crash upload, no cloud sync, no AI/LLM integration of any kind (local or cloud). Verified by CI grep: the only network surface is the loopback-only control API (`127.0.0.1`).
+- **AI triage (§16 of the blueprint) is REMOVED from scope** per stakeholder decision — even an opt-in local model adds attack surface for pre-release data.
+- **Redaction by default** (`SecureMode`) stays on; bug-report minimization and serial hashing remain mandatory.
+- Any future feature that would touch the network must be re-approved explicitly by the owner.
+
+*Violating this gate is a release blocker.*
+
 ## 0. Track A leftovers (close before Track B ships)
 
 | # | Item | Blueprint ref | Testable headless? |
@@ -58,7 +69,7 @@ Network conditioning (`tc`/proxy presets + iOS condition inducer), mock-GPS with
 
 ## 5. Phase 8 — Integrations & scale-out (§16)
 
-Local control API (localhost HTTP / named pipe) → Appium bridge; issue-tracker filing with redacted evidence bundle; plugin manifest system; opt-in local AI triage; team/cloud library; Linux build; retire WPF. Post-GA: decompiler add-on pack + Perfetto deep-dive + plugins marketplace.
+Local control API (localhost HTTP / named pipe) → Appium bridge; **issue-tracker filing = export-only** (redacted evidence bundle + markdown template written to disk; the user attaches manually — the tool never touches the network); plugin manifest system; **AI triage REMOVED (privacy hard gate)**; team/cloud REMOVED; Linux build; retire WPF. Post-GA: decompiler add-on pack + Perfetto deep-dive + plugins marketplace.
 
 ## Execution order (now)
 
