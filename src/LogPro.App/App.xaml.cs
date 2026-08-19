@@ -202,7 +202,7 @@ public partial class App : Application
     {
         EarlyLog("APPLICATION EXITING.");
         Services.AppLogger.Log.Info("Application Exiting.");
-        Services.ProcessManagerService.KillAllTrackedProcesses();
+        Services.ProcessManager.Instance.KillAllTrackedProcesses();
         NLog.LogManager.Shutdown();
         base.OnExit(e);
     }
