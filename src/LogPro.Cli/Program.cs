@@ -40,6 +40,10 @@ public static class Program
                 "tools" => await Tools(args),
                 "location" => await Location(adb, args),
                 "network" => await Network(adb, args),
+                "issue" => await Issue(adb, args),
+                "plugins" => Plugins(args),
+                "parse" => await Parse(args),
+                "kpi" => await Kpi(adb, args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -480,6 +484,162 @@ public static class Program
 
         Console.Error.WriteLine("usage: network apply|reset --serial S [--preset 3g|4g|5g|edge|metro] [--interface wlan0]");
         return 2;
+    }
+
+    /// <summary>Exports a REDACTED issue bundle (markdown + evidence) to disk — no network (privacy hard gate).</summary>
+    private static async Task<int> Issue(AdbService adb, string[] args)
+    {
+        var serial = Opt(args, "--serial");
+        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+        var sessionDir = Opt(args, "--session-dir");
+        var title = Opt(args, "--title");
+        var attachmentsArg = Opt(args, "--attachments");
+
+        LogPro.Models.DeviceInfo? device = null;
+        if (!string.IsNullOrWhiteSpace(serial))
+        {
+            var ios = new IosService();
+            device = await FindDevice(adb, ios, serial);
+            if (device == null)
+            {
+                Console.Error.WriteLine($"device not found: {serial}");
+                return 1;
+            }
+        }
+
+        var attachments = new List<string>();
+        if (!string.IsNullOrWhiteSpace(attachmentsArg))
+            attachments.AddRange(attachmentsArg.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        var logFile = sessionDir != null
+            ? Directory.GetFiles(sessionDir, "*_log.txt", SearchOption.AllDirectories).FirstOrDefault()
+            : null;
+
+        var bundle = await LogPro.Services.IssueExportService.ExportAsync(new LogPro.Services.IssueExportRequest
+        {
+            Device = device,
+            Title = title,
+            SessionLogFilePath = logFile,
+            Attachments = attachments,
+            OutputDirectory = outDir
+        });
+
+        Console.WriteLine($"Issue bundle → {bundle.DirectoryPath}");
+        foreach (var f in bundle.Files) Console.WriteLine($"  {Path.GetFileName(f)}");
+        Console.WriteLine("Attach these files manually in your tracker — the tool never transmits anything.");
+        return 0;
+    }
+
+    /// <summary>Lists discovered plugins (§16).</summary>
+    private static int Plugins(string[] args)
+    {
+        var dir = Opt(args, "--dir") ?? Path.Combine(Directory.GetCurrentDirectory(), "plugins");
+        var manager = new LogPro.Services.Plugins.PluginManager();
+        manager.LoadPlugins(dir);
+
+        Console.WriteLine($"Plugins from {dir}:");
+        foreach (var plugin in manager.Plugins)
+            Console.WriteLine($"  {plugin.Id} v{plugin.Version} [{plugin.Type}] — {plugin.Name}");
+        Console.WriteLine($"{manager.Plugins.Count} plugin(s) loaded.");
+        return 0;
+    }
+
+    /// <summary>Applies a parser plugin to a log file.</summary>
+    private static async Task<int> Parse(string[] args)
+    {
+        var dir = Opt(args, "--plugins-dir");
+        var parserId = Opt(args, "--parser");
+        var input = Opt(args, "--input");
+        if (string.IsNullOrWhiteSpace(dir) || string.IsNullOrWhiteSpace(parserId) || string.IsNullOrWhiteSpace(input))
+        {
+            Console.Error.WriteLine("parse requires --plugins-dir, --parser and --input");
+            return 2;
+        }
+        if (!File.Exists(input))
+        {
+            Console.Error.WriteLine($"file not found: {input}");
+            return 1;
+        }
+
+        var manager = new LogPro.Services.Plugins.PluginManager();
+        manager.LoadPlugins(dir);
+        if (!manager.LogParsers.TryGetValue(parserId, out var parser))
+        {
+            Console.Error.WriteLine($"parser not found: {parserId}");
+            return 1;
+        }
+
+        var counts = new Dictionary<string, int>();
+        var parsed = 0;
+        await foreach (var line in System.IO.File.ReadLinesAsync(input))
+        {
+            if (!parser.TryParse(line, out var entry)) continue;
+            parsed++;
+            counts[entry.Level] = counts.GetValueOrDefault(entry.Level) + 1;
+        }
+
+        Console.WriteLine($"Parsed {parsed} line(s) with '{parserId}':");
+        foreach (var (level, count) in counts.OrderByDescending(kv => kv.Value))
+            Console.WriteLine($"  {level,-10} {count}");
+        return 0;
+    }
+
+    /// <summary>Engine KPI probes (§19): 100k-line log pipeline, exports, tail-read, parser throughput.</summary>
+    private static async Task<int> Kpi(AdbService adb, string[] args)
+    {
+        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+        Directory.CreateDirectory(outDir);
+        var report = new List<string>();
+        void Add(string name, double ms) { report.Add($"{name}: {ms:F1} ms"); Console.WriteLine($"  {name}: {ms:F1} ms"); }
+
+        // Synthetic 100k-line logcat file
+        var file = Path.Combine(outDir, "kpi_100k.txt");
+        using (var writer = new StreamWriter(file))
+        {
+            var batch = new System.Text.StringBuilder(700_000);
+            for (var i = 0; i < 100_000; i++)
+            {
+                batch.Append("08-11 14:23:45.123  1234  5678 I/FakeGame: frame event ").Append(i).Append(" payload\n");
+                if (i % 10_000 == 9_999) { await writer.WriteAsync(batch); batch.Clear(); }
+            }
+            if (batch.Length > 0) await writer.WriteAsync(batch);
+        }
+
+        var sessions = new SessionService(adb, new IosService());
+        var session = new LogPro.Models.LogSession { LogFilePath = file, SessionDirectory = outDir };
+
+        // 1. CSV export (parse + stream)
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await sessions.ExportToCsvAsync(session, Path.Combine(outDir, "kpi.csv"));
+        Add("CSV export (100k lines)", sw.Elapsed.TotalMilliseconds);
+
+        // 2. JSON export
+        sw.Restart();
+        await sessions.ExportToJsonAsync(session, Path.Combine(outDir, "kpi.json"));
+        Add("JSON export (100k lines)", sw.Elapsed.TotalMilliseconds);
+
+        // 3. Tail read
+        sw.Restart();
+        var tail = await sessions.ReadLogContentAsync(session, maxLines: 500);
+        Add("Tail read (last 500)", sw.Elapsed.TotalMilliseconds);
+        if (tail.Split('\n').Length < 400) Console.WriteLine("  [!] tail read anomaly");
+
+        // 4. Parser throughput (SurfaceFlinger 500 frames)
+        var latency = new System.Text.StringBuilder("16666666\n");
+        long present = 10_000_000_000L;
+        for (var i = 0; i < 500; i++) { present += 16_666_666L; latency.AppendLine($"{i * 16_666_666:D14}\t{i * 16_666_666:D14}\t{present:D14}"); }
+        sw.Restart();
+        for (var i = 0; i < 200; i++)
+            LogPro.Services.Profiling.AndroidDumpsysParsers.ParseSurfaceFlingerLatency(latency.ToString());
+        Add("SF parser throughput (200×500 frames)", sw.Elapsed.TotalMilliseconds);
+
+        // 5. Report JSON
+        var jsonPath = Path.Combine(outDir, "kpi-report.json");
+        await File.WriteAllTextAsync(jsonPath, System.Text.Json.JsonSerializer.Serialize(
+            new { generatedUtc = DateTime.UtcNow, items = report },
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine($"KPI report → {jsonPath}");
+        return 0;
     }
 
     private static async Task<int> Export(AdbService adb, IosService ios, string[] args)

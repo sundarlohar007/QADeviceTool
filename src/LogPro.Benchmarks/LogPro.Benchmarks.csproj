@@ -5,14 +5,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>adb</AssemblyName>
-    <RootNamespace>LogPro.TestFakes</RootNamespace>
+    <Optimize>true</Optimize>
     <IsPackable>false</IsPackable>
-    <Description>Fake adb for hardware-free end-to-end tests. Answers devices/logcat/getprop; streams synthetic logcat.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\LogPro.Core\LogPro.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
   </ItemGroup>
 
 </Project>

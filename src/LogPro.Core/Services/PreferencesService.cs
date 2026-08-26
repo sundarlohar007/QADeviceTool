@@ -24,27 +24,46 @@ public class DevicePreference
     public DateTime? LastConnected { get; set; }
 }
 
-public static class PreferencesService
+/// <summary>Instance-based preferences store (A7 de-static) — swappable for tests/CLI isolation.</summary>
+public interface IPreferencesStore
 {
-    private static readonly string _settingsFilePath;
-    public static AppPreferences Current { get; private set; } = new();
+    AppPreferences Current { get; set; }
+    string SettingsFilePath { get; }
+    void Save();
+    DevicePreference GetDevicePreference(string serial);
+    void SaveDevicePreference(string serial, DevicePreference pref);
+    void ClearAllData();
+    void CleanupOldLogs();
+    void CleanupOldSessions();
+}
 
-    static PreferencesService()
+/// <summary>
+/// JSON-backed preferences. Construct with an explicit directory for test/CLI isolation;
+/// the default instance targets the standard app-data directory.
+/// </summary>
+public sealed class PreferencesStore : IPreferencesStore
+{
+    private readonly string _appDataDir;
+
+    public PreferencesStore(string? appDataDir = null)
     {
-        var dir = PathHelper.GetAppDataDirectory();
-        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-
-        _settingsFilePath = Path.Combine(dir, "settings.json");
+        _appDataDir = appDataDir ?? PathHelper.GetAppDataDirectory();
+        if (!Directory.Exists(_appDataDir)) Directory.CreateDirectory(_appDataDir);
+        SettingsFilePath = Path.Combine(_appDataDir, "settings.json");
         Load();
     }
 
-    public static void Load()
+    public string SettingsFilePath { get; }
+
+    public AppPreferences Current { get; set; } = new();
+
+    public void Load()
     {
         try
         {
-            if (File.Exists(_settingsFilePath))
+            if (File.Exists(SettingsFilePath))
             {
-                var json = File.ReadAllText(_settingsFilePath);
+                var json = File.ReadAllText(SettingsFilePath);
                 Current = JsonSerializer.Deserialize(json, LogProJsonContext.Default.AppPreferences) ?? new AppPreferences();
             }
         }
@@ -53,8 +72,8 @@ public static class PreferencesService
             AppLogger.Log.Warn(ex, "Failed to deserialize preferences, backing up corrupted file");
             try
             {
-                var corruptedPath = _settingsFilePath + ".corrupt." + DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                File.Copy(_settingsFilePath, corruptedPath);
+                var corruptedPath = SettingsFilePath + ".corrupt." + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                File.Copy(SettingsFilePath, corruptedPath);
             }
             catch (Exception copyEx)
             {
@@ -80,23 +99,23 @@ public static class PreferencesService
 
         // SEC-06: migrate raw serial keys to hashed keys (one-time).
         var rawKeys = Current.DevicePreferences.Keys
-            .Where(k => !Helpers.SecurityHelper.IsHashedSerialKey(k)).ToList();
+            .Where(k => SecurityHelper.IsHashedSerialKey(k) == false).ToList();
         foreach (var rawKey in rawKeys)
         {
             var pref = Current.DevicePreferences[rawKey];
             Current.DevicePreferences.Remove(rawKey);
-            Current.DevicePreferences[Helpers.SecurityHelper.HashSerial(rawKey)] = pref;
+            Current.DevicePreferences[SecurityHelper.HashSerial(rawKey)] = pref;
         }
     }
 
-    public static void Save()
+    public void Save()
     {
         try
         {
             var json = JsonSerializer.Serialize(Current, LogProJsonContext.Default.AppPreferences);
-            var tmpPath = _settingsFilePath + ".tmp";
+            var tmpPath = SettingsFilePath + ".tmp";
             File.WriteAllText(tmpPath, json);
-            File.Move(tmpPath, _settingsFilePath, overwrite: true);
+            File.Move(tmpPath, SettingsFilePath, overwrite: true);
         }
         catch (Exception ex)
         {
@@ -104,9 +123,9 @@ public static class PreferencesService
         }
     }
 
-    public static DevicePreference GetDevicePreference(string serial)
+    public DevicePreference GetDevicePreference(string serial)
     {
-        var key = Helpers.SecurityHelper.HashSerial(serial);
+        var key = SecurityHelper.HashSerial(serial);
         if (Current.DevicePreferences.TryGetValue(key, out var pref))
             return pref;
 
@@ -115,30 +134,28 @@ public static class PreferencesService
         return newPref;
     }
 
-    public static void SaveDevicePreference(string serial, DevicePreference pref)
+    public void SaveDevicePreference(string serial, DevicePreference pref)
     {
-        Current.DevicePreferences[Helpers.SecurityHelper.HashSerial(serial)] = pref;
+        Current.DevicePreferences[SecurityHelper.HashSerial(serial)] = pref;
         Save();
     }
 
-    public static void ClearAllData()
+    public void ClearAllData()
     {
         try
         {
-            var appDataDir = PathHelper.GetAppDataDirectory();
-
-            if (File.Exists(_settingsFilePath))
+            if (File.Exists(SettingsFilePath))
             {
-                File.Delete(_settingsFilePath);
+                File.Delete(SettingsFilePath);
             }
 
-            var logsDir = Path.Combine(appDataDir, "logs");
+            var logsDir = Path.Combine(_appDataDir, "logs");
             if (Directory.Exists(logsDir))
             {
                 Directory.Delete(logsDir, true);
             }
 
-            var sessionsDir = Path.Combine(appDataDir, "sessions");
+            var sessionsDir = Path.Combine(_appDataDir, "sessions");
             if (Directory.Exists(sessionsDir))
             {
                 Directory.Delete(sessionsDir, true);
@@ -155,17 +172,14 @@ public static class PreferencesService
         }
     }
 
-    public static void CleanupOldLogs()
+    public void CleanupOldLogs()
     {
         try
         {
             var retentionDays = Current.LogRetentionDays;
             if (retentionDays <= 0) return;
 
-            var logsDir = Path.Combine(
-                PathHelper.GetAppDataDirectory(),
-                "logs");
-
+            var logsDir = Path.Combine(_appDataDir, "logs");
             if (!Directory.Exists(logsDir)) return;
 
             var cutoffDate = DateTime.Now.AddDays(-retentionDays);
@@ -194,7 +208,7 @@ public static class PreferencesService
     }
 
     /// <summary>Purges session directories (logs, screenshots, recordings) older than retention. SEC-02/03, COMP-01.</summary>
-    public static void CleanupOldSessions()
+    public void CleanupOldSessions()
     {
         try
         {
@@ -226,4 +240,26 @@ public static class PreferencesService
             AppLogger.Log.Warn(ex, "Failed to cleanup old sessions.");
         }
     }
+}
+
+/// <summary>
+/// Static facade over <see cref="PreferencesService.Instance"/> — preserves the existing
+/// call sites while the instance seam enables test/CLI isolation (A7).
+/// </summary>
+public static class PreferencesService
+{
+    public static IPreferencesStore Instance { get; set; } = new PreferencesStore();
+
+    public static AppPreferences Current
+    {
+        get => Instance.Current;
+        set => Instance.Current = value;
+    }
+
+    public static void Save() => Instance.Save();
+    public static DevicePreference GetDevicePreference(string serial) => Instance.GetDevicePreference(serial);
+    public static void SaveDevicePreference(string serial, DevicePreference pref) => Instance.SaveDevicePreference(serial, pref);
+    public static void ClearAllData() => Instance.ClearAllData();
+    public static void CleanupOldLogs() => Instance.CleanupOldLogs();
+    public static void CleanupOldSessions() => Instance.CleanupOldSessions();
 }

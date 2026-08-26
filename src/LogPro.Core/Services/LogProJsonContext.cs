@@ -14,6 +14,7 @@ namespace LogPro.Services;
 [JsonSerializable(typeof(MacroEvent))]
 [JsonSerializable(typeof(SimpleMacroStep))]
 [JsonSerializable(typeof(IReadOnlyList<ToolManifestEntry>))]
+[JsonSerializable(typeof(Plugins.PluginManifest))]
 public partial class LogProJsonContext : JsonSerializerContext
 {
 }
