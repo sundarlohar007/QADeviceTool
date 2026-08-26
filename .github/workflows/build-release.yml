@@ -64,6 +64,22 @@ jobs:
       - name: Publish App
         run: dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:Version=${{ steps.version.outputs.semver }} -o publish/app
 
+      - name: Validate Windows package entry point
+        shell: pwsh
+        run: |
+          $exe = Join-Path "publish/app" "LogPro.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "Windows publish did not produce LogPro.exe. Check LogPro.App.csproj AssemblyName."
+          }
+
+          $setup = Get-Content -LiteralPath $env:SETUP_SCRIPT -Raw
+          if ($setup -notmatch '(?m)^#define MyAppExeName "LogPro\.exe"\s*$') {
+            throw "publish/setup.iss must launch LogPro.exe, the published Windows entry point."
+          }
+          if ($setup -match 'QADeviceTool\.exe') {
+            throw "publish/setup.iss contains the stale QADeviceTool.exe entry point."
+          }
+
       - name: Publish CLI
         run: dotnet publish ${{ env.CLI_PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.semver }} -o publish/cli
 
@@ -93,6 +109,13 @@ jobs:
           name: app-published
           path: publish/app/
 
+      - name: Validate installer input
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath "publish/app/LogPro.exe" -PathType Leaf)) {
+            throw "Installer input is missing publish/app/LogPro.exe."
+          }
+
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
@@ -105,6 +128,10 @@ jobs:
           Set-Content "${{ env.SETUP_SCRIPT }}" -Value $iss
           Write-Host "Compiling installer for v$ver..."
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "${{ env.SETUP_SCRIPT }}"
+          $expected = "dist/LogPro_v$ver.exe"
+          if (-not (Test-Path -LiteralPath $expected -PathType Leaf)) {
+            throw "Inno Setup did not produce the expected installer: $expected"
+          }
 
       - name: Sign Setup.exe
         if: env.SIGN_CERT_PFX != '' && env.SIGN_CERT_PASSWORD != ''
