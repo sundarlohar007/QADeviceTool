@@ -73,11 +73,19 @@ Local control API (localhost HTTP / named pipe) → Appium bridge; **issue-track
 
 ## Execution order (now)
 
-1. **A1–A6 leftovers** → commit (this session)
-2. **1.1 parsers + tests** → commit
-3. **1.2–1.4 service + CLI + fake-adb e2e** → commit
-4. **2 Avalonia scaffold** (shell + dashboard booting on Windows) → commit
-5. 1.5 + remaining port views → Phase 6+ after.
+**DONE (Track A + Track B Windows-side):**
+- Track A leftovers (A1-A6) ✅; PreferencesService de-static + ProcessManager de-static ✅
+- Phase 5 profiler (parsers/service/report/CLI) ✅; Phase 1.5 profiler UI + HUD ✅
+- Phase 4b Avalonia (all 11 views + palette + theme switching) ✅
+- Phase 7 (soak, tier matrix, location, network conditioning) ✅
+- Phase 8 non-network (control API, plugins, issue export) ✅; AI/cloud REMOVED (privacy hard gate)
+- Benchmarks + KPI measurements ✅ (.planning/KPI-RESULTS.md)
+
+**REMAINING:**
+1. **Avalonia design-token sweep** — 209 hardcoded hex colors in Avalonia views → theme resources (light-theme surfaces). Windows-doable, 2-3 sessions.
+2. **Mac Phase 6** — iOS DVT instrumentation (sysmon/FPS/energy/network, DVT screenshot + recording, capability probes), notarized .app. MacBook, 3-5 sessions.
+3. **GA gate** — owner code-signing certs; fresh-OS install tests per platform; 60fps@100K UI measurement; installer ≤100MB via the Avalonia NativeAOT switchover (validated).
+4. Optional/low: AppLogger de-static; WPF wizard/toasts/accessibility (fold into the Avalonia UX pass).
 
 ## KPI reminders (§19)
 
