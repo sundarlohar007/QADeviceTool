@@ -43,6 +43,7 @@ public static class Program
                 "issue" => await Issue(adb, args),
                 "plugins" => Plugins(args),
                 "parse" => await Parse(args),
+                "kpi" => await Kpi(adb, args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -580,6 +581,64 @@ public static class Program
         Console.WriteLine($"Parsed {parsed} line(s) with '{parserId}':");
         foreach (var (level, count) in counts.OrderByDescending(kv => kv.Value))
             Console.WriteLine($"  {level,-10} {count}");
+        return 0;
+    }
+
+    /// <summary>Engine KPI probes (§19): 100k-line log pipeline, exports, tail-read, parser throughput.</summary>
+    private static async Task<int> Kpi(AdbService adb, string[] args)
+    {
+        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+        Directory.CreateDirectory(outDir);
+        var report = new List<string>();
+        void Add(string name, double ms) { report.Add($"{name}: {ms:F1} ms"); Console.WriteLine($"  {name}: {ms:F1} ms"); }
+
+        // Synthetic 100k-line logcat file
+        var file = Path.Combine(outDir, "kpi_100k.txt");
+        using (var writer = new StreamWriter(file))
+        {
+            var batch = new System.Text.StringBuilder(700_000);
+            for (var i = 0; i < 100_000; i++)
+            {
+                batch.Append("08-11 14:23:45.123  1234  5678 I/FakeGame: frame event ").Append(i).Append(" payload\n");
+                if (i % 10_000 == 9_999) { await writer.WriteAsync(batch); batch.Clear(); }
+            }
+            if (batch.Length > 0) await writer.WriteAsync(batch);
+        }
+
+        var sessions = new SessionService(adb, new IosService());
+        var session = new LogPro.Models.LogSession { LogFilePath = file, SessionDirectory = outDir };
+
+        // 1. CSV export (parse + stream)
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await sessions.ExportToCsvAsync(session, Path.Combine(outDir, "kpi.csv"));
+        Add("CSV export (100k lines)", sw.Elapsed.TotalMilliseconds);
+
+        // 2. JSON export
+        sw.Restart();
+        await sessions.ExportToJsonAsync(session, Path.Combine(outDir, "kpi.json"));
+        Add("JSON export (100k lines)", sw.Elapsed.TotalMilliseconds);
+
+        // 3. Tail read
+        sw.Restart();
+        var tail = await sessions.ReadLogContentAsync(session, maxLines: 500);
+        Add("Tail read (last 500)", sw.Elapsed.TotalMilliseconds);
+        if (tail.Split('\n').Length < 400) Console.WriteLine("  [!] tail read anomaly");
+
+        // 4. Parser throughput (SurfaceFlinger 500 frames)
+        var latency = new System.Text.StringBuilder("16666666\n");
+        long present = 10_000_000_000L;
+        for (var i = 0; i < 500; i++) { present += 16_666_666L; latency.AppendLine($"{i * 16_666_666:D14}\t{i * 16_666_666:D14}\t{present:D14}"); }
+        sw.Restart();
+        for (var i = 0; i < 200; i++)
+            LogPro.Services.Profiling.AndroidDumpsysParsers.ParseSurfaceFlingerLatency(latency.ToString());
+        Add("SF parser throughput (200×500 frames)", sw.Elapsed.TotalMilliseconds);
+
+        // 5. Report JSON
+        var jsonPath = Path.Combine(outDir, "kpi-report.json");
+        await File.WriteAllTextAsync(jsonPath, System.Text.Json.JsonSerializer.Serialize(
+            new { generatedUtc = DateTime.UtcNow, items = report },
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine($"KPI report → {jsonPath}");
         return 0;
     }
 
