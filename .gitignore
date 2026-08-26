@@ -23,9 +23,26 @@ Thumbs.db
 # Environment
 .env
 *.env.local
-# GSD graphify cache
-graphify-out/
 
 # Build artifacts
 *.zip
-*.msiBenchmarkDotNet.Artifacts/
+*.msi
+BenchmarkDotNet.Artifacts/
+
+# Knowledge-graph cache (generated locally)
+graphify-out/
+
+# AI assistant tooling (local-only, not part of the product)
+.agents/
+.claude/
+.codebuddy/
+.codex/
+.cursor/
+.gemini/
+.kilo/
+.kiro/
+.opencode/
+AGENTS.md
+CLAUDE.md
+CODEBUDDY.md
+GEMINI.md

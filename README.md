@@ -1,125 +1,121 @@
-# LogPro
+# LogPro — QA Device Tool
 
-A robust Windows desktop utility built for QA/QC game testers. It automatically captures device logs, manages test sessions, and captures screenshots from connected Android and iOS devices.
+> **Privacy-first QA tooling for game testers.** LogPro captures device logs, mirrors screens,
+> profiles performance, replays touch macros, runs monkey stress tests and simulates network/
+> location conditions — for Android and iOS — while testing **unannounced, unreleased games**.
+> **It never calls home.** Zero telemetry, zero analytics, zero outbound network traffic
+> (see [SECURITY.md](SECURITY.md)).
 
-![LogPro](https://img.shields.io/badge/Platform-Windows_10%2F11-blue) ![Version](https://img.shields.io/badge/Version-3.1.0-green) ![License](https://img.shields.io/badge/License-Proprietary-red)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/Release-Latest-brightgreen)](https://github.com/sundarlohar007/QADeviceTool/releases)
 
-## Core Features
+---
 
-- **Auto Log Capture** — Instantly begins logging the moment a device is connected, and stops when disconnected.
-- **Session Management** — Organizes captured logs, traces, and screenshots into meticulously timestamped session folders for each device.
-- **Dynamic App-Specific Dual Logging** — Monitor full device logs alongside a fully isolated, automatically generated application-specific log file that tracks target PIDs intelligently (even through crashes) using partial keyword matching (e.g. `youtube`).
-- **Live Log Viewer** — View highly readable device logs in real-time natively in the app, with filtering and auto-scroll capabilities.
-- **Screen Mirroring (Android)** — Click-to-play Android device mirroring and remote control via bundled `scrcpy`.
-- **Instant Snapshots** — Grab and save device screenshots straight from the tool with one click.
-- **Bug Reports** — Generates an automated `.zip` archiving active device memory dumps, the last 10,000 log lines, and an instantaneous screenshot.
-- **Android + iOS Support** — Full Android device management via bundled ADB, and iOS device information, app management, syslog, crash logs, and diagnostics via bundled `pymobiledevice3`.
+## What it does
+
+| Feature | Android | iOS |
+|---|---|---|
+| Auto device detection | ✅ `adb` | ✅ `pymobiledevice3` |
+| Real-time virtualized log capture + viewer | ✅ | ✅ |
+| App-specific filtered logging (PID tracking) | ✅ | ◐ syslog |
+| Session management + bug-report bundles | ✅ | ✅ |
+| Screen mirroring ([scrcpy](https://github.com/Genymobile/scrcpy)) | ✅ | — |
+| Screenshots + screen recording | ✅ | ◐ |
+| Macro record/replay | ✅ | — |
+| Monkey stress testing | ✅ | — |
+| **Performance profiler** — FPS/jank/CPU/memory/thermal/battery | ✅ | Phase 6 (macOS) |
+| Live HUD + sparklines + HTML reports | ✅ | — |
+| **Soak runs** — memory-growth / FPS-decay flags | ✅ | — |
+| **Device-tier matrix** — multi-device comparison | ✅ | — |
+| **Condition simulation** — network presets, mock location | ✅ | — |
+| Headless CLI + loopback control API (CI/Appium) | ✅ | ✅ |
+| Plugin system (log parsers) | ✅ | ✅ |
+
+## Download
+
+Every push to `main` builds and publishes a release automatically.
+Grab the latest from the **[Releases page](https://github.com/sundarlohar007/QADeviceTool/releases)**:
+
+| Asset | What it is |
+|---|---|
+| `QADeviceTool_vX.exe` | Windows installer (Inno Setup — install once, run) |
+| `LogPro_vX_portable.zip` | Portable build — unzip and run, no installation |
+| `logpro-cli_vX_win-x64.zip` | Headless CLI for CI/scripting |
+| `LogPro_vX_macos-arm64.zip` | macOS build (Avalonia) |
+| `LogPro_vX_linux-x64.tar.gz` | Linux build (Avalonia) |
+
+All tools are **bundled** — no separate installs of adb, scrcpy, Python or drivers required.
+
+## Build from source
+
+```bash
+git clone https://github.com/sundarlohar007/QADeviceTool.git
+cd QADeviceTool
+dotnet restore LogPro.sln
+dotnet build LogPro.sln
+dotnet test LogPro.sln          # 145+ tests, incl. hardware-free e2e (fake adb)
+dotnet publish src/LogPro.App/LogPro.App.csproj -c Release -r win-x64 --self-contained true
+```
+
+> **Note:** the bundled `adb.exe`/`scrcpy`/`pymobiledevice3.exe` are stored via **Git LFS**.
+> If you clone without LFS you'll get pointer files — run `git lfs pull` after cloning.
+
+## CLI
+
+```bash
+logpro-cli devices                                    # list devices
+logpro-cli capture --serial S [--seconds N] --out DIR # capture logs
+logpro-cli profile --serial S --seconds N --package P # FPS/CPU/mem/thermal sampling
+logpro-cli soak    --serial S --seconds N             # endurance run with decay flags
+logpro-cli matrix  --serials A,B,C --seconds N        # tier comparison
+logpro-cli location route --serial S --app P --waypoints "lat,lon;lat,lon" --speed 5
+logpro-cli location reset --serial S --app P          # MANDATORY mock-location reset
+logpro-cli network apply --serial S --preset 4g       # tc/netem conditioning (root)
+logpro-cli serve --port 8417                         # loopback control API for CI/Appium
+logpro-cli issue  --serial S --out DIR                # redacted issue bundle (no network)
+logpro-cli plugins --dir DIR                          # plugin discovery
+```
 
 ## Architecture
 
-- **Dynamic Runtime Path Resolution** — All tool paths are resolved relative to the application's base directory via `AppContext.BaseDirectory`, ensuring the app works from any installation location.
-- **Windows Storage Compliance** — Application binaries and native tools reside in the install directory; writable data (logs, preferences, sessions, configs) are stored under `%LOCALAPPDATA%\LogPro\`.
-- **Early Startup Diagnostics** — A `startup-debug.log` is written immediately on launch (before framework initialization) capturing executable path, architecture, and environment state for troubleshooting.
-- **Serialized ADB Transport** — All ADB commands are serialized via semaphore to prevent concurrent USB transport access that can cause device offline flapping.
-- **Per-Binary Working Directories** — Each native tool (adb, scrcpy, pymobiledevice3) launches from its own directory, ensuring correct DLL resolution.
-
-## Installation
-
-### Standard Installation (Recommended)
-1. Download the latest `LogPro_v3.0.0.exe` from the [Releases](https://github.com/sundarlohar007/QADeviceTool/releases) page.
-2. Run the installer and follow the prompts.
-3. Launch LogPro from the Start Menu or Desktop shortcut.
-
-### Silent Installation (Unattended)
-For automated deployments or batch scripts:
-
-```batch
-LogPro_v3.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+```
+LogPro.App (WPF, Windows — shipping UI)   LogPro.Avalonia (cross-platform UI)
+                 \                              /
+                  LogPro.ViewModels (shared, UI-agnostic)
+                            |
+                       LogPro.Core (engine — adb / pymobiledevice3 orchestration,
+                                     profiler, condition sim, plugins, manifest)
 ```
 
-**Silent Install Options:**
-| Parameter | Description |
-|-----------|-------------|
-| `/VERYSILENT` | No UI, suppress all messages |
-| `/SILENT` | Minimal UI, show progress only |
-| `/SUPPRESSMSGBOXES` | Suppress message boxes |
-| `/NORESTART` | Don't restart after install |
-| `/DIR="C:\Path"` | Install to custom directory |
-| `/LOG="C:\log.txt"` | Create installation log |
+- Built on **[.NET 10 LTS](https://dotnet.microsoft.com/download/dotnet/10.0)** (supported to Nov 2028).
+- MVVM via [CommunityToolkit.Mvvm](https://www.nuget.org/packages/CommunityToolkit.Mvvm); DI via
+  [Microsoft.Extensions.DependencyInjection](https://www.nuget.org/packages/Microsoft.Extensions.DependencyInjection).
+- Cross-platform UI: [Avalonia](https://avaloniaui.net/) 12.x.
+- Android tooling: [platform-tools (adb)](https://developer.android.com/tools/releases/platform-tools),
+  [scrcpy](https://github.com/Genymobile/scrcpy) · iOS: [pymobiledevice3](https://github.com/doronz88/pymobiledevice3)
+  (process-isolated, see [GPL_COMPLIANCE.md](GPL_COMPLIANCE.md)).
+- Roadmap & status: [.planning/](.planning/) ([consolidated blueprint](.planning/MODERNIZATION-AND-REWORK-BLUEPRINT-CONSOLIDATED.md),
+  [remaining work](.planning/REMAINING-WORK-PLAN.md), [KPI results](.planning/KPI-RESULTS.md)).
 
-### Portable Version
-1. Download `LogPro_Portable_v3.0.0.zip` from the releases page.
-2. Extract to any folder (e.g., `C:\Tools\LogPro`).
-3. Run `LogPro.exe`.
+## Privacy & security
 
-## Usage
+Testing unreleased titles means **data minimization is non-negotiable**:
 
-### Device Connection
-1. Connect your Android device via USB and enable USB Debugging in Developer Options.
-2. For iOS devices, plug in via USB and tap "Trust" on the device. No iTunes required.
-3. The app auto-detects connected devices. Select from the dropdown in the header.
+- **Zero outbound network calls** — no telemetry, no crash upload, no cloud sync (hard gate).
+- Redaction **on by default** (`SecureMode`), device serials hashed everywhere.
+- Bug-report and issue bundles are minimized and written to disk — you upload them yourself.
+- The local control API binds to `127.0.0.1` only.
+- Full trust boundary: [SECURITY.md](SECURITY.md).
 
-### Starting a Session
-1. Go to **Sessions** tab.
-2. Select your device from the dropdown.
-3. Optionally name your session.
-4. Click **+ New Session**.
-5. Toggle **Auto-capture** to start logging immediately.
+## Contributing
 
-### Screen Mirroring
-1. Go to **Devices** tab.
-2. Select your Android device.
-3. Click **Mirror Screen**.
-4. A window opens showing your device screen in real-time.
-
-### Taking Snapshots
-While in a session, click **Snap** to capture a screenshot instantly.
-
-### Exporting Logs
-1. Go to **Sessions** tab and select your session.
-2. Click **Export CSV** or **Export JSON**.
-3. Choose save location.
-
-## System Requirements
-
-- Windows 10/11 (64-bit)
-- No additional runtime required (self-contained build)
-- USB debugging enabled for Android devices
-- For iOS: tap "Trust this computer" on first connect (no iTunes required)
-- If the bundled pymobiledevice3 PyInstaller exe is unusable on your machine,
-  install Python 3.10+ and run `pip install pymobiledevice3` as a fallback.
-
-## Third-Party Software
-
-This application bundles the following open-source software:
-
-- **scrcpy** - Android screen mirroring (Apache License 2.0)
-- **pymobiledevice3** - iOS device communication (GNU GPL v3)
-
-See `licenses` folder for full license texts.
-
-## Troubleshooting
-
-### Startup Issues
-Check `%LOCALAPPDATA%\LogPro\startup-debug.log` for early startup diagnostics.
-
-### Device Not Detected
-1. Enable USB Debugging on Android (Settings > Developer Options).
-2. On first connect, check "Allow USB debugging" prompt on device.
-3. Try a different USB cable (some cables are charge-only).
-4. Try a different USB port (prefer USB 2.0 ports).
-
-### iOS Issues
-1. Tap "Trust this computer" on the iOS device when prompted.
-2. For iOS 17+, enable Developer Mode in Settings > Privacy & Security.
-3. If iOS shows "pymobiledevice3 not responding" in Settings > Tools, install
-   Python 3.10+ and run `pip install pymobiledevice3` (the bundled PyInstaller
-   build may be incompatible with your OS / antivirus).
-
-## Version History
-
-See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
+Pull requests welcome. CI runs build + 145+ tests (including hardware-free end-to-end tests against a
+fake `adb`), format verification and a NuGet vulnerability audit on every push; dependabot keeps
+dependencies current with auto-merge for patch/minor updates. Please keep the **privacy hard gate**
+in mind: nothing that touches the network.
 
 ## License
 
-Copyright (c) 2026 Sundar Lohar. All rights reserved.
+[MIT](LICENSE) · Third-party components: see [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) and
+[GPL_COMPLIANCE.md](GPL_COMPLIANCE.md).
