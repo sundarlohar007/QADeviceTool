@@ -40,6 +40,7 @@ public static class Program
                 "tools" => await Tools(args),
                 "location" => await Location(adb, args),
                 "network" => await Network(adb, args),
+                "issue" => await Issue(adb, args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -480,6 +481,50 @@ public static class Program
 
         Console.Error.WriteLine("usage: network apply|reset --serial S [--preset 3g|4g|5g|edge|metro] [--interface wlan0]");
         return 2;
+    }
+
+    /// <summary>Exports a REDACTED issue bundle (markdown + evidence) to disk — no network (privacy hard gate).</summary>
+    private static async Task<int> Issue(AdbService adb, string[] args)
+    {
+        var serial = Opt(args, "--serial");
+        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+        var sessionDir = Opt(args, "--session-dir");
+        var title = Opt(args, "--title");
+        var attachmentsArg = Opt(args, "--attachments");
+
+        LogPro.Models.DeviceInfo? device = null;
+        if (!string.IsNullOrWhiteSpace(serial))
+        {
+            var ios = new IosService();
+            device = await FindDevice(adb, ios, serial);
+            if (device == null)
+            {
+                Console.Error.WriteLine($"device not found: {serial}");
+                return 1;
+            }
+        }
+
+        var attachments = new List<string>();
+        if (!string.IsNullOrWhiteSpace(attachmentsArg))
+            attachments.AddRange(attachmentsArg.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        var logFile = sessionDir != null
+            ? Directory.GetFiles(sessionDir, "*_log.txt", SearchOption.AllDirectories).FirstOrDefault()
+            : null;
+
+        var bundle = await LogPro.Services.IssueExportService.ExportAsync(new LogPro.Services.IssueExportRequest
+        {
+            Device = device,
+            Title = title,
+            SessionLogFilePath = logFile,
+            Attachments = attachments,
+            OutputDirectory = outDir
+        });
+
+        Console.WriteLine($"Issue bundle → {bundle.DirectoryPath}");
+        foreach (var f in bundle.Files) Console.WriteLine($"  {Path.GetFileName(f)}");
+        Console.WriteLine("Attach these files manually in your tracker — the tool never transmits anything.");
+        return 0;
     }
 
     private static async Task<int> Export(AdbService adb, IosService ios, string[] args)
