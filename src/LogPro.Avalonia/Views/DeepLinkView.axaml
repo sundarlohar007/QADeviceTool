@@ -5,18 +5,18 @@
              x:Class="LogPro.Avalonia.Views.DeepLinkView"
              x:DataType="vm:DeepLinkViewModel">
   <DockPanel>
-    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
       <DockPanel>
-        <TextBlock Text="Deep Link" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+        <TextBlock Text="Deep Link" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
         <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="220" />
       </DockPanel>
     </Border>
     <StackPanel Margin="24" Spacing="12" MaxWidth="720" HorizontalAlignment="Left">
-      <TextBlock Text="TARGET URL" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
-      <TextBox Text="{Binding TargetUrl}" Watermark="myapp://route?param=1 or intent:…" Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329" FontFamily="Consolas, Menlo, monospace" />
+      <TextBlock Text="TARGET URL" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
+      <TextBox Text="{Binding TargetUrl}" Watermark="myapp://route?param=1 or intent:…" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
       <Button HorizontalAlignment="Left" Content="Fire Intent" Command="{Binding FireIntentCommand}"
               IsEnabled="{Binding IsRouting, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="16,8" />
-      <TextBlock Text="{Binding StatusMessage}" Foreground="#4FD1C5" FontSize="12" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushAccent}" FontSize="12" TextWrapping="Wrap" />
     </StackPanel>
   </DockPanel>
 </UserControl>

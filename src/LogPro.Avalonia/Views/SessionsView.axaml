@@ -6,11 +6,11 @@
              x:DataType="vm:SessionViewModel">
   <DockPanel>
     <!-- Header -->
-    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
       <DockPanel>
         <StackPanel>
-          <TextBlock Text="Sessions" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
-          <TextBlock Text="Log capture, viewing and export" FontSize="12" Foreground="#9AA0A6" Margin="0,4,0,0" />
+          <TextBlock Text="Sessions" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+          <TextBlock Text="Log capture, viewing and export" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0" />
         </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
           <Button Content="Start Capture" Command="{Binding StartCaptureCommand}"
@@ -27,16 +27,16 @@
 
     <Grid ColumnDefinitions="320,*">
       <!-- Sessions list -->
-      <Border Grid.Column="0" BorderBrush="#232329" BorderThickness="0,0,1,0" Padding="12">
+      <Border Grid.Column="0" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0" Padding="12">
         <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="SESSIONS" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" Margin="4,0,0,8" />
+          <TextBlock DockPanel.Dock="Top" Text="SESSIONS" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" Margin="4,0,0,8" />
           <ScrollViewer>
             <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}" Background="Transparent">
               <ListBox.ItemTemplate>
                 <DataTemplate>
                   <StackPanel Margin="0,4">
-                    <TextBlock Text="{Binding Name}" Foreground="#E8EAED" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding StartTime, StringFormat='{}{0:HH:mm:ss}'}" Foreground="#9AA0A6" FontSize="11" />
+                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushTextPrimary}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding StartTime, StringFormat='{}{0:HH:mm:ss}'}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
                   </StackPanel>
                 </DataTemplate>
               </ListBox.ItemTemplate>
@@ -47,9 +47,9 @@
 
       <!-- Log viewer -->
       <DockPanel Grid.Column="1">
-        <Border DockPanel.Dock="Top" Padding="12,10" BorderBrush="#232329" BorderThickness="0,0,0,1">
+        <Border DockPanel.Dock="Top" Padding="12,10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
           <DockPanel>
-            <TextBlock DockPanel.Dock="Left" Text="LIVE OUTPUT" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <TextBlock DockPanel.Dock="Left" Text="LIVE OUTPUT" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
               <TextBox Watermark="Search logs…" Width="220" Text="{Binding SearchText}" />
               <ToggleButton Content=".*" IsChecked="{Binding IsRegexSearch}" ToolTip.Tip="Regex search" Padding="10,6" />
@@ -61,18 +61,18 @@
           </DockPanel>
         </Border>
 
-        <ListBox ItemsSource="{Binding LogEntriesView}" Background="#0B0B0E" FontFamily="Consolas, Menlo, monospace" FontSize="12">
+        <ListBox ItemsSource="{Binding LogEntriesView}" Background="{DynamicResource BrushVoid}" FontFamily="Consolas, Menlo, monospace" FontSize="12">
           <ListBox.ItemTemplate>
             <DataTemplate>
-              <TextBlock Text="{Binding Message}" Foreground="#C8CCD0" TextWrapping="NoWrap" />
+              <TextBlock Text="{Binding Message}" Foreground="{DynamicResource BrushLogText}" TextWrapping="NoWrap" />
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
 
-        <Border DockPanel.Dock="Bottom" Padding="12,8" BorderBrush="#232329" BorderThickness="0,1,0,0">
+        <Border DockPanel.Dock="Bottom" Padding="12,8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0">
           <DockPanel>
-            <TextBlock Text="{Binding StatusMessage}" Foreground="#4FD1C5" FontSize="11" VerticalAlignment="Center" />
-            <TextBlock DockPanel.Dock="Right" Text="{Binding LogEntriesView.Count, StringFormat='{}{0} lines'}" Foreground="#9AA0A6" FontSize="11" />
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushAccent}" FontSize="11" VerticalAlignment="Center" />
+            <TextBlock DockPanel.Dock="Right" Text="{Binding LogEntriesView.Count, StringFormat='{}{0} lines'}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
           </DockPanel>
         </Border>
       </DockPanel>

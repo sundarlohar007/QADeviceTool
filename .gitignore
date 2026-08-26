@@ -28,5 +28,4 @@ graphify-out/
 
 # Build artifacts
 *.zip
-*.msi
-BenchmarkDotNet.Artifacts/
+*.msiBenchmarkDotNet.Artifacts/
