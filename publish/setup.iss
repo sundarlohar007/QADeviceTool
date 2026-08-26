@@ -1,13 +1,14 @@
 ; LogPro Installer Script
 ; Inno Setup Script
 
-#define MyAppName "QADeviceTool"
+#define MyAppName "LogPro"
 #define MyAppVersion "3.2.0"
-#define MyAppPublisher "QADeviceTool"
+#define MyAppPublisher "LogPro"
 #define MyAppURL "https://github.com/sundarlohar007/QADeviceTool"
-#define MyAppExeName "QADeviceTool.exe"
+#define MyAppExeName "LogPro.exe"
 
 [Setup]
+; Keep this AppId stable so existing QADeviceTool installations upgrade in place.
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -19,7 +20,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\\dist
-OutputBaseFilename=QADeviceTool_v{#MyAppVersion}
+OutputBaseFilename=LogPro_v{#MyAppVersion}
 Compression=zip
 SolidCompression=yes
 WizardStyle=modern

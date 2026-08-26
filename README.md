@@ -39,7 +39,7 @@ Grab the latest from the **[Releases page](https://github.com/sundarlohar007/QAD
 
 | Asset | What it is |
 |---|---|
-| `QADeviceTool_vX.exe` | Windows installer (Inno Setup — install once, run) |
+| `LogPro_vX.exe` | Windows installer (Inno Setup `.exe` — install once, run) |
 | `LogPro_vX_portable.zip` | Portable build — unzip and run, no installation |
 | `logpro-cli_vX_win-x64.zip` | Headless CLI for CI/scripting |
 | `LogPro_vX_macos-arm64.zip` | macOS build (Avalonia) |
