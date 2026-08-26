@@ -24,13 +24,13 @@
     <DataTemplate DataType="vm:SettingsViewModel"><views:SettingsView /></DataTemplate>
   </Window.DataTemplates>
 
-  <DockPanel Background="#0E0E12">
+  <DockPanel Background="{DynamicResource BrushVoid}">
     <!-- Sidebar -->
-    <Border DockPanel.Dock="Left" Width="220" Background="#141418" Padding="0,16,0,8">
+    <Border DockPanel.Dock="Left" Width="220" Background="{DynamicResource BrushBase}" Padding="0,16,0,8">
       <DockPanel>
         <StackPanel DockPanel.Dock="Top" Margin="16,0,16,16" Spacing="4">
-          <TextBlock Text="LogPro" FontSize="22" FontWeight="Bold" Foreground="#4FD1C5" />
-          <TextBlock Text="Avalonia shell — phase 4b" FontSize="11" Foreground="#9AA0A6" />
+          <TextBlock Text="LogPro" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource BrushAccent}" />
+          <TextBlock Text="Avalonia shell — phase 4b" FontSize="11" Foreground="{DynamicResource BrushTextSecondary}" />
         </StackPanel>
 
         <ScrollViewer>
@@ -78,12 +78,12 @@
 
     <!-- Content -->
     <DockPanel>
-      <Border DockPanel.Dock="Bottom" Background="#141418" Padding="16,6">
+      <Border DockPanel.Dock="Bottom" Background="{DynamicResource BrushBase}" Padding="16,6">
         <DockPanel>
-          <TextBlock Text="{Binding StatusBarText}" Foreground="#9AA0A6" FontSize="11" />
+          <TextBlock Text="{Binding StatusBarText}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
           <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="16">
-            <TextBlock Text="{Binding ConnectedDeviceCount, StringFormat='Devices: {0}'}" Foreground="#4FD1C5" FontSize="11" />
-            <TextBlock Text="{Binding SelectedDevice.DisplayName}" Foreground="#9AA0A6" FontSize="11" />
+            <TextBlock Text="{Binding ConnectedDeviceCount, StringFormat='Devices: {0}'}" Foreground="{DynamicResource BrushAccent}" FontSize="11" />
+            <TextBlock Text="{Binding SelectedDevice.DisplayName}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
           </StackPanel>
         </DockPanel>
       </Border>

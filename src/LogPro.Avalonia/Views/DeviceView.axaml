@@ -5,23 +5,23 @@
              x:Class="LogPro.Avalonia.Views.DeviceView"
              x:DataType="vm:DeviceViewModel">
   <DockPanel>
-    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
       <DockPanel>
         <StackPanel>
-          <TextBlock Text="Devices" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
-          <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#9AA0A6" Margin="0,4,0,0" />
+          <TextBlock Text="Devices" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+          <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0" />
         </StackPanel>
         <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshDevicesCommand}" Padding="14,6" />
       </DockPanel>
     </Border>
     <Grid ColumnDefinitions="300,*">
-      <Border Grid.Column="0" BorderBrush="#232329" BorderThickness="0,0,1,0" Padding="12">
+      <Border Grid.Column="0" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0" Padding="12">
         <ListBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Background="Transparent">
           <ListBox.ItemTemplate>
             <DataTemplate>
               <StackPanel Margin="0,4">
-                <TextBlock Text="{Binding DisplayName}" Foreground="#E8EAED" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding Serial}" Foreground="#9AA0A6" FontSize="11" />
+                <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextPrimary}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Serial}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
@@ -29,10 +29,10 @@
       </Border>
       <ScrollViewer Grid.Column="1" Padding="24">
         <StackPanel Spacing="12">
-          <TextBlock Text="DEVICE DETAILS" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
-          <TextBox Text="{Binding DeviceDetails}" AcceptsReturn="True" MinHeight="200" Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329" FontFamily="Consolas, Menlo, monospace" />
-          <TextBlock Text="NOTES" Foreground="#9AA0A6" FontSize="11" FontWeight="SemiBold" />
-          <TextBox Text="{Binding DeviceNotes}" Watermark="Notes for this device" Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329" />
+          <TextBlock Text="DEVICE DETAILS" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
+          <TextBox Text="{Binding DeviceDetails}" AcceptsReturn="True" MinHeight="200" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
+          <TextBlock Text="NOTES" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
+          <TextBox Text="{Binding DeviceNotes}" Watermark="Notes for this device" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />
           <WrapPanel>
             <Button Margin="0,0,8,0" Content="Save Notes" Command="{Binding SaveDeviceNotesCommand}" Padding="14,6" />
             <Button Margin="0,0,8,0" Content="Mirror" Command="{Binding StartMirrorCommand}" IsEnabled="{Binding IsMirroring, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="14,6" />

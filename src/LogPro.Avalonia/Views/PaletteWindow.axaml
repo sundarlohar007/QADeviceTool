@@ -5,24 +5,24 @@
         Title="Command Palette"
         Width="540" Height="440"
         WindowStartupLocation="CenterOwner"
-        Background="#0B0B0E"
+        Background="{DynamicResource BrushVoid}"
         ShowInTaskbar="False">
   <DockPanel Margin="12">
     <TextBox x:Name="SearchBox" DockPanel.Dock="Top"
              Watermark="Type a command…" FontSize="15"
-             Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329"
+             Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}"
              Padding="12" Margin="0,0,0,10" />
     <ListBox x:Name="ResultsList" Background="Transparent" SelectionMode="Single">
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="views:PaletteItem">
           <DockPanel Margin="4,6">
-            <TextBlock Text="{Binding Title}" Foreground="#E8EAED" FontWeight="SemiBold" />
-            <TextBlock DockPanel.Dock="Right" Text="{Binding Hint}" Foreground="#9AA0A6" FontSize="11" />
+            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextPrimary}" FontWeight="SemiBold" />
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Hint}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
           </DockPanel>
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>
     <TextBlock DockPanel.Dock="Bottom" Text="↑↓ navigate · Enter run · Esc close"
-               Foreground="#5A6066" FontSize="10" Margin="4,8,0,0" />
+               Foreground="{DynamicResource BrushTextMuted}" FontSize="10" Margin="4,8,0,0" />
   </DockPanel>
 </Window>

@@ -7,7 +7,7 @@ namespace LogPro.Services;
 /// System.Text.Json source-generated context — required for NativeAOT/trimming (§6.1).
 /// Every type serialized via JsonSerializer must be registered here.
 /// </summary>
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true, PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(AppPreferences))]
 [JsonSerializable(typeof(DevicePreference))]
 [JsonSerializable(typeof(MacroFile))]

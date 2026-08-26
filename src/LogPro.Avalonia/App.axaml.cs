@@ -25,6 +25,9 @@ public partial class App : Application
             LogPro.ViewModels.UiServices.Clipboard = new Services.AvaloniaClipboardService();
             LogPro.ViewModels.UiServices.Theme = new Services.AvaloniaThemeService();
 
+            // Apply the saved theme preference at startup
+            ((Services.AvaloniaThemeService)LogPro.ViewModels.UiServices.Theme).ApplyCurrentTheme(global::Avalonia.Application.Current!);
+
             window.DataContext = CompositionRoot.CreateMainViewModel();
             desktop.MainWindow = window;
         }

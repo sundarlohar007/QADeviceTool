@@ -1,0 +1,18 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Design tokens (§11.2) — runtime theme switching mutates these brush instances -->
+  <SolidColorBrush x:Key="BrushVoid" Color="#0E0E12" />
+  <SolidColorBrush x:Key="BrushBase" Color="#141418" />
+  <SolidColorBrush x:Key="BrushSurface" Color="#17171C" />
+  <SolidColorBrush x:Key="BrushElevated" Color="#1E1E24" />
+  <SolidColorBrush x:Key="BrushBorder" Color="#232329" />
+  <SolidColorBrush x:Key="BrushTextPrimary" Color="#E8EAED" />
+  <SolidColorBrush x:Key="BrushTextSecondary" Color="#9AA0A6" />
+  <SolidColorBrush x:Key="BrushTextMuted" Color="#5A6066" />
+  <SolidColorBrush x:Key="BrushLogText" Color="#C8CCD0" />
+  <SolidColorBrush x:Key="BrushAccent" Color="#4FD1C5" />
+  <SolidColorBrush x:Key="BrushOk" Color="#4ADE80" />
+  <SolidColorBrush x:Key="BrushWarn" Color="#F59E0B" />
+  <SolidColorBrush x:Key="BrushDanger" Color="#EF4444" />
+  <SolidColorBrush x:Key="BrushMem" Color="#E879F9" />
+</ResourceDictionary>

@@ -3,12 +3,12 @@
              x:Class="LogPro.Avalonia.Views.PlaceholderView"
              x:Name="Root">
   <DockPanel>
-    <Border DockPanel.Dock="Top" Padding="24,20" BorderBrush="#232329" BorderThickness="0,0,0,1">
-      <TextBlock Text="{Binding #Root.Title}" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
+    <Border DockPanel.Dock="Top" Padding="24,20" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+      <TextBlock Text="{Binding #Root.Title}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
     </Border>
     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-      <TextBlock Text="{Binding #Root.Title}" FontSize="18" Foreground="#9AA0A6" />
-      <TextBlock Text="Ported in the parity pass — the engine behind this view is already running." FontSize="12" Foreground="#5A6066" />
+      <TextBlock Text="{Binding #Root.Title}" FontSize="18" Foreground="{DynamicResource BrushTextSecondary}" />
+      <TextBlock Text="Ported in the parity pass — the engine behind this view is already running." FontSize="12" Foreground="{DynamicResource BrushTextMuted}" />
     </StackPanel>
   </DockPanel>
 </UserControl>

@@ -5,11 +5,11 @@
              x:Class="LogPro.Avalonia.Views.StressTestView"
              x:DataType="vm:StressTestViewModel">
   <DockPanel>
-    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="#232329" BorderThickness="0,0,0,1">
+    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
       <DockPanel>
         <StackPanel>
-          <TextBlock Text="Stress Test" FontSize="24" FontWeight="SemiBold" Foreground="#E8EAED" />
-          <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#9AA0A6" Margin="0,4,0,0" />
+          <TextBlock Text="Stress Test" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+          <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0" />
         </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
           <Button Content="■ STOP" Command="{Binding StopMonkeyCommand}" IsEnabled="{Binding IsRunning}" Padding="16,8" />
@@ -18,39 +18,39 @@
       </DockPanel>
     </Border>
     <Grid ColumnDefinitions="360,*">
-      <ScrollViewer Grid.Column="0" Padding="16" BorderBrush="#232329" BorderThickness="0,0,1,0">
+      <ScrollViewer Grid.Column="0" Padding="16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0">
         <StackPanel Spacing="8">
           <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" />
-          <TextBox Text="{Binding AppSearchQuery}" Watermark="Search installed apps…" Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329" />
+          <TextBox Text="{Binding AppSearchQuery}" Watermark="Search installed apps…" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />
           <ListBox ItemsSource="{Binding FilteredApps}" SelectedItem="{Binding SelectedApp}" Height="180" Background="Transparent">
             <ListBox.ItemTemplate>
               <DataTemplate>
-                <TextBlock Text="{Binding Name}" Foreground="#E8EAED" />
+                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushTextPrimary}" />
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
-          <TextBox Text="{Binding TargetPackage}" Watermark="Target package" Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329" FontFamily="Consolas, Menlo, monospace" />
+          <TextBox Text="{Binding TargetPackage}" Watermark="Target package" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
           <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="Event count" VerticalAlignment="Center" Foreground="#9AA0A6" FontSize="11" />
-            <TextBox Grid.Column="1" Width="120" Text="{Binding EventCount}" Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329" />
+            <TextBlock Text="Event count" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
+            <TextBox Grid.Column="1" Width="120" Text="{Binding EventCount}" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />
           </Grid>
           <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="Throttle (ms)" VerticalAlignment="Center" Foreground="#9AA0A6" FontSize="11" />
-            <TextBox Grid.Column="1" Width="120" Text="{Binding ThrottleMs}" Background="#17171C" Foreground="#E8EAED" BorderBrush="#232329" />
+            <TextBlock Text="Throttle (ms)" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
+            <TextBox Grid.Column="1" Width="120" Text="{Binding ThrottleMs}" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />
           </Grid>
-          <TextBlock Text="{Binding Output}" Foreground="#C8CCD0" FontFamily="Consolas, Menlo, monospace" FontSize="11" TextWrapping="NoWrap" />
+          <TextBlock Text="{Binding Output}" Foreground="{DynamicResource BrushLogText}" FontFamily="Consolas, Menlo, monospace" FontSize="11" TextWrapping="NoWrap" />
         </StackPanel>
       </ScrollViewer>
       <DockPanel Grid.Column="1" Margin="16">
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
           <Button Content="Save" Command="{Binding SaveOutputCommand}" Padding="12,6" />
           <Button Content="Clear" Command="{Binding ClearOutputCommand}" Padding="12,6" />
-          <TextBlock Text="{Binding ProgressPercent, StringFormat='{}{0:F0}%'}" VerticalAlignment="Center" Foreground="#4FD1C5" Margin="12,0,0,0" />
-          <TextBlock Text="{Binding EventsInjected, StringFormat='events: {0}'}" VerticalAlignment="Center" Foreground="#9AA0A6" />
-          <TextBlock Text="{Binding CrashCount, StringFormat='crashes: {0}'}" VerticalAlignment="Center" Foreground="#EF4444" />
+          <TextBlock Text="{Binding ProgressPercent, StringFormat='{}{0:F0}%'}" VerticalAlignment="Center" Foreground="{DynamicResource BrushAccent}" Margin="12,0,0,0" />
+          <TextBlock Text="{Binding EventsInjected, StringFormat='events: {0}'}" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" />
+          <TextBlock Text="{Binding CrashCount, StringFormat='crashes: {0}'}" VerticalAlignment="Center" Foreground="{DynamicResource BrushDanger}" />
         </StackPanel>
         <ScrollViewer>
-          <TextBlock Text="{Binding Output}" Foreground="#C8CCD0" FontFamily="Consolas, Menlo, monospace" FontSize="12" TextWrapping="NoWrap" />
+          <TextBlock Text="{Binding Output}" Foreground="{DynamicResource BrushLogText}" FontFamily="Consolas, Menlo, monospace" FontSize="12" TextWrapping="NoWrap" />
         </ScrollViewer>
       </DockPanel>
     </Grid>
