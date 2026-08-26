@@ -100,3 +100,23 @@ if (joined.StartsWith("version", StringComparison.Ordinal))
 }
 
 return 0;
+
+// Sample .NET plugin — used by PluginManagerTests to prove assembly-based plugin loading.
+public sealed class FakeLogParserPlugin : LogPro.Services.Plugins.ILogParserPlugin
+{
+    public string Id => "sample.fakeparser";
+    public string Name => "Fake Parser";
+    public string Version => "1.0.0";
+    public string Type => "logParser";
+
+    public bool TryParse(string rawLine, out LogPro.Services.Plugins.ParsedLogEntry entry)
+    {
+        if (rawLine.StartsWith("FAKE:", StringComparison.Ordinal))
+        {
+            entry = new LogPro.Services.Plugins.ParsedLogEntry("Warning", "FakeTag", rawLine[5..].Trim());
+            return true;
+        }
+        entry = default!;
+        return false;
+    }
+}

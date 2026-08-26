@@ -11,4 +11,8 @@
     <Description>Fake adb for hardware-free end-to-end tests. Answers devices/logcat/getprop; streams synthetic logcat.</Description>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\LogPro.Core\LogPro.Core.csproj" />
+  </ItemGroup>
+
 </Project>

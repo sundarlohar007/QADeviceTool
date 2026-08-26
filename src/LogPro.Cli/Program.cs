@@ -41,6 +41,8 @@ public static class Program
                 "location" => await Location(adb, args),
                 "network" => await Network(adb, args),
                 "issue" => await Issue(adb, args),
+                "plugins" => Plugins(args),
+                "parse" => await Parse(args),
                 "export" => await Export(adb, ios, args),
                 "bugreport" => await BugReport(adb, ios, args),
                 _ => Unknown(args[0])
@@ -524,6 +526,60 @@ public static class Program
         Console.WriteLine($"Issue bundle → {bundle.DirectoryPath}");
         foreach (var f in bundle.Files) Console.WriteLine($"  {Path.GetFileName(f)}");
         Console.WriteLine("Attach these files manually in your tracker — the tool never transmits anything.");
+        return 0;
+    }
+
+    /// <summary>Lists discovered plugins (§16).</summary>
+    private static int Plugins(string[] args)
+    {
+        var dir = Opt(args, "--dir") ?? Path.Combine(Directory.GetCurrentDirectory(), "plugins");
+        var manager = new LogPro.Services.Plugins.PluginManager();
+        manager.LoadPlugins(dir);
+
+        Console.WriteLine($"Plugins from {dir}:");
+        foreach (var plugin in manager.Plugins)
+            Console.WriteLine($"  {plugin.Id} v{plugin.Version} [{plugin.Type}] — {plugin.Name}");
+        Console.WriteLine($"{manager.Plugins.Count} plugin(s) loaded.");
+        return 0;
+    }
+
+    /// <summary>Applies a parser plugin to a log file.</summary>
+    private static async Task<int> Parse(string[] args)
+    {
+        var dir = Opt(args, "--plugins-dir");
+        var parserId = Opt(args, "--parser");
+        var input = Opt(args, "--input");
+        if (string.IsNullOrWhiteSpace(dir) || string.IsNullOrWhiteSpace(parserId) || string.IsNullOrWhiteSpace(input))
+        {
+            Console.Error.WriteLine("parse requires --plugins-dir, --parser and --input");
+            return 2;
+        }
+        if (!File.Exists(input))
+        {
+            Console.Error.WriteLine($"file not found: {input}");
+            return 1;
+        }
+
+        var manager = new LogPro.Services.Plugins.PluginManager();
+        manager.LoadPlugins(dir);
+        if (!manager.LogParsers.TryGetValue(parserId, out var parser))
+        {
+            Console.Error.WriteLine($"parser not found: {parserId}");
+            return 1;
+        }
+
+        var counts = new Dictionary<string, int>();
+        var parsed = 0;
+        await foreach (var line in System.IO.File.ReadLinesAsync(input))
+        {
+            if (!parser.TryParse(line, out var entry)) continue;
+            parsed++;
+            counts[entry.Level] = counts.GetValueOrDefault(entry.Level) + 1;
+        }
+
+        Console.WriteLine($"Parsed {parsed} line(s) with '{parserId}':");
+        foreach (var (level, count) in counts.OrderByDescending(kv => kv.Value))
+            Console.WriteLine($"  {level,-10} {count}");
         return 0;
     }
 
