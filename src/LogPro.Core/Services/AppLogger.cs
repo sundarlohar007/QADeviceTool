@@ -16,16 +16,20 @@ public static class AppLogger
 
         var logDirectory = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "logs");
 
-        // Ensure directory exists
-        if (!Directory.Exists(logDirectory))
+        var canPersistLogs = false;
+        try
         {
             Directory.CreateDirectory(logDirectory);
+            canPersistLogs = Helpers.PathHelper.RestrictDirectoryAccess(logDirectory);
         }
+        catch { /* Secure mode fails closed for persistent logs. */ }
 
         var logfile = new FileTarget("logfile")
         {
             FileName = Path.Combine(logDirectory, "app-log-${shortdate}.txt"),
-            Layout = "${longdate}|${level:uppercase=true}|${logger}|${message} ${exception:format=ToString}",
+            // Exception messages and stacks can contain URLs, tokens, serials, or local
+            // paths. Details belong in the redacted issue pipeline, not persistent logs.
+            Layout = "${longdate}|${level:uppercase=true}|${logger}|${message} ${exception:format=Type}",
             ArchiveAboveSize = 5242880, // 5MB
             MaxArchiveFiles = 5,
             KeepFileOpen = true
@@ -33,11 +37,12 @@ public static class AppLogger
 
         var logconsole = new ConsoleTarget("logconsole")
         {
-            Layout = "${longdate}|${level:uppercase=true}|${logger}|${message} ${exception:format=ToString}"
+            Layout = "${longdate}|${level:uppercase=true}|${logger}|${message} ${exception:format=Type}"
         };
 
         config.AddRule(LogLevel.Debug, LogLevel.Fatal, logconsole);
-        config.AddRule(LogLevel.Info, LogLevel.Fatal, logfile);
+        if (canPersistLogs)
+            config.AddRule(LogLevel.Info, LogLevel.Fatal, logfile);
 
         LogManager.Configuration = config;
         _logger = LogManager.GetCurrentClassLogger();

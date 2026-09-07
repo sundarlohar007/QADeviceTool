@@ -104,6 +104,19 @@ public partial class ShellViewModel : ObservableObject, IDisposable
         var cmd = CommandInput.Trim();
         CommandInput = string.Empty;
 
+        if (SelectedDevice.Platform == DevicePlatform.Android && !SecurityHelper.IsOfflineSafeReadOnlyCommand(cmd))
+        {
+            AppendOutput("[Blocked] Offline security mode permits read-only, non-network commands only.\n" +
+                         "Use the dedicated QA actions for installs, macros, conditions, and device changes.");
+            return;
+        }
+
+        if (SelectedDevice.Platform == DevicePlatform.iOS && SecurityHelper.IsNetworkCapableCommand(cmd))
+        {
+            AppendOutput("[Blocked] Network-capable iOS commands are disabled by offline security policy.");
+            return;
+        }
+
         AppendOutput($"\n> {cmd}");
         IsExecuting = true;
 

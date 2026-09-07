@@ -24,6 +24,13 @@ public sealed class AndroidPerformanceProfiler : IDisposable
     public AndroidPerformanceProfiler(IAdbService adb, string serial, string? package = null,
         string? layerOverride = null, int intervalMs = 1000)
     {
+        if (!LogPro.Helpers.SecurityHelper.IsValidOfflineDeviceSelector(serial))
+            throw new ArgumentException("Invalid device selector.", nameof(serial));
+        if (package != null && !LogPro.Helpers.SecurityHelper.IsValidPackageName(package))
+            throw new ArgumentException("Invalid package name.", nameof(package));
+        if (layerOverride != null && !LogPro.Helpers.SecurityHelper.IsSafeDeviceArgument(layerOverride))
+            throw new ArgumentException("Invalid SurfaceFlinger layer.", nameof(layerOverride));
+
         _adb = adb;
         _serial = serial;
         _package = package;
@@ -48,7 +55,7 @@ public sealed class AndroidPerformanceProfiler : IDisposable
             {
                 try
                 {
-                    var snapshot = await SampleOnceAsync().ConfigureAwait(false);
+                    var snapshot = await SampleOnceAsync(token).ConfigureAwait(false);
                     lock (_lock)
                     {
                         _history.Add(snapshot);
@@ -77,13 +84,13 @@ public sealed class AndroidPerformanceProfiler : IDisposable
         _loop = null;
     }
 
-    public async Task<ProfilerSnapshot> SampleOnceAsync()
+    public async Task<ProfilerSnapshot> SampleOnceAsync(CancellationToken cancellationToken = default)
     {
-        var fpsTask = SampleFpsAsync();
-        var cpu = await ProbeCpuAsync().ConfigureAwait(false);
-        var mem = await ProbeMemAsync().ConfigureAwait(false);
-        var thermal = await ProbeThermalAsync().ConfigureAwait(false);
-        var battery = await ProbeBatteryAsync().ConfigureAwait(false);
+        var fpsTask = SampleFpsAsync(cancellationToken);
+        var cpu = await ProbeCpuAsync(cancellationToken).ConfigureAwait(false);
+        var mem = await ProbeMemAsync(cancellationToken).ConfigureAwait(false);
+        var thermal = await ProbeThermalAsync(cancellationToken).ConfigureAwait(false);
+        var battery = await ProbeBatteryAsync(cancellationToken).ConfigureAwait(false);
         var (fps, p90, p95, janky, total) = await fpsTask.ConfigureAwait(false);
 
         return new ProfilerSnapshot
@@ -101,29 +108,29 @@ public sealed class AndroidPerformanceProfiler : IDisposable
         };
     }
 
-    private async Task<(double?, double?, double?, int?, int?)> SampleFpsAsync()
+    private async Task<(double?, double?, double?, int?, int?)> SampleFpsAsync(CancellationToken cancellationToken)
     {
         try
         {
             if (!_layerResolved)
             {
-                _resolvedLayer = _layerOverride ?? await ResolveLayerAsync().ConfigureAwait(false);
+                _resolvedLayer = _layerOverride ?? await ResolveLayerAsync(cancellationToken).ConfigureAwait(false);
                 _layerResolved = true;
             }
             if (_resolvedLayer == null) return (null, null, null, null, null);
 
-            var output = await _adb.ExecuteCommandAsync(_serial, $"shell dumpsys SurfaceFlinger --latency {_resolvedLayer}");
+            var output = await _adb.ExecuteCommandAsync(_serial, $"shell dumpsys SurfaceFlinger --latency {_resolvedLayer}", cancellationToken);
             var result = AndroidDumpsysParsers.ParseSurfaceFlingerLatency(output);
             return AndroidDumpsysParsers.SummarizeFrames(result.Frames, result.RefreshPeriodMs);
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] FPS sample failed"); return (null, null, null, null, null); }
     }
 
-    private async Task<string?> ResolveLayerAsync()
+    private async Task<string?> ResolveLayerAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var listing = await _adb.ExecuteCommandAsync(_serial, "shell dumpsys SurfaceFlinger --list");
+            var listing = await _adb.ExecuteCommandAsync(_serial, "shell dumpsys SurfaceFlinger --list", cancellationToken);
             var lines = listing.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var line in lines)
             {
@@ -143,42 +150,42 @@ public sealed class AndroidPerformanceProfiler : IDisposable
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] Layer resolution failed"); return null; }
     }
 
-    private async Task<double?> ProbeCpuAsync()
+    private async Task<double?> ProbeCpuAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var output = await _adb.ExecuteCommandAsync(_serial, "shell dumpsys cpuinfo");
+            var output = await _adb.ExecuteCommandAsync(_serial, "shell dumpsys cpuinfo", cancellationToken);
             return AndroidDumpsysParsers.ParseCpuPercent(output, _package);
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] CPU probe failed"); return null; }
     }
 
-    private async Task<(int? PssKb, int? RssKb)> ProbeMemAsync()
+    private async Task<(int? PssKb, int? RssKb)> ProbeMemAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_package)) return (null, null);
         try
         {
-            var output = await _adb.ExecuteCommandAsync(_serial, $"shell dumpsys meminfo {_package}");
+            var output = await _adb.ExecuteCommandAsync(_serial, $"shell dumpsys meminfo {_package}", cancellationToken);
             return AndroidDumpsysParsers.ParseMemInfoTotals(output);
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] Mem probe failed"); return (null, null); }
     }
 
-    private async Task<int?> ProbeThermalAsync()
+    private async Task<int?> ProbeThermalAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var output = await _adb.ExecuteCommandAsync(_serial, "shell dumpsys thermalservice");
+            var output = await _adb.ExecuteCommandAsync(_serial, "shell dumpsys thermalservice", cancellationToken);
             return AndroidDumpsysParsers.ParseThermalStatus(output);
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] Thermal probe failed"); return null; }
     }
 
-    private async Task<int?> ProbeBatteryAsync()
+    private async Task<int?> ProbeBatteryAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var output = await _adb.ExecuteCommandAsync(_serial, "shell dumpsys battery");
+            var output = await _adb.ExecuteCommandAsync(_serial, "shell dumpsys battery", cancellationToken);
             return AndroidDumpsysParsers.ParseBatteryLevel(output);
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] Battery probe failed"); return null; }

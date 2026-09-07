@@ -82,4 +82,22 @@ public class ToolManifestTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    [Fact]
+    public async Task Verify_UnexpectedOnlyFile_IsUnhealthy()
+    {
+        var dir = CreateToolTree();
+        try
+        {
+            var manifest = Path.Combine(dir, ToolManifest.DefaultFileName);
+            await ToolManifest.WriteAsync(dir, manifest);
+            File.WriteAllText(Path.Combine(dir, "unexpected.dll"), "not in manifest");
+
+            var result = await ToolManifest.VerifyAsync(dir, manifest);
+
+            result.Unexpected.Should().Contain("unexpected.dll");
+            result.IsHealthy.Should().BeFalse();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }

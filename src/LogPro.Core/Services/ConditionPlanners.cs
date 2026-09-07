@@ -83,6 +83,9 @@ public static class ConditionPlanners
     /// <summary>Builds the tc/netem script for a preset (root required on-device).</summary>
     public static string BuildNetemScript(NetworkPreset preset, string networkInterface)
     {
+        if (!LogPro.Helpers.SecurityHelper.IsValidNetworkInterface(networkInterface))
+            throw new ArgumentException("Invalid network interface name.", nameof(networkInterface));
+
         var loss = preset.LossPercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
         var sb = new StringBuilder();
         sb.AppendLine($"tc qdisc del dev {networkInterface} root 2>/dev/null");
@@ -93,7 +96,11 @@ public static class ConditionPlanners
 
     /// <summary>Builds the reset script.</summary>
     public static string BuildNetemResetScript(string networkInterface)
-        => $"tc qdisc del dev {networkInterface} root 2>/dev/null";
+    {
+        if (!LogPro.Helpers.SecurityHelper.IsValidNetworkInterface(networkInterface))
+            throw new ArgumentException("Invalid network interface name.", nameof(networkInterface));
+        return $"tc qdisc del dev {networkInterface} root 2>/dev/null";
+    }
 
     private static long ToKbit(double mbps) => (long)(mbps * 1000);
 }

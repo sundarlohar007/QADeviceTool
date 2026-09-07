@@ -17,6 +17,12 @@ public static class Program
         _ = AppLogger.Log; // force NLog config init before we strip the console target
         QuietConsoleLogging();
 
+        if (!LogPro.Helpers.ToolResolver.VerifyBundledToolsAsync(requireManifest: true).GetAwaiter().GetResult())
+        {
+            Console.Error.WriteLine("bundled tool integrity verification failed; refusing to run");
+            return 3;
+        }
+
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
             PrintUsage();
@@ -54,6 +60,12 @@ public static class Program
             Console.Error.WriteLine($"error: {ex.Message}");
             return 2;
         }
+        finally
+        {
+            // Ctrl+C/process termination can bypass command-level cleanup. The registry
+            // is the final ownership boundary for adb/scrcpy/pymobiledevice3 children.
+            ProcessManager.Instance.KillAllTrackedProcesses();
+        }
     }
 
     /// <summary>CLI stdout belongs to command output — file logging stays, console target goes quiet.</summary>
@@ -90,8 +102,8 @@ public static class Program
           soak --serial S --seconds N [--macro FILE] [--package P] --out DIR
                                                     Endurance run with decay flags
           serve [--port P]                          Loopback control API for CI/Appium
-          export --log FILE --format csv|json --out FILE [--anonymize]
-                                                    Export a session log file
+          export --log FILE --format csv|json --out FILE
+                                                    Export a redacted session log file
           bugreport --serial S [--out DIR]          Generate a zipped bug report
         """);
 
@@ -129,8 +141,15 @@ public static class Program
         }
 
         var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 30;
-        var outDir = Opt(args, "--out");
+        var requestedOut = Opt(args, "--out");
         var package = Opt(args, "--package");
+        var safeOutDir = string.Empty;
+        if (!string.IsNullOrWhiteSpace(requestedOut) && !TryGetOutputDirectory(requestedOut, out safeOutDir)) return 2;
+        if (!string.IsNullOrWhiteSpace(package) && !LogPro.Helpers.SecurityHelper.IsValidPackageName(package))
+        {
+            Console.Error.WriteLine("capture package must be a valid Android package name");
+            return 2;
+        }
 
         var device = await FindDevice(adb, ios, serial);
         if (device == null)
@@ -140,8 +159,8 @@ public static class Program
         }
 
         var sessions = new SessionService(adb, ios);
-        if (!string.IsNullOrWhiteSpace(outDir))
-            sessions.SessionsRootDirectory = outDir;
+        if (!string.IsNullOrWhiteSpace(requestedOut))
+            sessions.SessionsRootDirectory = safeOutDir;
         if (!string.IsNullOrWhiteSpace(package))
             PreferencesService.Current.TargetPackageName = package;
 
@@ -171,7 +190,7 @@ public static class Program
         var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 30;
         var package = Opt(args, "--package");
         var layer = Opt(args, "--layer");
-        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+        if (!TryGetOutputDirectory(Opt(args, "--out"), out var outDir)) return 2;
 
         var device = await FindDevice(adb, ios, serial);
         if (device == null)
@@ -180,7 +199,6 @@ public static class Program
             return 1;
         }
 
-        Directory.CreateDirectory(outDir);
         using var profiler = new LogPro.Services.Profiling.AndroidPerformanceProfiler(
             adb, serial, package, layer, intervalMs: 1000);
 
@@ -214,7 +232,7 @@ public static class Program
         var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 600;
         var package = Opt(args, "--package") ?? string.Empty;
         var macroPath = Opt(args, "--macro");
-        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+        if (!TryGetOutputDirectory(Opt(args, "--out"), out var outDir)) return 2;
 
         var device = await FindDevice(adb, ios, serial);
         if (device == null)
@@ -223,7 +241,6 @@ public static class Program
             return 1;
         }
 
-        Directory.CreateDirectory(outDir);
         var macro = macroPath != null && File.Exists(macroPath)
             ? await MacroService.LoadMacroAsync(macroPath)
             : null;
@@ -260,7 +277,17 @@ public static class Program
         using var server = new ControlApiServer(adb, ios);
         server.Start(port);
         Console.WriteLine($"Control API listening on http://127.0.0.1:{port} (Ctrl+C to stop)");
-        await Task.Delay(Timeout.Infinite);
+        Console.WriteLine($"Control API key: {server.ApiKey}");
+
+        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        ConsoleCancelEventHandler onCancel = (_, e) =>
+        {
+            e.Cancel = true;
+            stopped.TrySetResult();
+        };
+        Console.CancelKeyPress += onCancel;
+        try { await stopped.Task; }
+        finally { Console.CancelKeyPress -= onCancel; }
         return 0;
     }
 
@@ -272,6 +299,11 @@ public static class Program
         if (string.IsNullOrWhiteSpace(jsonPath) || string.IsNullOrWhiteSpace(outPath))
         {
             Console.Error.WriteLine("report requires --json and --out");
+            return 2;
+        }
+        if (!LogPro.Helpers.PathHelper.IsSafeLocalPath(jsonPath) || !LogPro.Helpers.PathHelper.IsSafeLocalPath(outPath))
+        {
+            Console.Error.WriteLine("report input and output must be local, non-reparse-point paths");
             return 2;
         }
         if (!File.Exists(jsonPath))
@@ -328,7 +360,7 @@ public static class Program
 
         var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 60;
         var package = Opt(args, "--package");
-        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+        if (!TryGetOutputDirectory(Opt(args, "--out"), out var outDir)) return 2;
         var labels = (Opt(args, "--labels") ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries);
         var chipsets = (Opt(args, "--chipsets") ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries);
 
@@ -340,7 +372,6 @@ public static class Program
             Chipset = i < chipsets.Length ? chipsets[i] : string.Empty
         }).ToList();
 
-        Directory.CreateDirectory(outDir);
         var deviceCount = serials.Length;
         Console.WriteLine("Comparing " + deviceCount + " devices for " + seconds + "s -> " + outDir);
 
@@ -490,10 +521,21 @@ public static class Program
     private static async Task<int> Issue(AdbService adb, string[] args)
     {
         var serial = Opt(args, "--serial");
-        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
+        if (!TryGetOutputDirectory(Opt(args, "--out"), out var outDir)) return 2;
         var sessionDir = Opt(args, "--session-dir");
         var title = Opt(args, "--title");
         var attachmentsArg = Opt(args, "--attachments");
+
+        if (!string.IsNullOrWhiteSpace(serial) && !LogPro.Helpers.SecurityHelper.IsValidOfflineDeviceSelector(serial))
+        {
+            Console.Error.WriteLine("network device selectors are disabled");
+            return 2;
+        }
+        if (!string.IsNullOrWhiteSpace(sessionDir) && !LogPro.Helpers.PathHelper.IsSafeLocalPath(sessionDir))
+        {
+            Console.Error.WriteLine("session directory must be local and non-reparse-point");
+            return 2;
+        }
 
         LogPro.Models.DeviceInfo? device = null;
         if (!string.IsNullOrWhiteSpace(serial))
@@ -511,7 +553,7 @@ public static class Program
         if (!string.IsNullOrWhiteSpace(attachmentsArg))
             attachments.AddRange(attachmentsArg.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
-        var logFile = sessionDir != null
+        var logFile = sessionDir != null && Directory.Exists(sessionDir)
             ? Directory.GetFiles(sessionDir, "*_log.txt", SearchOption.AllDirectories).FirstOrDefault()
             : null;
 
@@ -587,8 +629,7 @@ public static class Program
     /// <summary>Engine KPI probes (§19): 100k-line log pipeline, exports, tail-read, parser throughput.</summary>
     private static async Task<int> Kpi(AdbService adb, string[] args)
     {
-        var outDir = Opt(args, "--out") ?? Directory.GetCurrentDirectory();
-        Directory.CreateDirectory(outDir);
+        if (!TryGetOutputDirectory(Opt(args, "--out"), out var outDir)) return 2;
         var report = new List<string>();
         void Add(string name, double ms) { report.Add($"{name}: {ms:F1} ms"); Console.WriteLine($"  {name}: {ms:F1} ms"); }
 
@@ -647,19 +688,22 @@ public static class Program
         var log = Opt(args, "--log");
         var format = Opt(args, "--format") ?? "csv";
         var outPath = Opt(args, "--out");
-        var anonymize = args.Contains("--anonymize");
-
         if (string.IsNullOrWhiteSpace(log) || string.IsNullOrWhiteSpace(outPath))
         {
             Console.Error.WriteLine("export requires --log and --out");
+            return 2;
+        }
+        if (!LogPro.Helpers.PathHelper.IsSafeLocalPath(log) || !LogPro.Helpers.PathHelper.IsSafeLocalPath(outPath))
+        {
+            Console.Error.WriteLine("log and output must be local, non-reparse-point paths");
             return 2;
         }
 
         var sessions = new SessionService(adb, ios);
         var session = new LogSession { LogFilePath = log, SessionDirectory = Path.GetDirectoryName(log) ?? "" };
         var ok = format.Equals("json", StringComparison.OrdinalIgnoreCase)
-            ? await sessions.ExportToJsonAsync(session, outPath, anonymize)
-            : await sessions.ExportToCsvAsync(session, outPath, anonymize);
+            ? await sessions.ExportToJsonAsync(session, outPath, anonymize: true)
+            : await sessions.ExportToCsvAsync(session, outPath, anonymize: true);
 
         Console.WriteLine(ok ? $"Exported -> {outPath}" : "export failed");
         return ok ? 0 : 1;
@@ -681,7 +725,8 @@ public static class Program
             return 1;
         }
 
-        var outDir = Opt(args, "--out") ?? Path.Combine(Directory.GetCurrentDirectory(), "bugreports");
+        var requestedOut = Opt(args, "--out") ?? Path.Combine(Directory.GetCurrentDirectory(), "bugreports");
+        if (!TryGetOutputDirectory(requestedOut, out var outDir)) return 2;
         var reporter = new BugReportService(adb, ios);
         var (success, message) = await reporter.GenerateAsync(
             device, outDir, "cli", Array.Empty<string>(), Array.Empty<CrashDetector.CrashEvent>(), null);
@@ -695,5 +740,14 @@ public static class Program
         var apple = await ios.GetConnectedDevicesAsync();
         return android.Concat(apple).FirstOrDefault(d =>
             d.Serial.Equals(serial, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryGetOutputDirectory(string? requested, out string directory)
+    {
+        var candidate = string.IsNullOrWhiteSpace(requested) ? Directory.GetCurrentDirectory() : requested;
+        if (LogPro.Helpers.PathHelper.TryGetSafeLocalDirectory(candidate, out directory)) return true;
+        Console.Error.WriteLine("output must be a local, non-reparse-point directory");
+        directory = string.Empty;
+        return false;
     }
 }

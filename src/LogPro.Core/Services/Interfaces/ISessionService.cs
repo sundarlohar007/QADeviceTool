@@ -23,6 +23,6 @@ public interface ISessionService
     List<LogSession> GetSavedSessions();
     bool DeleteSession(LogSession session);
     LogSession? GetActiveSessionForDevice(string deviceSerial);
-    Task<bool> ExportToCsvAsync(LogSession session, string outputPath, bool anonymize = false);
-    Task<bool> ExportToJsonAsync(LogSession session, string outputPath, bool anonymize = false);
+    Task<bool> ExportToCsvAsync(LogSession session, string outputPath, bool anonymize = true);
+    Task<bool> ExportToJsonAsync(LogSession session, string outputPath, bool anonymize = true);
 }

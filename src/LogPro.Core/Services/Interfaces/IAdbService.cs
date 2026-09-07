@@ -10,8 +10,8 @@ public interface IAdbService
     Task<bool> CaptureScreenshotAsync(string serial, string outputPath);
     Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? progressCallback = null);
     Task<bool> BroadcastIntentAsync(string serial, string uri);
-    Task<string> ExecuteCommandAsync(string serial, string command);
-    Task<(bool Success, string Output, string Error)> ExecuteCommandWithResultAsync(string serial, string args);
+    Task<string> ExecuteCommandAsync(string serial, string command, CancellationToken cancellationToken = default);
+    Task<(bool Success, string Output, string Error)> ExecuteCommandWithResultAsync(string serial, string args, CancellationToken cancellationToken = default);
     Task<string?> GetDevicePropertyAsync(string serial, string property);
     Task<Process?> StartLogCaptureAsync(string serial, string logFilePath, LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime);
     Task<string?> StartScreenRecordAsync(string serial, string? outputDir = null, int maxDurationSec = 180, string bitRate = "8M");

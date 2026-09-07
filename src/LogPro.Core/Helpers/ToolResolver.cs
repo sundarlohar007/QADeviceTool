@@ -16,6 +16,7 @@ public static class ToolResolver
     /// </summary>
     private static readonly string[] _pathExcludedSubdirs = { "pymobiledevice3" };
     private static bool _initialized;
+    private static volatile bool _bundledToolsUntrusted;
 
     static ToolResolver()
     {
@@ -37,6 +38,8 @@ public static class ToolResolver
     {
         if (!Directory.Exists(_toolsDir))
             return toolName;
+        if (_bundledToolsUntrusted)
+            return Path.Combine(_toolsDir, "__untrusted_tool__");
 
         try
         {
@@ -62,6 +65,33 @@ public static class ToolResolver
     }
 
     public static string ToolsDirectory => _toolsDir;
+
+    public static bool BundledToolsTrusted => !_bundledToolsUntrusted;
+
+    /// <summary>
+    /// Verifies the release manifest before any bundled executable is selected. Development
+    /// checkouts may omit the manifest when no bundled tools are present; a shipped bundle
+    /// with tools must include it and fails closed when it is missing or modified.
+    /// </summary>
+    public static async Task<bool> VerifyBundledToolsAsync(bool requireManifest = true, bool requireTools = false)
+    {
+        if (!Directory.Exists(_toolsDir))
+        {
+            _bundledToolsUntrusted = requireTools;
+            return !requireTools;
+        }
+
+        var manifestPath = Path.Combine(_appDir, Services.ToolManifest.DefaultFileName);
+        if (!File.Exists(manifestPath))
+        {
+            _bundledToolsUntrusted = requireManifest && HasBundledTools;
+            return !_bundledToolsUntrusted;
+        }
+
+        var result = await Services.ToolManifest.VerifyAsync(_toolsDir, manifestPath).ConfigureAwait(false);
+        _bundledToolsUntrusted = !result.IsHealthy;
+        return result.IsHealthy;
+    }
 
     public static bool HasBundledTools
     {

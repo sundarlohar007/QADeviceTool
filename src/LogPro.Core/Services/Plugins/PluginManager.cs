@@ -14,11 +14,19 @@ namespace LogPro.Services.Plugins;
 /// </summary>
 public sealed class PluginManager
 {
+    private readonly bool _allowCodePlugins;
     private readonly List<IPlugin> _plugins = new();
     private readonly Dictionary<string, ILogParserPlugin> _parsers = new(StringComparer.Ordinal);
 
     public IReadOnlyList<IPlugin> Plugins => _plugins;
     public IReadOnlyDictionary<string, ILogParserPlugin> LogParsers => _parsers;
+
+    public PluginManager(bool allowCodePlugins = false)
+    {
+        // Assembly plugins are full-trust .NET code. They are opt-in for trusted test or
+        // development hosts; the shipped CLI only loads declarative regex plugins.
+        _allowCodePlugins = allowCodePlugins;
+    }
 
     public void LoadPlugins(string pluginsDir)
     {
@@ -69,6 +77,11 @@ public sealed class PluginManager
         }
         else if (manifest.EntryAssembly != null)
         {
+            if (!_allowCodePlugins)
+            {
+                AppLogger.Log.Warn($"[Plugins] Assembly plugin '{manifest.Id}' skipped: code plugins are disabled in offline mode");
+                return;
+            }
             parser = LoadAssemblyPlugin(dir, manifest);
         }
 

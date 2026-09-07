@@ -38,7 +38,8 @@ public class BugReportService
     {
         try
         {
-            if (!Directory.Exists(saveDir)) Directory.CreateDirectory(saveDir);
+            if (!PathHelper.TryGetSafeLocalDirectory(saveDir, out saveDir))
+                return (false, "[!] Bug reports must be written to a local, non-reparse-point directory.");
 
             var deviceHash = SecurityHelper.HashSerial(device.Serial);
             var timestamp = DateTime.Now;
@@ -55,14 +56,15 @@ public class BugReportService
 
             // ── 2. Log Dump + crash snippets ──
             var logDumpPath = Path.Combine(saveDir, $"log_dump_{timestamp:yyyyMMdd_HHmmss}.txt");
-            var logContent = string.Join(Environment.NewLine, logLines);
+            var logContent = string.Join(Environment.NewLine, logLines.Select(line => SecurityHelper.RedactSensitiveText(line)));
             if (crashes.Count > 0)
             {
                 logContent += $"\n\n{new string('=', 60)}\nCRASHES DETECTED: {crashes.Count}\n{new string('=', 60)}\n";
                 foreach (var crash in crashes)
                 {
                     logContent += $"\n--- Crash at {crash.Timestamp:HH:mm:ss.fff} (line #{crash.LineIndex}) ---\n";
-                    logContent += $"Pattern: {crash.Pattern}\nLine: {crash.Line}\n";
+                    logContent += $"Pattern: {SecurityHelper.RedactSensitiveText(crash.Pattern)}\n";
+                    logContent += $"Line: {SecurityHelper.RedactSensitiveText(crash.Line)}\n";
                 }
             }
             await File.WriteAllTextAsync(logDumpPath, logContent);
@@ -73,13 +75,13 @@ public class BugReportService
             var info = new StringBuilder();
             info.AppendLine("=== LogPro BUG REPORT ===");
             info.AppendLine($"Generated: {timestamp:yyyy-MM-dd HH:mm:ss}");
-            info.AppendLine($"Device: {device.DisplayName}");
+            info.AppendLine($"Device: {SecurityHelper.RedactSensitiveText(device.DisplayName)}");
             info.AppendLine($"Serial (hashed): {deviceHash}");
             info.AppendLine($"Platform: {device.Platform}");
-            info.AppendLine($"Model: {device.Model}");
-            info.AppendLine($"OS: {device.OsVersion}");
+            info.AppendLine($"Model: {SecurityHelper.RedactSensitiveText(device.Model)}");
+            info.AppendLine($"OS: {SecurityHelper.RedactSensitiveText(device.OsVersion)}");
             info.AppendLine($"Battery: {device.BatteryLevel}%");
-            info.AppendLine($"Session: {sessionName}");
+            info.AppendLine($"Session: {SecurityHelper.RedactSensitiveText(sessionName)}");
             info.AppendLine($"Log entries: {logLines.Count}");
             info.AppendLine($"Crashes detected: {crashes.Count}");
 
@@ -92,7 +94,7 @@ public class BugReportService
             tempFiles.Add(infoPath);
 
             // ── 4. Screen recording clip (if available) ──
-            if (lastRecordingPath != null && File.Exists(lastRecordingPath))
+            if (lastRecordingPath != null && File.Exists(lastRecordingPath) && PathHelper.IsSafeLocalPath(lastRecordingPath))
             {
                 var recCopyPath = Path.Combine(saveDir, $"screenrecording_{timestamp:yyyyMMdd_HHmmss}.mp4");
                 File.Copy(lastRecordingPath, recCopyPath, overwrite: true);
@@ -134,7 +136,7 @@ public class BugReportService
         var props = await _adbService.ExecuteCommandAsync(serial, "shell getprop");
         var filteredProps = props.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Where(l => AllowedGetpropKeys.Any(k => l.Contains($"[{k}]:", StringComparison.Ordinal)));
-        info.AppendLine(string.Join("\n", filteredProps));
+        info.AppendLine(SecurityHelper.RedactSensitiveText(string.Join("\n", filteredProps)));
 
         var dumpsysSections = new Dictionary<string, string>
         {
@@ -153,7 +155,7 @@ public class BugReportService
             {
                 var output = await _adbService.ExecuteCommandAsync(serial, cmd);
                 info.AppendLine($"\n{new string('=', 60)}\nDUMPSYS {section}\n{new string('=', 60)}");
-                info.AppendLine(string.IsNullOrWhiteSpace(output) ? "(empty)" : output);
+                info.AppendLine(string.IsNullOrWhiteSpace(output) ? "(empty)" : SecurityHelper.RedactSensitiveText(output));
             }
             catch { info.AppendLine($"\n=== {section}: Failed to capture ==="); }
         }
@@ -162,7 +164,7 @@ public class BugReportService
         {
             var crashLog = await _adbService.ExecuteCommandAsync(serial, "logcat -d -b crash -v threadtime");
             info.AppendLine($"\n{new string('=', 60)}\nLOGCAT CRASH BUFFER (-b crash)\n{new string('=', 60)}");
-            info.AppendLine(string.IsNullOrWhiteSpace(crashLog) ? "(empty)" : crashLog);
+            info.AppendLine(string.IsNullOrWhiteSpace(crashLog) ? "(empty)" : SecurityHelper.RedactSensitiveText(crashLog));
         }
         catch { info.AppendLine("\n=== CRASH BUFFER: Failed ==="); }
 
@@ -174,16 +176,16 @@ public class BugReportService
     {
         var iosDetails = await _iosService.GetDeviceDetailsAsync(device);
         info.AppendLine($"\n{new string('=', 60)}\niOS DEVICE DETAILS\n{new string('=', 60)}");
-        info.AppendLine($"Name: {iosDetails.Name}");
-        info.AppendLine($"Model: {iosDetails.Model}");
-        info.AppendLine($"OS: {iosDetails.OsVersion}");
+        info.AppendLine($"Name: {SecurityHelper.RedactSensitiveText(iosDetails.Name)}");
+        info.AppendLine($"Model: {SecurityHelper.RedactSensitiveText(iosDetails.Model)}");
+        info.AppendLine($"OS: {SecurityHelper.RedactSensitiveText(iosDetails.OsVersion)}");
         info.AppendLine($"Serial: {SecurityHelper.HashSerial(iosDetails.Serial)}");
 
         try
         {
             var diag = await _iosService.GetDiagnosticsAsync(device.Serial);
             info.AppendLine($"\n{new string('=', 60)}\niOS DIAGNOSTICS (pymobiledevice3)\n{new string('=', 60)}");
-            info.AppendLine(diag);
+            info.AppendLine(SecurityHelper.RedactSensitiveText(diag));
         }
         catch { info.AppendLine("\nDiagnostics: Failed to capture."); }
 
@@ -194,7 +196,7 @@ public class BugReportService
             {
                 info.AppendLine($"\n{new string('=', 60)}\nCRASH LOGS ({crashLogs.Count} found)\n{new string('=', 60)}");
                 foreach (var c in crashLogs.Take(20))
-                    info.AppendLine(c);
+                    info.AppendLine(SecurityHelper.RedactSensitiveText(c));
             }
         }
         catch { info.AppendLine("\nCrash logs: Failed to capture."); }
@@ -208,7 +210,7 @@ public class BugReportService
             if (!string.IsNullOrWhiteSpace(output) && !output.Contains("No such file"))
             {
                 info.AppendLine($"\n{new string('=', 60)}\n{title}\n{new string('=', 60)}");
-                info.AppendLine(output);
+                info.AppendLine(SecurityHelper.RedactSensitiveText(output));
             }
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, $"[BugReport] {title} capture failed"); }

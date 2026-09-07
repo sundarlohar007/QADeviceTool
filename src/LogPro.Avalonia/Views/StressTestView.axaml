@@ -21,7 +21,7 @@
       <ScrollViewer Grid.Column="0" Padding="16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0">
         <StackPanel Spacing="8">
           <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" />
-          <TextBox Text="{Binding AppSearchQuery}" Watermark="Search installed apps…" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />
+          <TextBox Text="{Binding AppSearchQuery}" PlaceholderText="Search installed apps…" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />
           <ListBox ItemsSource="{Binding FilteredApps}" SelectedItem="{Binding SelectedApp}" Height="180" Background="Transparent">
             <ListBox.ItemTemplate>
               <DataTemplate>
@@ -29,7 +29,7 @@
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
-          <TextBox Text="{Binding TargetPackage}" Watermark="Target package" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
+          <TextBox Text="{Binding TargetPackage}" PlaceholderText="Target package" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock Text="Event count" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
             <TextBox Grid.Column="1" Width="120" Text="{Binding EventCount}" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />

@@ -17,6 +17,12 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            if (!LogPro.Helpers.ToolResolver.VerifyBundledToolsAsync(requireManifest: true).GetAwaiter().GetResult())
+            {
+                Environment.Exit(3);
+                return;
+            }
+
             var window = new MainWindow();
             Services.AvaloniaDialogService.Owner = window;
 

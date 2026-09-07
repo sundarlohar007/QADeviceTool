@@ -156,6 +156,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task InstallAppAsync()
     {
+        if (IsLoading) return;
         if (SelectedDevice == null)
         {
             StatusMessage = "[!] No device selected.";
@@ -169,8 +170,10 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         var filePath = UiServices.Files.OpenFile(fileTitle, fileFilter);
         if (filePath == null) return;
 
+        var device = SelectedDevice;
         var fileName = System.IO.Path.GetFileName(filePath);
         IsLoading = true;
+        _outputBuilder.Clear();
         ConsoleOutput = string.Empty;
 
         try
@@ -190,16 +193,16 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                 }
             };
 
-            ConsoleOutput = $"Installing {fileName} on {SelectedDevice.DisplayName}...{Environment.NewLine}";
+            ConsoleOutput = $"Installing {fileName} on {device.DisplayName}...{Environment.NewLine}";
             StatusMessage = $"Installing {fileName}...";
 
-            if (SelectedDevice.Platform == DevicePlatform.Android)
+            if (device.Platform == DevicePlatform.Android)
             {
-                result = await _adbService.InstallApkAsync(SelectedDevice.Serial, filePath, updateProgress);
+                result = await _adbService.InstallApkAsync(device.Serial, filePath, updateProgress);
             }
             else
             {
-                var activeSession = _sessionService.GetActiveSessionForDevice(SelectedDevice.Serial);
+                var activeSession = _sessionService.GetActiveSessionForDevice(device.Serial);
                 if (activeSession != null)
                 {
                     _outputBuilder.Append("(Paused log capture for install)" + Environment.NewLine); _outputBuilder.AppendLine(); ConsoleOutput = _outputBuilder.ToString();
@@ -207,7 +210,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                     await Task.Delay(1500);
                 }
 
-                result = await _iosService.InstallIpaAsync(SelectedDevice.Serial, filePath, updateProgress);
+                result = await _iosService.InstallIpaAsync(device.Serial, filePath, updateProgress);
 
                 if (activeSession != null)
                 {
@@ -220,7 +223,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             StatusMessage = result.success ? result.message : $"[!] Install failed: {result.message}";
 
             if (result.success)
-                await LoadAppsAsync(SelectedDevice);
+                await LoadAppsAsync(device);
         }
         catch (Exception ex)
         {
@@ -237,7 +240,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task UninstallAppAsync()
     {
-        if (SelectedDevice == null || SelectedApp == null) return;
+        if (IsLoading || SelectedDevice == null || SelectedApp == null) return;
 
         var pkg = SelectedApp.PackageId;
         var confirm = UiServices.Dialogs.Confirm(
@@ -289,7 +292,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ForceStopAppAsync()
     {
-        if (SelectedDevice == null || SelectedApp == null) return;
+        if (IsLoading || SelectedDevice == null || SelectedApp == null) return;
         if (SelectedDevice.Platform != DevicePlatform.Android)
         {
             StatusMessage = "Force stop only available for Android.";
@@ -310,7 +313,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ClearAppDataAsync()
     {
-        if (SelectedDevice == null || SelectedApp == null) return;
+        if (IsLoading || SelectedDevice == null || SelectedApp == null) return;
         if (SelectedDevice.Platform != DevicePlatform.Android)
         {
             StatusMessage = "Clear data only available for Android.";
@@ -336,10 +339,10 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ViewAppDetailsAsync()
     {
-        if (SelectedDevice == null || SelectedApp == null) return;
+        if (IsLoading || SelectedDevice == null || SelectedApp == null) return;
         if (SelectedDevice.Platform != DevicePlatform.Android)
         {
-            StatusMessage = SelectedApp.ToString();
+            StatusMessage = SelectedApp?.ToString() ?? "No application selected.";
             return;
         }
 
@@ -360,17 +363,19 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     /// </summary>
     public async Task InstallFilesAsync(string[] filePaths)
     {
+        if (IsLoading) return;
         if (SelectedDevice == null)
         {
             StatusMessage = "[!] Select a target device first.";
             return;
         }
+        var device = SelectedDevice;
 
         foreach (var path in filePaths)
         {
             var ext = Path.GetExtension(path).ToLowerInvariant();
-            if ((SelectedDevice.Platform == DevicePlatform.Android && ext != ".apk") ||
-                (SelectedDevice.Platform == DevicePlatform.iOS && ext != ".ipa"))
+            if ((device.Platform == DevicePlatform.Android && ext != ".apk") ||
+                (device.Platform == DevicePlatform.iOS && ext != ".ipa"))
             {
                 StatusMessage = $"[!] Skipped {Path.GetFileName(path)} — wrong platform for selected device.";
                 continue;
@@ -381,9 +386,9 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
             try
             {
-                var result = SelectedDevice.Platform == DevicePlatform.Android
-                    ? await _adbService.InstallApkAsync(SelectedDevice.Serial, path, null)
-                    : await _iosService.InstallIpaAsync(SelectedDevice.Serial, path, null);
+                var result = device.Platform == DevicePlatform.Android
+                    ? await _adbService.InstallApkAsync(device.Serial, path, null)
+                    : await _iosService.InstallIpaAsync(device.Serial, path, null);
 
                 StatusMessage = result.Success
                     ? $"Installed: {Path.GetFileName(path)}"
@@ -393,7 +398,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             finally { IsLoading = false; }
         }
 
-        await LoadAppsAsync(SelectedDevice);
+        await LoadAppsAsync(device);
     }
 
     public void Dispose()

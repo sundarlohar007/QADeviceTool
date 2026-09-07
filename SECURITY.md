@@ -18,15 +18,23 @@ LogPro is a **local, single-user desktop tool**. Its trust boundary is:
 - **USB devices:** device output (logcat, dumpsys, AFC listings) is untrusted input.
   Device-targeted commands are built with strict allowlists (`IsSafePath`,
   package-name validation, quoted arguments) to prevent shell injection.
-- **Local control API** (`logpro-cli serve`): binds to `127.0.0.1` only, no
-  authentication — intended for same-user CI/Appium harnesses. Never expose it by
-  forwarding the port or binding non-loopback interfaces.
+- **Local control API** (`logpro-cli serve`): binds to IPv4 `127.0.0.1` only and
+  requires a per-process `X-LogPro-Api-Key` header for every data-changing or
+  device-reading endpoint. `/health` is the only unauthenticated endpoint. The key
+  is printed once to the serving process's stdout and is never accepted in a URL.
+  Never expose the port by forwarding it or binding non-loopback interfaces.
+- **Offline transport policy:** wireless ADB, network iOS discovery, URL/file schemes,
+  port forwarding, arbitrary shell composition, and network-capable child commands are
+  rejected by the engine. Device output paths must be local and free of reparse points.
+- **Plugins:** declarative regex plugins are allowed; arbitrary assembly plugins are
+  disabled by default because .NET assembly loading is not a security sandbox.
 
 ## Data sensitivity
 
-This tool is used to test **unreleased games**. Redaction is on by default
-(`SecureMode`); bug-report bundles are minimized (hashed serials, filtered device
-properties, no full package inventory). See `GPL_COMPLIANCE.md`,
+This tool is used to test **unreleased games**. Redaction is always applied to exported
+text and issue bundles; raw session capture remains local evidence. Bug-report bundles
+are minimized (hashed serials, filtered device properties, no full package inventory).
+See `GPL_COMPLIANCE.md`,
 `THIRD_PARTY_NOTICES.txt`, and the privacy notice shown on first run.
 
 ## Reporting a vulnerability

@@ -17,9 +17,11 @@ public class SessionService : ISessionService
     private readonly IAdbService _adbService;
     private readonly IIosService _iosService;
     private readonly ConcurrentDictionary<string, CaptureContext> _activeCaptures = new();
+    private readonly ConcurrentDictionary<string, byte> _startingDevices = new(StringComparer.OrdinalIgnoreCase);
     private System.Threading.Timer? _flushTimer;
     private readonly object _flushTimerLock = new();
     private readonly object _bufferLock = new();
+    private string _sessionsRootDirectory;
 
     /// <summary>
     /// Fired with batched log lines (every 200ms) instead of per-line.
@@ -27,14 +29,28 @@ public class SessionService : ISessionService
     /// </summary>
     public event Action<string, string>? LogBatchReceived;
 
-    public string SessionsRootDirectory { get; set; }
+    public string SessionsRootDirectory
+    {
+        get => _sessionsRootDirectory;
+        set
+        {
+            if (!PathHelper.TryGetSafeLocalDirectory(value, out var safePath))
+            {
+                AppLogger.Log.Warn("[SessionService] Rejected non-local or reparse-point sessions path; keeping current path.");
+                return;
+            }
+
+            _sessionsRootDirectory = safePath;
+            PathHelper.RestrictDirectoryAccess(_sessionsRootDirectory);
+        }
+    }
 
     public SessionService(IAdbService adbService, IIosService iosService)
     {
         _adbService = adbService;
         _iosService = iosService;
+        _sessionsRootDirectory = PathHelper.GetDefaultSessionsDirectory();
         SessionsRootDirectory = PreferencesService.Current.SessionsRootDirectory;
-        if (!Directory.Exists(SessionsRootDirectory)) Directory.CreateDirectory(SessionsRootDirectory);
     }
 
     public LogSession CreateSession(DeviceInfo device, string? customSessionName = null)
@@ -65,18 +81,37 @@ public class SessionService : ISessionService
     /// </summary>
     public async Task<bool> StartCaptureAsync(LogSession session, LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime)
     {
-        Process? process = session.Platform switch
-        {
-            DevicePlatform.Android => await _adbService.StartLogCaptureAsync(session.DeviceSerial, session.LogFilePath, buffer, format).ConfigureAwait(false),
-            DevicePlatform.iOS => _iosService.StartLogCapture(session.DeviceSerial, session.LogFilePath),
-            _ => null
-        };
+        if (_activeCaptures.Values.Any(ctx => ctx.Session.DeviceSerial.Equals(session.DeviceSerial, StringComparison.OrdinalIgnoreCase)))
+            return false;
+        if (!_startingDevices.TryAdd(session.DeviceSerial, 0)) return false;
 
-        if (process == null) return false;
+        Process? process;
+        try
+        {
+            process = session.Platform switch
+            {
+                DevicePlatform.Android => await _adbService.StartLogCaptureAsync(session.DeviceSerial, session.LogFilePath, buffer, format).ConfigureAwait(false),
+                DevicePlatform.iOS => _iosService.StartLogCapture(session.DeviceSerial, session.LogFilePath),
+                _ => null
+            };
+        }
+        catch (Exception ex)
+        {
+            _startingDevices.TryRemove(session.DeviceSerial, out _);
+            AppLogger.Log.Error(ex, "[SessionService] Failed to start capture process");
+            return false;
+        }
+
+        if (process == null)
+        {
+            _startingDevices.TryRemove(session.DeviceSerial, out _);
+            return false;
+        }
         await Task.Delay(250).ConfigureAwait(false);
         if (process.HasExited)
         {
             try { process.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Process dispose error"); }
+            _startingDevices.TryRemove(session.DeviceSerial, out _);
             return false;
         }
 
@@ -101,10 +136,11 @@ public class SessionService : ISessionService
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, "Failed to create log writers");
-            process.Kill(true);
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
             process.Dispose();
             writer?.Dispose();
             appWriter?.Dispose();
+            _startingDevices.TryRemove(session.DeviceSerial, out _);
             return false;
         }
 
@@ -119,8 +155,10 @@ public class SessionService : ISessionService
             writer.Dispose();
             appWriter?.Dispose();
             cts.Dispose();
+            _startingDevices.TryRemove(session.DeviceSerial, out _);
             return false;
         }
+        _startingDevices.TryRemove(session.DeviceSerial, out _);
 
         session.Status = SessionStatus.Capturing;
         session.StartTime = DateTime.Now;
@@ -129,50 +167,56 @@ public class SessionService : ISessionService
         EnsureFlushTimer();
 
         // Periodic file flush (2s) — writes buffered log data to disk without blocking stdout reads
-        _ = Task.Run(async () =>
+        ctx.FlushTask = Task.Run(async () =>
         {
-            while (!cts.Token.IsCancellationRequested)
+            try
             {
-                await Task.Delay(2000, cts.Token);
-                try { await writer.FlushAsync(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
-                if (appWriter != null) { try { await appWriter.FlushAsync(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); } }
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    await Task.Delay(2000, cts.Token).ConfigureAwait(false);
+                    try { await writer.FlushAsync().ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
+                    if (appWriter != null) { try { await appWriter.FlushAsync().ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); } }
+                }
             }
+            catch (OperationCanceledException) { }
         }, cts.Token);
 
         string currentTargetPid = string.Empty;
         if (appWriter != null && !string.IsNullOrWhiteSpace(targetPackageName))
         {
-            Task.Run(async () =>
+            ctx.PidTask = Task.Run(async () =>
             {
-                while (!cts.Token.IsCancellationRequested)
+                try
                 {
-                    try
+                    while (!cts.Token.IsCancellationRequested)
                     {
-                        var pid = await _adbService.GetPidFromPackageNameAsync(session.DeviceSerial, targetPackageName);
-                        if (!string.IsNullOrWhiteSpace(pid) && currentTargetPid != pid)
+                        try
                         {
-                            currentTargetPid = pid;
-                            // Write PID resolution notice only to app-specific log, NOT to main log buffer
-                            // Main log stays pure device output
-                            var notice = $"[{DateTime.Now:HH:mm:ss.fff}] PID:{targetPackageName}={pid}";
-                            try { await appWriter.WriteLineAsync(notice); } catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to write app log notice"); }
+                            var pid = await _adbService.GetPidFromPackageNameAsync(session.DeviceSerial, targetPackageName).ConfigureAwait(false);
+                            if (!string.IsNullOrWhiteSpace(pid) && currentTargetPid != pid)
+                            {
+                                currentTargetPid = pid;
+                                // Write PID resolution notice only to app-specific log, NOT to main log buffer.
+                                var notice = $"[{DateTime.Now:HH:mm:ss.fff}] PID:{targetPackageName}={pid}";
+                                try { await appWriter.WriteLineAsync(notice).ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to write app log notice"); }
+                            }
                         }
+                        catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to resolve package PID"); }
+                        await Task.Delay(3000, cts.Token).ConfigureAwait(false);
                     }
-                    catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to resolve package PID"); }
-                    await Task.Delay(3000, cts.Token);
                 }
+                catch (OperationCanceledException) { }
             }, cts.Token);
         }
 
         // Read output via OutputDataReceived — standard .NET async pattern, no pipe back-pressure
-        var readComplete = new TaskCompletionSource<bool>();
         process.OutputDataReceived += (_, args) =>
         {
             try
             {
                 if (args.Data == null)
                 {
-                    readComplete.TrySetResult(true);
+                    ctx.OutputCompleted.TrySetResult(true);
                     return;
                 }
 
@@ -195,11 +239,15 @@ public class SessionService : ISessionService
                 AppLogger.Log.Error(ex, "Error processing log output line");
             }
         };
+        // Attach the exit handler before enabling events so a fast tool/device disconnect
+        // cannot leave a capture permanently marked as active.
+        process.Exited += (_, _) =>
+        {
+            ctx.OutputCompleted.TrySetResult(true);
+            _ = Task.Run(() => StopCapture(session));
+        };
         process.EnableRaisingEvents = true;
         process.BeginOutputReadLine();
-
-        // When process exits, signal read complete
-        process.Exited += (_, _) => readComplete.TrySetResult(true);
 
         AppLogger.Log.Info($"Capture started for device {session.DeviceId}");
         return true;
@@ -260,6 +308,8 @@ public class SessionService : ISessionService
         {
             ctx.Cts.Cancel();
 
+            try { ctx.Process.CancelOutputRead(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] CancelOutputRead error"); }
+
             if (!ctx.Process.HasExited)
             {
                 bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
@@ -267,7 +317,9 @@ public class SessionService : ISessionService
                 try { ctx.Process.WaitForExit(1000); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] WaitForExit error"); }
             }
 
-            try { ctx.Process.CancelOutputRead(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] CancelOutputRead error"); }
+            try { ctx.OutputCompleted.Task.Wait(TimeSpan.FromSeconds(2)); } catch { }
+            try { ctx.FlushTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
+            try { ctx.PidTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
             try { ctx.Writer.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
             try { ctx.AppWriter?.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); }
             FlushCaptureBuffer(session.Id, ctx);
@@ -277,6 +329,7 @@ public class SessionService : ISessionService
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] StopCapture cleanup error"); }
         finally
         {
+            _startingDevices.TryRemove(session.DeviceSerial, out _);
             ctx.Process.Dispose();
             ctx.Cts.Dispose();
         }
@@ -298,29 +351,12 @@ public class SessionService : ISessionService
 
     public void StopAllCaptures()
     {
-        foreach (var kvp in _activeCaptures.ToList())
-        {
-            if (!_activeCaptures.TryRemove(kvp.Key, out var ctx)) continue;
-            try
-            {
-                ctx.Cts.Cancel();
-                if (!ctx.Process.HasExited)
-                {
-                    bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
-                    try { ctx.Process.Kill(killTree); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Kill error"); }
-                    try { ctx.Process.WaitForExit(1000); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] WaitForExit error"); }
-                }
-                try { ctx.Process.CancelOutputRead(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] CancelOutputRead error"); }
-                try { ctx.Writer.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
-                try { ctx.AppWriter?.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); }
-                FlushCaptureBuffer(kvp.Key, ctx);
-                ctx.Writer.Dispose();
-                ctx.AppWriter?.Dispose();
-                ctx.Process.Dispose();
-                ctx.Cts.Dispose();
-            }
-            catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Error during StopAllCaptures cleanup"); }
-        }
+        foreach (var session in _activeCaptures.Values.Select(c => c.Session).ToList())
+            StopCapture(session);
+
+        foreach (var serial in _startingDevices.Keys)
+            _startingDevices.TryRemove(serial, out _);
+
         lock (_flushTimerLock)
         {
             _flushTimer?.Dispose();
@@ -339,12 +375,14 @@ public class SessionService : ISessionService
             if (string.IsNullOrEmpty(dir))
                 dir = SessionsRootDirectory;
 
-            if (!Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
+            if (!PathHelper.TryGetSafeLocalDirectory(dir, out var safeDir))
+                return "Error: output directory must be local and non-reparse-point.";
 
             var filePath = string.IsNullOrEmpty(session.LogFilePath)
-                ? Path.Combine(dir, $"manual_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt")
+                ? Path.Combine(safeDir, $"manual_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt")
                 : session.LogFilePath;
+            if (!PathHelper.IsSafeLocalPath(filePath))
+                return "Error: output file must be local and non-reparse-point.";
 
             await File.WriteAllTextAsync(filePath, logContent).ConfigureAwait(false);
             return filePath;
@@ -407,6 +445,7 @@ public class SessionService : ISessionService
     {
         try
         {
+            if (!PathHelper.IsSafeLocalPath(session.SessionDirectory)) return false;
             if (Directory.Exists(session.SessionDirectory))
             {
                 Directory.Delete(session.SessionDirectory, true);
@@ -445,16 +484,39 @@ public class SessionService : ISessionService
         return session;
     }
 
-    private record CaptureContext(Process Process, StreamWriter Writer, StreamWriter? AppWriter, LogSession Session, CancellationTokenSource Cts, ConcurrentQueue<string> Buffer);
+    private sealed class CaptureContext
+    {
+        public CaptureContext(Process process, StreamWriter writer, StreamWriter? appWriter, LogSession session,
+            CancellationTokenSource cts, ConcurrentQueue<string> buffer)
+        {
+            Process = process;
+            Writer = writer;
+            AppWriter = appWriter;
+            Session = session;
+            Cts = cts;
+            Buffer = buffer;
+        }
+
+        public Process Process { get; }
+        public StreamWriter Writer { get; }
+        public StreamWriter? AppWriter { get; }
+        public LogSession Session { get; }
+        public CancellationTokenSource Cts { get; }
+        public ConcurrentQueue<string> Buffer { get; }
+        public TaskCompletionSource<bool> OutputCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task? FlushTask { get; set; }
+        public Task? PidTask { get; set; }
+    }
 
     /// <summary>
     /// Exports session logs to CSV format.
     /// </summary>
-    public async Task<bool> ExportToCsvAsync(LogSession session, string outputPath, bool anonymize = false)
+    public async Task<bool> ExportToCsvAsync(LogSession session, string outputPath, bool anonymize = true)
     {
         try
         {
-            if (!File.Exists(session.LogFilePath)) return false;
+            if (!File.Exists(session.LogFilePath) || !PathHelper.IsSafeLocalPath(session.LogFilePath) ||
+                !PathHelper.IsSafeLocalPath(outputPath)) return false;
 
             using var reader = new StreamReader(session.LogFilePath);
             using var writer = new StreamWriter(outputPath, false);
@@ -470,13 +532,14 @@ public class SessionService : ISessionService
                 var parsed = ParseLogLine(line);
                 var message = parsed["Message"];
 
-                if (anonymize)
-                {
-                    message = AnonymizeDeviceInfo(message);
-                }
+                // Raw exports are never produced by the product. Keep the parameter for
+                // source compatibility, but always redact sensitive device/game data.
+                message = SecurityHelper.RedactSensitiveText(message);
 
-                var escapedMessage = message.Replace("\"", "\"\"");
-                await writer.WriteLineAsync($"\"{parsed["Timestamp"]}\",\"{parsed["Level"]}\",\"{escapedMessage}\"");
+                await writer.WriteLineAsync(string.Join(',',
+                    EscapeCsvCell(parsed["Timestamp"]),
+                    EscapeCsvCell(parsed["Level"]),
+                    EscapeCsvCell(message)));
             }
 
             return true;
@@ -491,11 +554,12 @@ public class SessionService : ISessionService
     /// <summary>
     /// Exports session logs to JSON format. Streams via Utf8JsonWriter — never buffers the whole file.
     /// </summary>
-    public async Task<bool> ExportToJsonAsync(LogSession session, string outputPath, bool anonymize = false)
+    public async Task<bool> ExportToJsonAsync(LogSession session, string outputPath, bool anonymize = true)
     {
         try
         {
-            if (!File.Exists(session.LogFilePath)) return false;
+            if (!File.Exists(session.LogFilePath) || !PathHelper.IsSafeLocalPath(session.LogFilePath) ||
+                !PathHelper.IsSafeLocalPath(outputPath)) return false;
 
             using var reader = new StreamReader(session.LogFilePath);
             await using var outStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -509,7 +573,9 @@ public class SessionService : ISessionService
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
                 var parsed = ParseLogLine(line);
-                var message = anonymize ? AnonymizeDeviceInfo(parsed["Message"]) : parsed["Message"];
+                // Raw exports are never produced by the product. Keep the parameter for
+                // source compatibility, but always redact sensitive device/game data.
+                var message = SecurityHelper.RedactSensitiveText(parsed["Message"]);
 
                 jsonWriter.WriteStartObject();
                 jsonWriter.WriteString("Timestamp", parsed["Timestamp"]);
@@ -604,20 +670,12 @@ public class SessionService : ISessionService
         return result;
     }
 
-    private string AnonymizeDeviceInfo(string message)
+    private static string EscapeCsvCell(string value)
     {
-        if (string.IsNullOrEmpty(message))
-            return message;
-
-        var result = message;
-
-        // Match known serial formats: Samsung RF..., Pixel HT..., generic alphanumeric, network host:port
-        var serialPattern = new System.Text.RegularExpressions.Regex(@"\b(RF[A-Z0-9]{6,10}|HT[A-Z0-9]{6,10}|[A-Z]{2}[A-Z0-9]{6,14})\b");
-        result = serialPattern.Replace(result, "[SERIAL]");
-
-        var ipPattern = new System.Text.RegularExpressions.Regex(@"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b");
-        result = ipPattern.Replace(result, "[IP]");
-
-        return result;
+        var trimmed = value.TrimStart();
+        var safe = trimmed.Length > 0 && trimmed[0] is '=' or '+' or '-' or '@'
+            ? "'" + value
+            : value;
+        return $"\"{safe.Replace("\"", "\"\"")}\"";
     }
 }

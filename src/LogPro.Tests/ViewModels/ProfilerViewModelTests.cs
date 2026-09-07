@@ -9,8 +9,8 @@ public class ProfilerViewModelTests
     private static Mock<IAdbService> CreateFakeAdb()
     {
         var mock = new Mock<IAdbService>();
-        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>()))
-            .ReturnsAsync((string serial, string command) => command switch
+        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string serial, string command, CancellationToken _) => command switch
             {
                 var c when c.Contains("SurfaceFlinger --list") =>
                     "SurfaceView[com.fakegame/com.fakegame.MainActivity](BLAST)#0\n",

@@ -75,11 +75,88 @@ public static class PathHelper
         var time = DateTime.Now.ToString("hh.mm.sstt");
         var date = DateTime.Now.ToString("dd.MM.yyyy");
         var dirName = $"{safeName}_{time}_{date}";
-        var root = string.IsNullOrWhiteSpace(rootDirectory) ? GetDefaultSessionsDirectory() : rootDirectory;
+        var requestedRoot = string.IsNullOrWhiteSpace(rootDirectory) ? GetDefaultSessionsDirectory() : rootDirectory;
+        if (!TryGetSafeLocalDirectory(requestedRoot, out var root))
+            throw new ArgumentException("Session output must be on a local, non-reparse-point volume.", nameof(rootDirectory));
         var fullPath = Path.Combine(root, dirName);
         Directory.CreateDirectory(fullPath);
         RestrictDirectoryAccess(fullPath); // SEC-13: owner-only on Windows
         return fullPath;
+    }
+
+    /// <summary>
+    /// Rejects UNC/network/removable paths and existing reparse points. This is used for
+    /// capture/export destinations because a configured output path is an automatic data
+    /// transfer boundary in an offline QA environment.
+    /// </summary>
+    public static bool IsSafeLocalPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path.Trim());
+            if (fullPath.StartsWith("\\\\", StringComparison.Ordinal) || fullPath.StartsWith("//", StringComparison.Ordinal))
+                return false;
+
+            var root = Path.GetPathRoot(fullPath);
+            if (string.IsNullOrWhiteSpace(root)) return false;
+
+            if (OperatingSystem.IsWindows())
+            {
+                if (root.StartsWith("\\\\", StringComparison.Ordinal)) return false;
+                var driveType = new DriveInfo(root).DriveType;
+                if (driveType != DriveType.Fixed) return false;
+            }
+
+            return !ContainsReparsePoint(fullPath);
+        }
+        catch { return false; }
+    }
+
+    public static bool TryGetSafeLocalDirectory(string? path, out string directory)
+    {
+        directory = string.Empty;
+        if (!IsSafeLocalPath(path)) return false;
+
+        try
+        {
+            directory = Path.GetFullPath(path!.Trim());
+            Directory.CreateDirectory(directory);
+            return IsSafeLocalPath(directory);
+        }
+        catch { directory = string.Empty; return false; }
+    }
+
+    private static bool ContainsReparsePoint(string fullPath)
+    {
+        try
+        {
+            if ((File.Exists(fullPath) || Directory.Exists(fullPath)) &&
+                (File.GetAttributes(fullPath) & FileAttributes.ReparsePoint) != 0)
+                return true;
+        }
+        catch (UnauthorizedAccessException) { return true; }
+
+        var current = Directory.Exists(fullPath) ? fullPath : Path.GetDirectoryName(fullPath);
+        while (!string.IsNullOrEmpty(current))
+        {
+            try
+            {
+                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                    return true;
+            }
+            catch (FileNotFoundException) { }
+            catch (DirectoryNotFoundException) { }
+            catch (UnauthorizedAccessException) { return true; }
+
+            var parent = Directory.GetParent(current);
+            if (parent == null || string.Equals(parent.FullName, current, StringComparison.OrdinalIgnoreCase))
+                break;
+            current = parent.FullName;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -128,12 +205,12 @@ public static class PathHelper
     }
 
     /// <summary>Restricts directory access to current user (owner-only) on Windows.</summary>
-    public static void RestrictDirectoryAccess(string directoryPath)
+    public static bool RestrictDirectoryAccess(string directoryPath)
     {
-        if (!OperatingSystem.IsWindows()) return; // ACL API is Windows-only (SEC-13)
+        if (!OperatingSystem.IsWindows()) return true; // ACL API is Windows-only (SEC-13)
         try
         {
-            if (!System.IO.Directory.Exists(directoryPath)) return;
+            if (!System.IO.Directory.Exists(directoryPath)) return false;
             var info = new System.IO.DirectoryInfo(directoryPath);
             var acl = info.GetAccessControl();
             // Remove inherited permissions, then grant owner-only access (strip-without-add = deny-all).
@@ -150,8 +227,12 @@ public static class PathHelper
                     System.Security.AccessControl.AccessControlType.Allow));
             }
             info.SetAccessControl(acl);
+            return true;
         }
-        catch { /* ACLs best-effort on Windows */ }
+        catch
+        {
+            return false;
+        }
     }
 }
 

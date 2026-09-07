@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LogPro.Helpers;
 using LogPro.Models;
 using LogPro.Services;
 
@@ -165,7 +166,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         var outputDir = PreferencesService.Current.SessionsRootDirectory;
         if (!System.IO.Directory.Exists(outputDir)) System.IO.Directory.CreateDirectory(outputDir);
 
-        var fileName = $"snapshot_{SelectedDevice.Serial}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+        var fileName = $"snapshot_{SecurityHelper.HashSerial(SelectedDevice.Serial)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
         var outputPath = System.IO.Path.Combine(outputDir, fileName);
 
         StatusMessage = "Capturing screenshot...";

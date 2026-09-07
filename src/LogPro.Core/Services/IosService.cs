@@ -43,7 +43,7 @@ public class IosService : IIosService
             _isModuleInvocation = true;
             _toolKind = $"python -m pymobiledevice3 ({_exe})";
         }
-        AppLogger.Log.Info($"[IosService] Using {_toolKind}");
+        AppLogger.Log.Info($"[IosService] Using {SecurityHelper.RedactSensitiveText(_toolKind, redactIdentifiers: false)}");
     }
 
     private static string? ResolveBundledExe()
@@ -66,9 +66,19 @@ public class IosService : IIosService
                 CreateNoWindow = true,
                 WorkingDirectory = Path.GetDirectoryName(path) ?? Environment.CurrentDirectory
             };
+            ToolLauncher.ConfigureOfflineEnvironment(psi);
             using var p = System.Diagnostics.Process.Start(psi);
             if (p == null) return false;
-            if (!p.WaitForExit(5000)) { try { p.Kill(true); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[IosService] failed to determine pymd3 binary"); } return false; }
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(5000))
+            {
+                try { p.Kill(true); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[IosService] failed to determine pymd3 binary"); }
+                try { p.WaitForExit(2000); } catch { }
+                try { Task.WaitAll(new[] { stdout, stderr }, TimeSpan.FromSeconds(2)); } catch { }
+                return false;
+            }
+            try { Task.WaitAll(new[] { stdout, stderr }, TimeSpan.FromSeconds(2)); } catch { }
             return p.ExitCode == 0;
         }
         catch (Exception ex)
@@ -81,7 +91,7 @@ public class IosService : IIosService
     private static string? ResolveSystemPython()
     {
         var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
-        return pathVar.Split(';')
+        return pathVar.Split(Path.PathSeparator)
             .Select(p => p.Trim())
             .Where(p => !string.IsNullOrEmpty(p))
             .Select(p => Path.Combine(p, "python.exe"))
@@ -101,16 +111,22 @@ public class IosService : IIosService
 
     private static string Quote(string s) => $"\"{s.Replace("\"", "\\\"")}\"";
 
-    private async Task<ToolLauncherResult> RunAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs, Action<string>? outputCallback = null)
+    private async Task<ToolLauncherResult> RunAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs,
+        Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
     {
-        return await ToolLauncher.RunAsync(_exe, BuildArgs(udid, subcommand), timeoutMs, outputCallback).ConfigureAwait(false);
+        if (udid != null && !SecurityHelper.IsValidOfflineDeviceSelector(udid))
+            return new ToolLauncherResult { Success = false, Error = "Blocked by LogPro offline security policy." };
+        if (string.IsNullOrWhiteSpace(subcommand) || subcommand.Any(c => c is '\r' or '\n'))
+            return new ToolLauncherResult { Success = false, Error = "Invalid iOS command." };
+        return await ToolLauncher.RunAsync(_exe, BuildArgs(udid, subcommand), timeoutMs, outputCallback, cancellationToken).ConfigureAwait(false);
     }
 
     private System.Diagnostics.Process? StartLong(string? udid, string subcommand, bool drainStdout = true)
         => ToolLauncher.StartLongRunning(_exe, BuildArgs(udid, subcommand), drainStdout: drainStdout);
 
-    public Task<ToolLauncherResult> ExecuteCommandAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs, Action<string>? outputCallback = null)
-        => RunAsync(udid, subcommand, timeoutMs, outputCallback);
+    public Task<ToolLauncherResult> ExecuteCommandAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs,
+        Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
+        => RunAsync(udid, subcommand, timeoutMs, outputCallback, cancellationToken);
 
     public async Task<ToolStatus> CheckAvailabilityAsync()
     {
@@ -199,7 +215,7 @@ public class IosService : IIosService
             ParseLockdownInfo(result.Output ?? "", device);
             if (string.IsNullOrEmpty(device.Name)) device.Name = device.Model ?? "iOS Device";
         }
-        catch (Exception ex) { AppLogger.Log.Error(ex, $"[IosService] GetDeviceDetailsAsync failed for {device.Serial}"); }
+        catch (Exception ex) { AppLogger.Log.Error(ex, $"[IosService] GetDeviceDetailsAsync failed for {SecurityHelper.HashSerial(device.Serial)}"); }
         return device;
     }
 
@@ -251,6 +267,8 @@ public class IosService : IIosService
 
     public System.Diagnostics.Process? StartLogCapture(string udid, string outputFilePath)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !PathHelper.IsSafeLocalPath(outputFilePath))
+            return null;
         try
         {
             // syslog live streams to stdout by default; SessionService reads stdout and
@@ -262,6 +280,8 @@ public class IosService : IIosService
 
     public async Task<bool> CaptureScreenshotAsync(string udid, string outputPath)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !PathHelper.IsSafeLocalPath(outputPath))
+            return false;
         try
         {
             // developer screenshot uses the deprecated lockdown screenshot service — works without DeveloperDiskImage.
@@ -277,6 +297,8 @@ public class IosService : IIosService
 
     public async Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath, Action<string>? outputCallback = null)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !PathHelper.IsSafeLocalPath(ipaPath))
+            return (false, "Invalid local path or device selector.");
         try
         {
             outputCallback?.Invoke($"Installing: {ipaPath}");
@@ -372,6 +394,7 @@ public class IosService : IIosService
 
     public async Task<bool> UninstallAppAsync(string udid, string packageId)
     {
+        if (!SecurityHelper.IsValidPackageName(packageId)) return false;
         try
         {
             var result = await RunAsync(udid, $"apps uninstall {Quote(packageId)}", DefaultTimeoutMs).ConfigureAwait(false);
@@ -382,6 +405,7 @@ public class IosService : IIosService
 
     public async Task<List<DeviceFile>> ListDirectoryAsync(string udid, string path)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !IsSafePath(path)) return new List<DeviceFile>();
         var files = new List<DeviceFile>();
         try
         {
@@ -449,7 +473,8 @@ public class IosService : IIosService
 
     public async Task<bool> PullFileAsync(string udid, string remotePath, string localPath)
     {
-        if (!IsSafePath(remotePath)) { AppLogger.Log.Warn($"[IosService] Unsafe path rejected: {remotePath}"); return false; }
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath))
+        { AppLogger.Log.Warn("[IosService] Unsafe path rejected"); return false; }
         try
         {
             var result = await RunAsync(udid, $"afc pull {Quote(remotePath)} {Quote(localPath)}", 60000).ConfigureAwait(false);
@@ -460,7 +485,8 @@ public class IosService : IIosService
 
     public async Task<bool> PushFileAsync(string udid, string localPath, string remotePath)
     {
-        if (!IsSafePath(remotePath)) { AppLogger.Log.Warn($"[IosService] Unsafe path rejected: {remotePath}"); return false; }
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath))
+        { AppLogger.Log.Warn("[IosService] Unsafe path rejected"); return false; }
         try
         {
             var result = await RunAsync(udid, $"afc push {Quote(localPath)} {Quote(remotePath)}", 60000).ConfigureAwait(false);
@@ -471,7 +497,8 @@ public class IosService : IIosService
 
     public async Task<bool> DeleteFileAsync(string udid, string path)
     {
-        if (!IsSafePath(path)) { AppLogger.Log.Warn($"[IosService] Unsafe path rejected: {path}"); return false; }
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !IsSafePath(path))
+        { AppLogger.Log.Warn("[IosService] Unsafe path rejected"); return false; }
         try
         {
             var result = await RunAsync(udid, $"afc rm {Quote(path)}", InfoTimeoutMs).ConfigureAwait(false);
@@ -510,6 +537,8 @@ public class IosService : IIosService
 
     public async Task<bool> PullCrashLogAsync(string udid, string crashName, string outputPath)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !IsSafePath(crashName) || !PathHelper.IsSafeLocalPath(outputPath))
+            return false;
         try
         {
             // crash pull has signature: pull [--remote-file PATH] [OUT]; we use defaults and let it pull all,
@@ -551,6 +580,12 @@ public class IosService : IIosService
 
     public async Task<List<DeviceInfo>> DiscoverNetworkDevicesAsync()
     {
+        if (SecurityHelper.OfflineOnly)
+        {
+            AppLogger.Log.Warn("[IosService] Network device discovery blocked by offline security policy");
+            return new List<DeviceInfo>();
+        }
+
         var devices = new List<DeviceInfo>();
         try
         {
@@ -588,6 +623,7 @@ public class IosService : IIosService
     /// </summary>
     public System.Diagnostics.Process? StartDeveloperShell(string udid)
     {
+        if (SecurityHelper.OfflineOnly) return null;
         try { return StartLong(udid, "developer shell"); }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] StartDeveloperShell failed"); return null; }
     }
@@ -609,6 +645,11 @@ public class IosService : IIosService
     /// </summary>
     public async Task<bool> OpenUrlAsync(string udid, string url)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsOfflineSafeUri(url))
+        {
+            AppLogger.Log.Warn("[IosService] Network URL blocked by offline security policy");
+            return false;
+        }
         try
         {
             // Try pymobiledevice3 developer dvt launch for URL opening (requires Developer Mode)
@@ -619,7 +660,7 @@ public class IosService : IIosService
             var result2 = await RunAsync(udid, $"apps open-url {Quote(url)}", InfoTimeoutMs).ConfigureAwait(false);
             return result2.Success;
         }
-        catch (Exception ex) { AppLogger.Log.Warn(ex, $"[IosService] OpenUrlAsync failed for {url}"); return false; }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "[IosService] OpenUrlAsync failed"); return false; }
     }
     /// <summary>
     /// Resolves an app's container directory via `apps query`.
@@ -627,6 +668,7 @@ public class IosService : IIosService
     /// </summary>
     public async Task<string> GetAppContainerPathAsync(string udid, string bundleId)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidPackageName(bundleId)) return "";
         try
         {
             var result = await RunAsync(udid, $"apps query {Quote(bundleId)}", InfoTimeoutMs).ConfigureAwait(false);

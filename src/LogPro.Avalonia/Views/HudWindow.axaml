@@ -6,7 +6,7 @@
         Title="LogPro HUD"
         Width="240" SizeToContent="Height"
         Topmost="True" ShowInTaskbar="False" CanResize="False"
-        Background="#CC0B0B0E" SystemDecorations="BorderOnly">
+        Background="#CC0B0B0E" WindowDecorations="BorderOnly">
   <StackPanel Margin="14" Spacing="6">
     <DockPanel>
       <TextBlock Text="PERF HUD" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10" FontWeight="SemiBold" />

@@ -16,7 +16,7 @@
     </Border>
     <DockPanel Margin="16">
       <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,8,0,0">
-        <TextBox Grid.Column="0" Text="{Binding CommandInput}" Watermark="adb shell dumpsys …" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
+        <TextBox Grid.Column="0" Text="{Binding CommandInput}" PlaceholderText="adb shell dumpsys …" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
         <Button Grid.Column="1" Content="Execute" Command="{Binding ExecuteCommandCommand}" IsEnabled="{Binding IsExecuting, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="16,6" />
       </Grid>
       <ScrollViewer>

@@ -17,7 +17,7 @@ public interface IIosService
     Task<bool> DeleteFileAsync(string serial, string path);
     Task<List<DeviceFile>> ListDirectoryAsync(string serial, string path);
     Task<ToolStatus> CheckAvailabilityAsync();
-    Task<LogPro.Helpers.ToolLauncherResult> ExecuteCommandAsync(string? udid, string subcommand, int timeoutMs = 30000, Action<string>? outputCallback = null);
+    Task<LogPro.Helpers.ToolLauncherResult> ExecuteCommandAsync(string? udid, string subcommand, int timeoutMs = 30000, Action<string>? outputCallback = null, CancellationToken cancellationToken = default);
     Task<List<string>> ListCrashLogsAsync(string serial);
     Task<bool> PullCrashLogAsync(string serial, string crashName, string outputPath);
     Task<string> GetDiagnosticsAsync(string serial);

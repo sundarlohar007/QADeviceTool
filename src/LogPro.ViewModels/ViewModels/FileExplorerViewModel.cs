@@ -15,6 +15,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly IUiDispatcher _dispatcher;
     private CancellationTokenSource? _loadCts;
+    private int _disposed;
 
     [ObservableProperty]
     private ObservableCollection<DeviceFile> _files = new();
@@ -75,10 +76,6 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
 
     public void OnDeviceSelected(DeviceInfo device)
     {
-        var oldCts = _loadCts;
-        _loadCts = new CancellationTokenSource();
-        try { oldCts?.Cancel(); } catch { /* best effort */ }
-        try { oldCts?.Dispose(); } catch { /* best effort */ }
         SelectedDevice = device;
     }
 
@@ -126,11 +123,16 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task LoadDirectoryAsync(string path)
     {
+        if (Volatile.Read(ref _disposed) != 0) return;
         if (SelectedDevice == null) return;
 
+        var oldCts = Interlocked.Exchange(ref _loadCts, new CancellationTokenSource());
+        try { oldCts?.Cancel(); } catch { }
+        try { oldCts?.Dispose(); } catch { }
+        var currentCts = _loadCts!;
         IsLoading = true;
         var device = SelectedDevice;
-        var token = _loadCts?.Token ?? CancellationToken.None;
+        var token = currentCts.Token;
 
         try
         {
@@ -144,6 +146,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
             token.ThrowIfCancellationRequested();
             _dispatcher.Post(() =>
             {
+                if (Volatile.Read(ref _disposed) != 0 || !ReferenceEquals(_loadCts, currentCts) || token.IsCancellationRequested) return;
                 Files.Clear();
 
                 if (path != "/" && path != "")
@@ -170,7 +173,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            IsLoading = false;
+            if (ReferenceEquals(_loadCts, currentCts)) IsLoading = false;
         }
     }
 
@@ -344,7 +347,11 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        var cts = Interlocked.Exchange(ref _loadCts, null);
+        try { cts?.Cancel(); } catch { }
+        cts?.Dispose();
         GC.SuppressFinalize(this);
     }
 }

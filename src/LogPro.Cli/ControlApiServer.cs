@@ -1,5 +1,8 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using LogPro.Helpers;
 using LogPro.Models;
 using LogPro.Services;
 using LogPro.Services.Profiling;
@@ -8,21 +11,28 @@ namespace LogPro.Cli;
 
 /// <summary>
 /// Local control API (§16) — a loopback-only HTTP surface for CI/Appium harnesses.
-/// Runs inside `logpro-cli serve`. Trust boundary: 127.0.0.1 only, same user, no auth
-/// (documented in SECURITY.md); the engine is shared with the GUI apps.
+/// Runs inside `logpro-cli serve`. Trust boundary: IPv4 loopback plus a per-process API key;
+/// the engine is shared with the GUI apps. The API key is printed once by the CLI and is
+/// never accepted through a URL/query string.
 /// </summary>
 public sealed class ControlApiServer : IDisposable
 {
+    private const int MaxRequestBodyBytes = 1_048_576;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly AdbService _adb;
     private readonly IosService _ios;
     private readonly object _lock = new();
     private readonly Dictionary<string, CaptureHandle> _captures = new();
+    private readonly string _apiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    private readonly List<Task> _requestTasks = new();
     private HttpListener? _listener;
     private CancellationTokenSource? _cts;
     private AndroidPerformanceProfiler? _profiler;
     private Task? _loop;
+    private bool _disposed;
+
+    public string ApiKey => _apiKey;
 
     public ControlApiServer(AdbService adb, IosService ios)
     {
@@ -32,6 +42,9 @@ public sealed class ControlApiServer : IDisposable
 
     public void Start(int port)
     {
+        if (port is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
+        if (_listener != null) throw new InvalidOperationException("Control API is already running.");
+
         _listener = new HttpListener();
         _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
         _listener.Start();
@@ -48,13 +61,46 @@ public sealed class ControlApiServer : IDisposable
             catch (HttpListenerException) { break; }
             catch (ObjectDisposedException) { break; }
 
-            try { await HandleAsync(ctx); }
-            catch (Exception ex)
+            var request = HandleRequestAsync(ctx);
+            lock (_requestTasks) _requestTasks.Add(request);
+            _ = request.ContinueWith(completed =>
             {
-                AppLogger.Log.Error(ex, "[ControlApi] Request failed");
-                await WriteJsonAsync(ctx.Response, 500, new { error = ex.Message });
-            }
+                lock (_requestTasks) _requestTasks.Remove(completed);
+            }, TaskScheduler.Default);
         }
+    }
+
+    private async Task HandleRequestAsync(HttpListenerContext ctx)
+    {
+        try
+        {
+            if (!IsAuthorized(ctx))
+            {
+                await WriteJsonAsync(ctx.Response, 401, new { error = "API key required" });
+                return;
+            }
+
+            await HandleAsync(ctx);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[ControlApi] Request failed");
+            try { await WriteJsonAsync(ctx.Response, 500, new { error = SecurityHelper.RedactSensitiveText(ex.Message) }); }
+            catch { /* client disconnected */ }
+        }
+    }
+
+    private bool IsAuthorized(HttpListenerContext ctx)
+    {
+        if (ctx.Request.Url?.AbsolutePath.TrimEnd('/') == "/health") return true;
+        if (ctx.Request.RemoteEndPoint?.Address is not { } remote || !IPAddress.IsLoopback(remote)) return false;
+        if (!string.IsNullOrWhiteSpace(ctx.Request.Headers["Origin"])) return false;
+
+        var supplied = ctx.Request.Headers["X-LogPro-Api-Key"];
+        if (string.IsNullOrEmpty(supplied)) return false;
+        var expectedBytes = Encoding.UTF8.GetBytes(_apiKey);
+        var suppliedBytes = Encoding.UTF8.GetBytes(supplied);
+        return CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes);
     }
 
     private async Task HandleAsync(HttpListenerContext ctx)
@@ -83,8 +129,12 @@ public sealed class ControlApiServer : IDisposable
 
             case ("POST", "/capture/start"):
                 {
-                    var req = await ReadJsonAsync<CaptureStartRequest>(ctx.Request);
+                    var req = await ReadJsonAsync<CaptureStartRequest>(ctx.Request, _cts?.Token ?? CancellationToken.None);
                     if (req?.Serial == null) { await WriteJsonAsync(ctx.Response, 400, new { error = "serial required" }); return; }
+                    if (!SecurityHelper.IsValidOfflineDeviceSelector(req.Serial))
+                    { await WriteJsonAsync(ctx.Response, 400, new { error = "network device selectors are disabled" }); return; }
+                    if (!string.IsNullOrWhiteSpace(req.Package) && !SecurityHelper.IsValidPackageName(req.Package))
+                    { await WriteJsonAsync(ctx.Response, 400, new { error = "invalid package" }); return; }
 
                     var device = await FindDeviceAsync(req.Serial);
                     if (device == null) { await WriteJsonAsync(ctx.Response, 404, new { error = "device not found" }); return; }
@@ -107,7 +157,7 @@ public sealed class ControlApiServer : IDisposable
 
             case ("POST", "/capture/stop"):
                 {
-                    var req = await ReadJsonAsync<CaptureStopRequest>(ctx.Request);
+                    var req = await ReadJsonAsync<CaptureStopRequest>(ctx.Request, _cts?.Token ?? CancellationToken.None);
                     CaptureHandle? handle;
                     lock (_lock)
                     {
@@ -126,6 +176,10 @@ public sealed class ControlApiServer : IDisposable
                     var serial = ctx.Request.QueryString["serial"] ?? string.Empty;
                     var package = ctx.Request.QueryString["package"];
                     if (serial.Length == 0) { await WriteJsonAsync(ctx.Response, 400, new { error = "serial required" }); return; }
+                    if (!SecurityHelper.IsValidOfflineDeviceSelector(serial))
+                    { await WriteJsonAsync(ctx.Response, 400, new { error = "network device selectors are disabled" }); return; }
+                    if (!string.IsNullOrWhiteSpace(package) && !SecurityHelper.IsValidPackageName(package))
+                    { await WriteJsonAsync(ctx.Response, 400, new { error = "invalid package" }); return; }
 
                     lock (_lock)
                     {
@@ -178,8 +232,12 @@ public sealed class ControlApiServer : IDisposable
 
             case ("POST", "/soak"):
                 {
-                    var req = await ReadJsonAsync<SoakRequest>(ctx.Request);
+                    var req = await ReadJsonAsync<SoakRequest>(ctx.Request, _cts?.Token ?? CancellationToken.None);
                     if (req?.Serial == null) { await WriteJsonAsync(ctx.Response, 400, new { error = "serial required" }); return; }
+                    if (!SecurityHelper.IsValidOfflineDeviceSelector(req.Serial))
+                    { await WriteJsonAsync(ctx.Response, 400, new { error = "network device selectors are disabled" }); return; }
+                    if (!string.IsNullOrWhiteSpace(req.Package) && !SecurityHelper.IsValidPackageName(req.Package))
+                    { await WriteJsonAsync(ctx.Response, 400, new { error = "invalid package" }); return; }
                     var seconds = Math.Clamp(req.Seconds, 1, 24 * 3600);
 
                     Func<CancellationToken, Task> load = async token =>
@@ -187,12 +245,13 @@ public sealed class ControlApiServer : IDisposable
                         var i = 0;
                         while (!token.IsCancellationRequested)
                         {
-                            await _adb.ExecuteCommandAsync(req.Serial, $"shell input keyevent {82 + (i++ % 4)}");
-                            await Task.Delay(200, token);
+                            await _adb.ExecuteCommandAsync(req.Serial, $"shell input keyevent {82 + (i++ % 4)}", token);
+                            await Task.Delay(200, token).ConfigureAwait(false);
                         }
                     };
 
-                    var report = await SoakRunner.RunAsync(_adb, req.Serial, req.Package ?? "", TimeSpan.FromSeconds(seconds), load);
+                    var report = await SoakRunner.RunAsync(_adb, req.Serial, req.Package ?? "", TimeSpan.FromSeconds(seconds), load,
+                        cancellationToken: _cts?.Token ?? CancellationToken.None);
                     await WriteJsonAsync(ctx.Response, 200, new
                     {
                         report.Duration.TotalSeconds,
@@ -218,17 +277,38 @@ public sealed class ControlApiServer : IDisposable
         => (await _adb.GetConnectedDevicesAsync()).Concat(await _ios.GetConnectedDevicesAsync())
             .FirstOrDefault(d => d.Serial.Equals(serial, StringComparison.OrdinalIgnoreCase));
 
-    private static async Task<T?> ReadJsonAsync<T>(HttpListenerRequest request)
+    private static async Task<T?> ReadJsonAsync<T>(HttpListenerRequest request, CancellationToken cancellationToken)
     {
+        if (request.ContentLength64 > MaxRequestBodyBytes) return default;
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         using var reader = new StreamReader(request.InputStream);
-        var body = await reader.ReadToEndAsync();
-        return string.IsNullOrWhiteSpace(body) ? default : JsonSerializer.Deserialize<T>(body, Json);
+        var chars = new char[8192];
+        var body = new StringBuilder();
+        int read;
+        try
+        {
+            while ((read = await reader.ReadAsync(chars.AsMemory(), linked.Token).ConfigureAwait(false)) > 0)
+            {
+                if (body.Length + read > MaxRequestBodyBytes) return default;
+                body.Append(chars, 0, read);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return default;
+        }
+
+        try { return body.Length == 0 ? default : JsonSerializer.Deserialize<T>(body.ToString(), Json); }
+        catch (JsonException) { return default; }
     }
 
     private static async Task WriteJsonAsync(HttpListenerResponse response, int statusCode, object? value)
     {
         response.StatusCode = statusCode;
         response.ContentType = "application/json";
+        response.Headers["Cache-Control"] = "no-store";
         var json = JsonSerializer.Serialize(value, Json);
         await using var writer = new StreamWriter(response.OutputStream);
         await writer.WriteAsync(json);
@@ -242,15 +322,28 @@ public sealed class ControlApiServer : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _cts?.Cancel();
         _listener?.Stop();
         _listener?.Close();
+        try { _loop?.Wait(TimeSpan.FromSeconds(2)); } catch { }
+
+        Task[] requests;
+        lock (_requestTasks) requests = _requestTasks.ToArray();
+        try { Task.WaitAll(requests, TimeSpan.FromSeconds(2)); } catch { }
+
+        List<CaptureHandle> captures;
+        AndroidPerformanceProfiler? profiler;
         lock (_lock)
         {
-            foreach (var h in _captures.Values) h.Sessions.StopCapture(h.Session);
+            captures = _captures.Values.ToList();
             _captures.Clear();
-            _profiler?.Dispose();
+            profiler = _profiler;
             _profiler = null;
         }
+
+        foreach (var h in captures) h.Sessions.StopCapture(h.Session);
+        profiler?.Dispose();
     }
 }

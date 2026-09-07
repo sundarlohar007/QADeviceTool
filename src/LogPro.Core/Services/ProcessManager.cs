@@ -33,6 +33,8 @@ public sealed class ProcessManager : IProcessManager
                 _trackedProcesses.TryRemove(id, out _);
             };
             _trackedProcesses.TryAdd(id, process);
+            if (process.HasExited)
+                _trackedProcesses.TryRemove(id, out _);
         }
         catch (InvalidOperationException)
         {
@@ -54,6 +56,7 @@ public sealed class ProcessManager : IProcessManager
                 {
                     AppLogger.Log.Info($"Killing tracked process {process.ProcessName} (ID: {process.Id})");
                     process.Kill(true); // Kill process tree
+                    try { process.WaitForExit(2000); } catch { }
                 }
                 // Let owning code dispose its own references — only Kill here
             }

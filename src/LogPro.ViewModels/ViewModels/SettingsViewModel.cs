@@ -179,6 +179,11 @@ public partial class SettingsViewModel : ObservableObject
         var folder = UiServices.Files.OpenFolder("Select Sessions Directory");
         if (folder != null)
         {
+            if (!Helpers.PathHelper.IsSafeLocalPath(folder))
+            {
+                StatusMessage = "[!] Sessions must be stored on a local, non-reparse-point volume.";
+                return;
+            }
             SessionsDirectory = folder;
             _sessionService.SessionsRootDirectory = folder;
             PreferencesService.Current.SessionsRootDirectory = folder;

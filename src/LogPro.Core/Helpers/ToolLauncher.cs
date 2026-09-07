@@ -23,21 +23,34 @@ public static class ToolLauncher
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _deviceLocks = new(StringComparer.Ordinal);
     private static readonly SemaphoreSlim _globalCap = new(Environment.ProcessorCount);
     private static readonly SemaphoreSlim _globalOnly = new(Environment.ProcessorCount);
+    private static readonly SemaphoreSlim _longRunningCap = new(Math.Max(1, Environment.ProcessorCount));
     private static readonly System.Text.RegularExpressions.Regex _deviceKeyRegex =
         new(@"(?:-s|--udid)\s+(\S+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex _deviceArgumentRegex = new(
+        @"(?:^|\s)(?:-s|--udid)\s+(?:""(?<selector>[^""]+)""|(?<selector>\S+))",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    private const int MaxCapturedOutputChars = 1_000_000;
 
-    private static async Task<IDisposable> EnterDeviceGateAsync(string arguments)
+    private static async Task<IDisposable> EnterDeviceGateAsync(string arguments, CancellationToken cancellationToken = default)
     {
         var m = _deviceKeyRegex.Match(arguments);
         if (!m.Success)
         {
-            await _globalOnly.WaitAsync();
+            await _globalOnly.WaitAsync(cancellationToken).ConfigureAwait(false);
             return new GateRelease(_globalOnly, null);
         }
 
         var deviceLock = _deviceLocks.GetOrAdd(m.Groups[1].Value, _ => new SemaphoreSlim(1, 1));
-        await _globalCap.WaitAsync();
-        await deviceLock.WaitAsync();
+        await _globalCap.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await deviceLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            _globalCap.Release();
+            throw;
+        }
         return new GateRelease(_globalCap, deviceLock);
     }
 
@@ -120,22 +133,39 @@ public static class ToolLauncher
         return File.Exists(bundledPath) ? bundledPath : exeName;
     }
 
-    public static async Task<ToolLauncherResult> RunAsync(string exeName, string arguments, int timeoutMs = 15000, Action<string>? outputCallback = null)
+    public static async Task<ToolLauncherResult> RunAsync(string exeName, string arguments, int timeoutMs = 15000,
+        Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
     {
         var result = new ToolLauncherResult();
         var fullExePath = ResolveExecutablePath(exeName);
 
-        using var gate = await EnterDeviceGateAsync(arguments).ConfigureAwait(false);
+        var selector = _deviceArgumentRegex.Match(arguments);
+        if (selector.Success && !SecurityHelper.IsValidOfflineDeviceSelector(selector.Groups["selector"].Value))
+        {
+            result.Error = "Blocked by LogPro offline security policy: network device selectors are disabled.";
+            return result;
+        }
+
+        if (SecurityHelper.IsNetworkCapableCommand(arguments))
+        {
+            result.Error = "Blocked by LogPro offline security policy.";
+            return result;
+        }
+
+        using var gate = await EnterDeviceGateAsync(arguments, cancellationToken).ConfigureAwait(false);
+        Process? process = null;
+        Task outputTask = Task.CompletedTask;
+        Task errorTask = Task.CompletedTask;
 
         try
         {
             var logger = Services.AppLogger.Log;
             var workDir = ResolveWorkDir(fullExePath);
-            var logArgs = PreferencesService.Current.SecureMode ? SanitizeForLog(arguments) : arguments;
+            var logArgs = SanitizeForLog(arguments);
             logger.Info($"[ToolLauncher] Launching: {fullExePath} {logArgs}");
             logger.Debug($"[ToolLauncher] WorkingDirectory: {workDir}");
 
-            using var process = new Process();
+            process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
                 FileName = fullExePath,
@@ -146,6 +176,7 @@ public static class ToolLauncher
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
+            ConfigureOfflineEnvironment(process.StartInfo);
 
             process.Start();
             Services.ProcessManager.Instance.TrackProcess(process);
@@ -153,40 +184,35 @@ public static class ToolLauncher
             var fullOutput = new System.Text.StringBuilder();
             var fullError = new System.Text.StringBuilder();
 
-            var outputTask = Task.Run(async () =>
-            {
-                while (await process.StandardOutput.ReadLineAsync() is { } line)
-                {
-                    fullOutput.AppendLine(line);
-                    outputCallback?.Invoke(line);
-                }
-            });
+            outputTask = DrainOutputAsync(process.StandardOutput, fullOutput, outputCallback);
+            errorTask = DrainOutputAsync(process.StandardError, fullError, null);
 
-            var errorTask = Task.Run(async () =>
+            using var timeoutCts = new CancellationTokenSource(Math.Max(1, timeoutMs));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            var cancelled = false;
+            try
             {
-                while (await process.StandardError.ReadLineAsync() is { } line)
-                {
-                    fullError.AppendLine(line);
-                }
-            });
-
-            var completed = await Task.Run(() => process.WaitForExit(timeoutMs));
-
-            if (!completed)
+                await process.WaitForExitAsync(linkedCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested || timeoutCts.IsCancellationRequested)
             {
-                try { process.CloseMainWindow(); } catch { }
-                await Task.Delay(1000);
-                if (!process.HasExited)
-                {
-                    process.Kill(true);
-                }
-                result.Success = false;
-                result.Error = "Process timed out.";
-                logger.Error($"[ToolLauncher] TIMEOUT: {fullExePath}");
-                return result;
+                cancelled = true;
             }
 
-            await Task.WhenAll(outputTask, errorTask);
+            if (cancelled)
+            {
+                await TerminateProcessAsync(process).ConfigureAwait(false);
+                result.Success = false;
+                result.Error = cancellationToken.IsCancellationRequested
+                    ? "Process cancelled."
+                    : "Process timed out.";
+                logger.Error($"[ToolLauncher] {(cancellationToken.IsCancellationRequested ? "CANCELLED" : "TIMEOUT")}: {fullExePath}");
+            }
+
+            await AwaitReaderAsync(outputTask).ConfigureAwait(false);
+            await AwaitReaderAsync(errorTask).ConfigureAwait(false);
+
+            if (cancelled) return result;
 
             result.Output = fullOutput.ToString().Trim();
             result.Error = fullError.ToString().Trim();
@@ -196,16 +222,28 @@ public static class ToolLauncher
             logger.Info($"[ToolLauncher] ExitCode: {result.ExitCode} | Success: {result.Success}");
 
             if (!string.IsNullOrWhiteSpace(result.Output))
-                logger.Debug($"[ToolLauncher] STDOUT:\n{result.Output}");
+                logger.Debug($"[ToolLauncher] STDOUT:\n{SecurityHelper.RedactSensitiveText(result.Output)}");
 
             if (!string.IsNullOrWhiteSpace(result.Error))
-                logger.Error($"[ToolLauncher] STDERR:\n{result.Error}");
+                logger.Error($"[ToolLauncher] STDERR:\n{SecurityHelper.RedactSensitiveText(result.Error)}");
+        }
+        catch (OperationCanceledException)
+        {
+            result.Success = false;
+            result.Error = "Process cancelled.";
+            if (process != null) await TerminateProcessAsync(process).ConfigureAwait(false);
+            await AwaitReaderAsync(outputTask).ConfigureAwait(false);
+            await AwaitReaderAsync(errorTask).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             result.Success = false;
-            result.Error = ex.Message;
+            result.Error = SecurityHelper.RedactSensitiveText(ex.Message);
             try { Services.AppLogger.Log.Error(ex, $"[ToolLauncher] Exception launching {fullExePath}"); } catch (Exception _) { AppLogger.Log.Debug(_, "[ToolLauncher] Exception during startup"); }
+        }
+        finally
+        {
+            process?.Dispose();
         }
 
         return result;
@@ -215,11 +253,31 @@ public static class ToolLauncher
     {
         var fullExePath = ResolveExecutablePath(exeName);
 
+        var selector = _deviceArgumentRegex.Match(arguments);
+        if (selector.Success && !SecurityHelper.IsValidOfflineDeviceSelector(selector.Groups["selector"].Value))
+        {
+            AppLogger.Log.Warn("[ToolLauncher] Blocked network device selector in long-running command");
+            return null;
+        }
+
+        if (SecurityHelper.IsNetworkCapableCommand(arguments))
+        {
+            AppLogger.Log.Warn($"[ToolLauncher] Blocked network-capable long-running command: {SecurityHelper.RedactSensitiveText(arguments)}");
+            return null;
+        }
+
+        if (!_longRunningCap.Wait(0))
+        {
+            AppLogger.Log.Warn("[ToolLauncher] Long-running process cap reached; launch rejected");
+            return null;
+        }
+        var longRunningSlotReleased = 0;
+
         try
         {
             var logger = Services.AppLogger.Log;
             var workDir = ResolveWorkDir(fullExePath);
-            var logArgs2 = PreferencesService.Current.SecureMode ? SanitizeForLog(arguments) : arguments;
+            var logArgs2 = SanitizeForLog(arguments);
             logger.Info($"[ToolLauncher] StartLongRunning: {fullExePath} {logArgs2}");
             logger.Debug($"[ToolLauncher] WorkingDirectory: {workDir}");
 
@@ -236,7 +294,14 @@ public static class ToolLauncher
                 StandardOutputEncoding = System.Text.Encoding.UTF8
             };
 
+            ConfigureOfflineEnvironment(process.StartInfo);
             process.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+            process.EnableRaisingEvents = true;
+            process.Exited += (_, _) =>
+            {
+                if (Interlocked.Exchange(ref longRunningSlotReleased, 1) == 0)
+                    _longRunningCap.Release();
+            };
             process.Start();
             Services.ProcessManager.Instance.TrackProcess(process);
 
@@ -254,8 +319,9 @@ public static class ToolLauncher
                 {
                     while (await process.StandardError.ReadLineAsync() is { } line)
                     {
-                        errorCallback?.Invoke(line);
-                        logger.Warn($"[ToolLauncher] STDERR(long): {line}");
+                        var safeLine = SecurityHelper.RedactSensitiveText(line);
+                        errorCallback?.Invoke(safeLine);
+                        logger.Warn($"[ToolLauncher] STDERR(long): {safeLine}");
                     }
                 }
                 catch (Exception ex) { AppLogger.Log.Debug(ex, "[ToolLauncher] stderr stream ended"); }
@@ -266,6 +332,8 @@ public static class ToolLauncher
         }
         catch (Exception ex)
         {
+            if (Interlocked.Exchange(ref longRunningSlotReleased, 1) == 0)
+                _longRunningCap.Release();
             try { Services.AppLogger.Log.Error(ex, $"[ToolLauncher] Exception in StartLongRunning for {fullExePath}"); } catch (Exception _) { AppLogger.Log.Debug(_, "[ToolLauncher] Exception during startup"); }
             return null;
         }
@@ -273,12 +341,71 @@ public static class ToolLauncher
 
     /// <summary>Sanitizes command arguments for logging when Secure Mode is enabled.</summary>
     private static string SanitizeForLog(string arguments)
+        => SecurityHelper.RedactSensitiveText(arguments);
+
+    internal static void ConfigureOfflineEnvironment(ProcessStartInfo startInfo)
     {
-        if (string.IsNullOrEmpty(arguments)) return arguments;
-        // Redact device serials: -s {serial} -> -s [REDACTED]
-        var sanitized = System.Text.RegularExpressions.Regex.Replace(arguments, @"-s\s+\S+", "-s [REDACTED]");
-        // Redact file paths containing /sdcard/ or /data/
-        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"(/sdcard/|/data/)\S+", "${1}[PATH]");
-        return sanitized;
+        foreach (var name in new[]
+        {
+            "ADB_SERVER_SOCKET", "ADB_MDNS_AUTO_CONNECT", "ADB_MDNS_OPENSCREEN",
+            "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+            "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+            "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP"
+        })
+        {
+            startInfo.EnvironmentVariables.Remove(name);
+        }
+
+        // Prevent ADB from opting into mDNS/network discovery through inherited defaults.
+        startInfo.EnvironmentVariables["ADB_MDNS_AUTO_CONNECT"] = "0";
+        startInfo.EnvironmentVariables["ADB_MDNS_OPENSCREEN"] = "0";
+        startInfo.EnvironmentVariables["PYTHONNOUSERSITE"] = "1";
+    }
+
+    private static async Task DrainOutputAsync(StreamReader reader, System.Text.StringBuilder buffer, Action<string>? callback)
+    {
+        try
+        {
+            while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
+            {
+                if (buffer.Length < MaxCapturedOutputChars)
+                {
+                    var remaining = MaxCapturedOutputChars - buffer.Length;
+                    buffer.AppendLine(line.Length <= remaining ? line : line[..remaining]);
+                }
+                try { callback?.Invoke(line); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[ToolLauncher] output callback failed"); }
+            }
+        }
+        catch (ObjectDisposedException) { }
+        catch (IOException) { }
+    }
+
+    private static async Task TerminateProcessAsync(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                try { process.Kill(entireProcessTree: true); }
+                catch { process.Kill(entireProcessTree: false); }
+            }
+        }
+        catch { }
+
+        try
+        {
+            using var waitCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await process.WaitForExitAsync(waitCts.Token).ConfigureAwait(false);
+        }
+        catch { }
+    }
+
+    private static async Task AwaitReaderAsync(Task readerTask)
+    {
+        try
+        {
+            await readerTask.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        }
+        catch { }
     }
 }

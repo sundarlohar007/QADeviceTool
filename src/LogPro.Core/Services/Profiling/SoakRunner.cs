@@ -31,23 +31,33 @@ public static class SoakRunner
 
     public static async Task<SoakReport> RunAsync(
         IAdbService adb, string serial, string package,
-        TimeSpan duration, Func<CancellationToken, Task> loadLoop, int sampleIntervalMs = 1000)
+        TimeSpan duration, Func<CancellationToken, Task> loadLoop, int sampleIntervalMs = 1000,
+        CancellationToken cancellationToken = default)
     {
+        if (duration <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(duration));
         using var profiler = new AndroidPerformanceProfiler(adb, serial,
             string.IsNullOrWhiteSpace(package) ? null : package, intervalMs: sampleIntervalMs);
         profiler.Start();
 
-        using var cts = new CancellationTokenSource(duration);
+        using var durationCts = new CancellationTokenSource(duration);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, durationCts.Token);
         var loadTask = Task.Run(async () =>
         {
             try { await loadLoop(cts.Token); }
             catch (OperationCanceledException) { /* run window elapsed */ }
         });
 
-        await Task.Delay(duration);
-        cts.Cancel();
-        try { await loadTask; } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Soak] Load loop faulted"); }
-        await profiler.StopAsync();
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token);
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            cts.Cancel();
+            try { await loadTask; } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Soak] Load loop faulted"); }
+            await profiler.StopAsync();
+        }
 
         var history = profiler.History;
         if (history.Count == 0)

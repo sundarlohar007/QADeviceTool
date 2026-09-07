@@ -109,7 +109,7 @@ public class PluginManagerTests
                 """);
             File.Copy(fakesAssembly, Path.Combine(pluginDir, "adb.dll"));
 
-            var manager = new PluginManager();
+            var manager = new PluginManager(allowCodePlugins: true);
             manager.LoadPlugins(root);
 
             manager.LogParsers.Should().ContainKey("sample.fakeparser");
@@ -121,6 +121,33 @@ public class PluginManagerTests
         {
             // The plugin AssemblyLoadContext holds the assembly file — cleanup is best-effort.
             try { Directory.Delete(root, true); } catch { /* ALC lock */ }
+        }
+    }
+
+    [Fact]
+    public void Load_AssemblyPlugin_DefaultIsBlockedInOfflineMode()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"LogProPlugins_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var fakesAssembly = Path.Combine(AppContext.BaseDirectory, "adb.dll");
+            if (!File.Exists(fakesAssembly)) return;
+
+            var pluginDir = WritePlugin(root, "asm", """
+                { "id": "blocked", "name": "Blocked", "type": "logParser",
+                  "entryAssembly": "adb.dll", "entryType": "LogPro.TestFakes.FakeLogParserPlugin" }
+                """);
+            File.Copy(fakesAssembly, Path.Combine(pluginDir, "adb.dll"));
+
+            var manager = new PluginManager();
+            manager.LoadPlugins(root);
+
+            manager.Plugins.Should().BeEmpty();
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
         }
     }
 }
