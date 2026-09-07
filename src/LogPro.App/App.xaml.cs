@@ -9,8 +9,15 @@ namespace LogPro;
 
 public partial class App : Application
 {
-    private static readonly string EarlyLogPath = Path.Combine(Path.GetTempPath(), "LogPro_startup-debug.log");
+    private static readonly string EarlyLogPath = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "startup-debug.log");
     private const long EarlyLogMaxBytes = 1024 * 1024; // 1 MiB cap; truncate-on-roll instead of unbounded growth.
+
+    static App()
+    {
+        // Migrate before the early log creates the new directory, otherwise the presence
+        // of %LOCALAPPDATA%\LogPro would intentionally suppress the legacy move.
+        Helpers.PathHelper.MigrateLegacyAppData();
+    }
 
     private void EarlyLog(string message, Exception? ex = null)
     {
@@ -21,6 +28,7 @@ public partial class App : Application
             {
                 Directory.CreateDirectory(dir);
             }
+            if (dir != null && !Helpers.PathHelper.RestrictDirectoryAccess(dir)) return;
 
             try
             {
@@ -34,10 +42,11 @@ public partial class App : Application
             }
             catch { /* rotation best-effort */ }
 
-            var logLine = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}\n";
+            var logLine = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {SecurityHelper.RedactSensitiveText(message)}\n";
             if (ex != null)
             {
-                logLine += $"EXCEPTION: {ex.GetType().Name}\nMESSAGE: {ex.Message}\nSTACK TRACE:\n{ex.StackTrace}\n\n";
+                logLine += $"EXCEPTION: {ex.GetType().Name}\nMESSAGE: {SecurityHelper.RedactSensitiveText(ex.Message)}\n" +
+                           $"STACK TRACE:\n{SecurityHelper.RedactSensitiveText(ex.StackTrace)}\n\n";
             }
             File.AppendAllText(EarlyLogPath, logLine);
         }
@@ -71,6 +80,14 @@ public partial class App : Application
 
         // Ensure native DLL paths are initialized for iOS tools
         ToolResolver.InitializeNativePaths();
+        if (!ToolResolver.VerifyBundledToolsAsync(requireManifest: true, requireTools: true).GetAwaiter().GetResult())
+        {
+            EarlyLog("FATAL: bundled tool integrity verification failed; refusing to start");
+            MessageBox.Show("The bundled device tools failed integrity verification. LogPro will not start.",
+                "LogPro Security Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(3);
+            return;
+        }
 
         // One-time branding migration: %LOCALAPPDATA%\QAQCDeviceTool -> LogPro.
         // Must precede PreferencesService static init (below) so settings load from the new path.
@@ -202,6 +219,10 @@ public partial class App : Application
     {
         EarlyLog("APPLICATION EXITING.");
         Services.AppLogger.Log.Info("Application Exiting.");
+        if (MainWindow?.DataContext is IDisposable disposable)
+        {
+            try { disposable.Dispose(); } catch (Exception ex) { EarlyLog("MainViewModel cleanup failed", ex); }
+        }
         Services.ProcessManager.Instance.KillAllTrackedProcesses();
         NLog.LogManager.Shutdown();
         base.OnExit(e);
@@ -216,6 +237,7 @@ public partial class App : Application
         {
             var dir = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "crash-reports");
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            if (!Helpers.PathHelper.RestrictDirectoryAccess(dir)) return;
             var filePath = Path.Combine(dir, $"crash-report-{DateTime.Now:yyyyMMdd_HHmmss}.txt");
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("===== LogPro Crash Report =====");
@@ -230,8 +252,8 @@ public partial class App : Application
             int depth = 0;
             while (current != null && depth < 5)
             {
-                sb.AppendLine($"[{depth}] {current.GetType().FullName}: {current.Message}");
-                sb.AppendLine(current.StackTrace);
+                sb.AppendLine($"[{depth}] {current.GetType().FullName}: {SecurityHelper.RedactSensitiveText(current.Message)}");
+                sb.AppendLine(SecurityHelper.RedactSensitiveText(current.StackTrace));
                 sb.AppendLine();
                 current = current.InnerException;
                 depth++;

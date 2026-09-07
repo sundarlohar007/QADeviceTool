@@ -1,0 +1,74 @@
+[
+  {
+    "path": ".gitkeep",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "pymobiledevice3/pymobiledevice3.exe",
+    "sha256": "2fe6103431008b530532235eccff854936d0f6d15af0fc4463469b85a4626c7f"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/AdbWinApi.dll",
+    "sha256": "9a56e72fe1372cb722a80c00b79dcecf2b37165884e470ed05f00c668c0043b0"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/AdbWinUsbApi.dll",
+    "sha256": "5e77ccb2f25cd3a97553745adf1cd28a5fe8137cf64613b7fef9c6f92ff91f37"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/SDL2.dll",
+    "sha256": "5d2d3dff50dc0f29e5664126342c3ae0990dea45a350e6991468ad1be68c1f6c"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/adb.exe",
+    "sha256": "1e1c2280b90b3f01ad84cd8df4858b1b1995012814f3ca8893bcc3ba3848edec"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/avcodec-61.dll",
+    "sha256": "fbcb887bd8d722abf8680aab207b40e5f9dc6c4364b38aa2423e9d19c29b871c"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/avformat-61.dll",
+    "sha256": "53803062da5690f709a1cc4f4d2a187942ff91c4583497112a2b77dad4802c2f"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/avutil-59.dll",
+    "sha256": "1944d3ee1912f5cb8dfa35d5ef0faec5dabc79d9d45d4f4cd210f2ccdad16332"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/icon.png",
+    "sha256": "8e8ca237898faa16014cdd118396af53405b423f3db0508c50cc3edce08eb313"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/libusb-1.0.dll",
+    "sha256": "5652bf292115277c9e7edca389e0fd398e3b26ef3ff007a181e21702e913afab"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/LICENSE",
+    "sha256": "a8ce4a61c9877a6764e24a49fc90b2b229f173d6b88db4c447e35abc0ae4668c"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/open_a_terminal_here.bat",
+    "sha256": "ed56d9fbc5c03f6dee9455e60370ce958b3bec9437a8a2fa2a8e980f0b6362f2"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/scrcpy-console.bat",
+    "sha256": "b49a3eb642898269e7e690e80f3de17898f966f69e75f11abeb31eb7023b0ee5"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/scrcpy-noconsole.vbs",
+    "sha256": "3ccda94c161f18cef07c50d4d3c4913eb883d4b0fe3b939c35fae52784fb1d2b"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/scrcpy-server",
+    "sha256": "8588238c9a5a00aa542906b6ec7e6d5541d9ffb9b5d0f6e1bc0e365e2303079e"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/scrcpy.exe",
+    "sha256": "9f9116940988d9e4bc710812e2fdd4b5ecb767e591eaf043b1e2dd7d98166f98"
+  },
+  {
+    "path": "scrcpy-win64-v3.3.4/swresample-5.dll",
+    "sha256": "2bb412fe52ea8db1a23f363e28005c184b0ca587c1af2ceb788830737f8bc6d9"
+  }
+]

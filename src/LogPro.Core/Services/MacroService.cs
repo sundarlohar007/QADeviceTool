@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using LogPro.Helpers;
 using LogPro.Models;
 
 namespace LogPro.Services;
@@ -15,6 +17,7 @@ namespace LogPro.Services;
 public class MacroService
 {
     private readonly IAdbService _adbService;
+    private readonly ConcurrentDictionary<int, Task> _recordReaders = new();
 
     public MacroService(IAdbService adbService)
     {
@@ -30,6 +33,9 @@ public class MacroService
     // handles concurrent streams natively). Commands during recording work fine.
     public async Task<System.Diagnostics.Process?> StartRecordingAsync(string serial, string outputFilePath)
     {
+        if (!Helpers.SecurityHelper.IsValidOfflineDeviceSelector(serial) ||
+            !Helpers.PathHelper.IsSafeLocalPath(outputFilePath)) return null;
+
         var process = new System.Diagnostics.Process
         {
             StartInfo = new System.Diagnostics.ProcessStartInfo
@@ -42,6 +48,7 @@ public class MacroService
                 CreateNoWindow = true
             }
         };
+        Helpers.ToolLauncher.ConfigureOfflineEnvironment(process.StartInfo);
 
         try
         {
@@ -49,7 +56,7 @@ public class MacroService
             ProcessManager.Instance.TrackProcess(process);
 
             // Drain stdout to file asynchronously to prevent buffer deadlock
-            _ = Task.Run(async () =>
+            var outputTask = Task.Run(async () =>
             {
                 try
                 {
@@ -64,19 +71,21 @@ public class MacroService
                 catch (IOException) { /* file write error */ }
             });
 
-            _ = Task.Run(async () =>
+            var errorTask = Task.Run(async () =>
             {
                 try
                 {
                     while (await process.StandardError.ReadLineAsync() is { } line)
-                        Services.AppLogger.Log.Warn($"[MacroService] getevent stderr: {line}");
+                        Services.AppLogger.Log.Warn($"[MacroService] getevent stderr: {Helpers.SecurityHelper.RedactSensitiveText(line)}");
                 }
                 catch (Exception ex) { AppLogger.Log.Debug(ex, "[MacroService] Recording stream ended"); }
             });
+            _recordReaders[process.Id] = Task.WhenAll(outputTask, errorTask);
 
             await Task.Delay(250).ConfigureAwait(false);
             if (process.HasExited)
             {
+                await CompleteRecordingAsync(process).ConfigureAwait(false);
                 process.Dispose();
                 return null;
             }
@@ -88,6 +97,16 @@ public class MacroService
             Services.AppLogger.Log.Error(ex, "[MacroService] StartRecording failed");
             return null;
         }
+    }
+
+    public async Task CompleteRecordingAsync(System.Diagnostics.Process process)
+    {
+        try
+        {
+            if (_recordReaders.TryRemove(process.Id, out var readers))
+                await readers.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        }
+        catch { /* process teardown is best-effort; the caller owns disposal */ }
     }
 
     /// <summary>
@@ -169,6 +188,8 @@ public class MacroService
     {
         if (macro.Events.Count == 0) return;
         var device = inputDevice ?? macro.InputDevice ?? "/dev/input/event2";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(device, @"^/dev/input/[A-Za-z0-9_.-]+$"))
+            throw new ArgumentException("Invalid input device path.", nameof(inputDevice));
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var expectedElapsed = 0L;
         foreach (var evt in macro.Events)
@@ -182,7 +203,7 @@ public class MacroService
             var result = await _adbService.ExecuteCommandAsync(serial, $"shell {cmd}");
             if (result != null && (result.Contains("Error") || result.Contains("Failure")))
             {
-                AppLogger.Log.Warn($"[MacroService] Replay command failed: {cmd} - {result}");
+                AppLogger.Log.Warn($"[MacroService] Replay command failed: {SecurityHelper.RedactSensitiveText(cmd)} - {SecurityHelper.RedactSensitiveText(result)}");
             }
 
             var delay = (int)(evt.DelayMs / speedMultiplier);
@@ -212,7 +233,7 @@ public class MacroService
     internal static string SafeInputText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
-        if (text.Contains('`') || text.Contains("$(") || text.Contains('\n') || text.Contains('\r') || text.Contains(";"))
+        if (text.Length > 4096 || text.Any(c => c is '\n' or '\r' or ';' or '|' or '&' or '`' or '$' or '<' or '>') || text.Contains("$("))
             return string.Empty;
         return text.Replace("'", "\\'").Replace(" ", "%s");
     }
@@ -241,7 +262,7 @@ public class MacroService
                 var result = await _adbService.ExecuteCommandAsync(serial, cmd);
                 if (result != null && (result.Contains("Error") || result.Contains("Failure")))
                 {
-                    AppLogger.Log.Warn($"[MacroService] Replay command failed: {cmd} - {result}");
+                    AppLogger.Log.Warn($"[MacroService] Replay command failed: {SecurityHelper.RedactSensitiveText(cmd)} - {SecurityHelper.RedactSensitiveText(result)}");
                 }
             }
 
@@ -253,6 +274,7 @@ public class MacroService
 
     public static async Task<MacroFile?> LoadMacroAsync(string filePath)
     {
+        if (!Helpers.PathHelper.IsSafeLocalPath(filePath)) return null;
         try
         {
             var json = await File.ReadAllTextAsync(filePath);
@@ -263,6 +285,7 @@ public class MacroService
 
     public static async Task SaveMacroAsync(MacroFile macro, string filePath)
     {
+        if (!Helpers.PathHelper.IsSafeLocalPath(filePath)) throw new ArgumentException("Macro path must be local.", nameof(filePath));
         var json = JsonSerializer.Serialize(macro, LogProJsonContext.Default.MacroFile);
         await File.WriteAllTextAsync(filePath, json);
     }

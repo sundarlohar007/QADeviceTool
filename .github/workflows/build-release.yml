@@ -52,9 +52,14 @@ jobs:
       - name: Determine Version
         id: version
         shell: pwsh
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version }}
         run: |
-          if ("${{ inputs.version }}") {
-            $ver = "${{ inputs.version }}"
+          if ($env:VERSION_OVERRIDE) {
+            if ($env:VERSION_OVERRIDE -notmatch '^\d+\.\d+\.\d+$') {
+              throw "Version override must be strict semver, for example 3.2.115."
+            }
+            $ver = $env:VERSION_OVERRIDE
           } else {
             $ver = "3.2.${{ github.run_number }}"
           }
@@ -80,8 +85,96 @@ jobs:
             throw "publish/setup.iss contains the stale QADeviceTool.exe entry point."
           }
 
+      - name: Prepare Windows app package
+        shell: pwsh
+        run: |
+          function Test-ToolsManifest([string] $toolsRoot, [string] $manifestPath) {
+            if (-not (Test-Path -LiteralPath $toolsRoot -PathType Container)) {
+              throw "Bundled tools directory is missing: $toolsRoot"
+            }
+            $files = @(Get-ChildItem -LiteralPath $toolsRoot -File -Recurse)
+            if ($files.Count -eq 0) { throw "Bundled tools directory is empty: $toolsRoot" }
+            foreach ($file in $files) {
+              $firstLine = Get-Content -LiteralPath $file.FullName -TotalCount 1 -ErrorAction SilentlyContinue
+              if ($firstLine -eq "version https://git-lfs.github.com/spec/v1") {
+                throw "Git LFS pointer was packaged instead of the real tool: $($file.FullName)"
+              }
+            }
+            foreach ($name in @("adb.exe", "scrcpy.exe", "pymobiledevice3.exe")) {
+              if (-not (Get-ChildItem -LiteralPath $toolsRoot -File -Recurse -Filter $name)) {
+                throw "Required bundled tool is missing: $name"
+              }
+            }
+            if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+              throw "Bundled tools manifest is missing: $manifestPath"
+            }
+
+            $root = (Resolve-Path -LiteralPath $toolsRoot).Path
+            $entries = @(Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
+            $expected = @{}
+            foreach ($entry in $entries) {
+              if ($expected.ContainsKey($entry.path)) { throw "Duplicate path in tools manifest: $($entry.path)" }
+              $expected[$entry.path] = $entry.sha256.ToLowerInvariant()
+            }
+            $seen = @{}
+            foreach ($file in $files) {
+              $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+              $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              if (-not $expected.ContainsKey($relative)) { throw "Unlisted bundled tool file: $relative" }
+              if ($expected[$relative] -ne $hash) { throw "Bundled tool hash mismatch: $relative" }
+              $seen[$relative] = $true
+            }
+            if ($seen.Count -ne $expected.Count) { throw "Tools manifest contains missing files." }
+          }
+
+          foreach ($notice in @("LogPro-LICENSE.txt", "LogPro-SECURITY.md", "LogPro-GPL_COMPLIANCE.md", "LogPro-THIRD_PARTY_NOTICES.txt", "SOURCE-OFFER-pymobiledevice3.txt")) {
+            if (-not (Test-Path -LiteralPath "publish/app/licenses/$notice" -PathType Leaf)) {
+              throw "Windows app package is missing legal notice: $notice"
+            }
+          }
+          Test-ToolsManifest "publish/app/tools" "publish/app/tools-manifest.json"
+
       - name: Publish CLI
         run: dotnet publish ${{ env.CLI_PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.semver }} -o publish/cli
+
+      - name: Prepare Windows CLI package
+        shell: pwsh
+        run: |
+          $legal = "publish/cli/licenses"
+          foreach ($notice in @("LogPro-LICENSE.txt", "LogPro-SECURITY.md", "LogPro-GPL_COMPLIANCE.md", "LogPro-THIRD_PARTY_NOTICES.txt", "SOURCE-OFFER-pymobiledevice3.txt")) {
+            if (-not (Test-Path -LiteralPath (Join-Path $legal $notice) -PathType Leaf)) {
+              throw "Windows CLI package is missing legal notice: $notice"
+            }
+          }
+
+          $toolsRoot = "publish/cli/tools"
+          $files = @(Get-ChildItem -LiteralPath $toolsRoot -File -Recurse)
+          if ($files.Count -eq 0) { throw "Windows CLI package has no bundled tools." }
+          foreach ($file in $files) {
+            $firstLine = Get-Content -LiteralPath $file.FullName -TotalCount 1 -ErrorAction SilentlyContinue
+            if ($firstLine -eq "version https://git-lfs.github.com/spec/v1") {
+              throw "Git LFS pointer was packaged instead of the real CLI tool: $($file.FullName)"
+            }
+          }
+          $manifestPath = "publish/cli/tools-manifest.json"
+          if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "Windows CLI tools manifest is missing." }
+          $root = (Resolve-Path -LiteralPath $toolsRoot).Path
+          $entries = @(Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
+          $expected = @{}
+          foreach ($entry in $entries) { $expected[$entry.path] = $entry.sha256.ToLowerInvariant() }
+          $seen = @{}
+          foreach ($file in $files) {
+            $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if (-not $expected.ContainsKey($relative) -or $expected[$relative] -ne $hash) { throw "CLI tool hash mismatch: $relative" }
+            $seen[$relative] = $true
+          }
+          if ($seen.Count -ne $expected.Count) { throw "CLI tools manifest contains missing files." }
+
+      - name: Remove debug symbols from release payloads
+        shell: pwsh
+        run: |
+          Get-ChildItem publish/app, publish/cli -File -Recurse -Filter *.pdb | Remove-Item -Force
 
       - name: Upload App
         uses: actions/upload-artifact@v7
@@ -115,6 +208,9 @@ jobs:
           if (-not (Test-Path -LiteralPath "publish/app/LogPro.exe" -PathType Leaf)) {
             throw "Installer input is missing publish/app/LogPro.exe."
           }
+          if (-not (Test-Path -LiteralPath "publish/app/tools-manifest.json" -PathType Leaf)) {
+            throw "Installer input is missing the bundled-tools integrity manifest."
+          }
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
@@ -144,7 +240,7 @@ jobs:
           [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String($env:SIGN_CERT_PFX))
           $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
           $exe = Get-Item (Get-ChildItem dist\*.exe | Select-Object -First 1).FullName
-          & $signtool sign /fd SHA256 /f $cert /p $env:SIGN_CERT_PASSWORD /t http://timestamp.digicert.com $exe.FullName
+          & $signtool sign /fd SHA256 /f $cert /p $env:SIGN_CERT_PASSWORD /tr https://timestamp.digicert.com /td SHA256 $exe.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Setup.exe
@@ -207,6 +303,13 @@ jobs:
       - name: Publish macOS
         run: dotnet publish src/LogPro.Avalonia/LogPro.Avalonia.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=false -p:Version=${{ needs.build.outputs.version }} -o publish/mac
 
+      - name: Validate macOS notices
+        shell: bash
+        run: |
+          for file in LogPro-LICENSE.txt LogPro-SECURITY.md LogPro-GPL_COMPLIANCE.md LogPro-THIRD_PARTY_NOTICES.txt SOURCE-OFFER-pymobiledevice3.txt; do
+            test -f "publish/mac/licenses/$file" || { echo "Missing macOS notice: $file"; exit 1; }
+          done
+
       - name: Create macOS Archive
         shell: bash
         run: |
@@ -240,12 +343,19 @@ jobs:
       - name: Publish Linux
         run: dotnet publish src/LogPro.Avalonia/LogPro.Avalonia.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=false -p:Version=${{ needs.build.outputs.version }} -o publish/linux
 
+      - name: Validate Linux notices
+        shell: bash
+        run: |
+          for file in LogPro-LICENSE.txt LogPro-SECURITY.md LogPro-GPL_COMPLIANCE.md LogPro-THIRD_PARTY_NOTICES.txt SOURCE-OFFER-pymobiledevice3.txt; do
+            test -f "publish/linux/licenses/$file" || { echo "Missing Linux notice: $file"; exit 1; }
+          done
+
       - name: Create Linux Archive
         shell: bash
         run: |
           mkdir -p dist
           cd publish/linux
-          tar -czf "../../dist/LogPro_v${{ needs.build.outputs.version }}_linux-x64.tar.gz" .
+          tar --exclude='*.pdb' -czf "../../dist/LogPro_v${{ needs.build.outputs.version }}_linux-x64.tar.gz" .
           ls ../../dist/
 
       - name: Upload Linux Archive

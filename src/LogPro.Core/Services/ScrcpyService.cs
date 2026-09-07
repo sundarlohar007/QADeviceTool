@@ -11,7 +11,9 @@ namespace LogPro.Services;
 public class ScrcpyService : IScrcpyService
 {
     private readonly string _scrcpy;
+    private readonly object _lifecycleLock = new();
     private System.Diagnostics.Process? _mirrorProcess;
+    private long _mirrorGeneration;
 
     public ScrcpyService()
     {
@@ -37,7 +39,7 @@ public class ScrcpyService : IScrcpyService
         }
         else
         {
-            AppLogger.Log.Warn($"[ScrcpyService] CheckAvailabilityAsync failed. Error: {result.Error}, Output: {result.Output}");
+            AppLogger.Log.Warn($"[ScrcpyService] CheckAvailabilityAsync failed. Error: {SecurityHelper.RedactSensitiveText(result.Error)}, Output: {SecurityHelper.RedactSensitiveText(result.Output)}");
             status.IsInstalled = false;
             status.StatusMessage = "scrcpy not found. Place in the tools/ folder.";
         }
@@ -53,32 +55,71 @@ public class ScrcpyService : IScrcpyService
 
     public async Task<bool> StartMirroringAsync(string serial, ScrcpyOptions? options = null)
     {
-        // Stop any existing mirroring before starting a new one
-        if (_mirrorProcess != null)
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial))
         {
-            StopMirroring();
+            LastError = "Network device selectors are disabled by offline security policy.";
+            return false;
         }
+
+        long generation;
+        System.Diagnostics.Process? previous;
+        lock (_lifecycleLock)
+        {
+            generation = ++_mirrorGeneration;
+            previous = _mirrorProcess;
+            _mirrorProcess = null;
+            MirroredDeviceSerial = null;
+        }
+        KillProcess(previous);
 
         var check = await CheckAvailabilityAsync();
         if (!check.IsInstalled) { LastError = "scrcpy not installed or not found."; return false; }
 
         var args = BuildScrcpyArguments(serial, options);
-        _mirrorProcess = ToolLauncher.StartLongRunning(_scrcpy, args);
+        var process = ToolLauncher.StartLongRunning(_scrcpy, args);
 
-        if (_mirrorProcess == null) { LastError = "Failed to start scrcpy process."; return false; }
+        if (process == null) { LastError = "Failed to start scrcpy process."; return false; }
 
-        MirroredDeviceSerial = serial;
+        System.Diagnostics.Process? replaced = null;
+        lock (_lifecycleLock)
+        {
+            if (generation != _mirrorGeneration)
+            {
+                replaced = process;
+            }
+            else
+            {
+                replaced = _mirrorProcess;
+                _mirrorProcess = process;
+                MirroredDeviceSerial = serial;
+            }
+        }
+        KillProcess(replaced);
+        if (generation != Volatile.Read(ref _mirrorGeneration))
+        {
+            LastError = "scrcpy start superseded.";
+            return false;
+        }
 
         // Wait briefly to see if process starts and stays running
-        await Task.Delay(500);
+        await Task.Delay(500).ConfigureAwait(false);
 
         LastError = "scrcpy process exited immediately.";
-        if (_mirrorProcess.HasExited)
+        lock (_lifecycleLock)
         {
-            MirroredDeviceSerial = null;
-            _mirrorProcess.Dispose();
-            _mirrorProcess = null;
-            return false;
+            if (!ReferenceEquals(_mirrorProcess, process))
+            {
+                KillProcess(process);
+                return false;
+            }
+
+            if (process.HasExited)
+            {
+                _mirrorProcess = null;
+                MirroredDeviceSerial = null;
+                process.Dispose();
+                return false;
+            }
         }
 
         LastError = null;
@@ -133,21 +174,29 @@ public class ScrcpyService : IScrcpyService
 
     public void StopMirroring()
     {
-        if (_mirrorProcess == null) return;
+        System.Diagnostics.Process? process;
+        lock (_lifecycleLock)
+        {
+            ++_mirrorGeneration;
+            process = _mirrorProcess;
+            _mirrorProcess = null;
+            MirroredDeviceSerial = null;
+        }
+        KillProcess(process);
+    }
 
+    private static void KillProcess(System.Diagnostics.Process? process)
+    {
+        if (process == null) return;
         try
         {
-            if (!_mirrorProcess.HasExited)
-            {
-                _mirrorProcess.Kill(true);
-            }
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            process.WaitForExit(2000);
         }
         catch (Exception ex) { AppLogger.Log.Warn(ex, "[ScrcpyService] Mirror operation failed"); }
         finally
         {
-            _mirrorProcess?.Dispose();
-            _mirrorProcess = null;
-            MirroredDeviceSerial = null;
+            process.Dispose();
         }
     }
 }

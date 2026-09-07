@@ -107,12 +107,14 @@ public partial class MacroViewModel : ObservableObject, IDisposable
 
     private async Task StartRecordingAsync()
     {
+        if (IsRecording) return;
         if (SelectedDevice == null || SelectedDevice.Platform != DevicePlatform.Android)
         {
             StatusMessage = "[!] Select an Android device. iOS macro capture is not supported by pymobiledevice3.";
             return;
         }
 
+        IsRecording = true;
         _recordOutputPath = Path.Combine(_macroDir, $"recording_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
         // Kill previous recording process if double-invoked
         if (_recordProcess != null) { try { _recordProcess.Kill(); _recordProcess.Dispose(); } catch { /* best effort */ } }
@@ -120,29 +122,30 @@ public partial class MacroViewModel : ObservableObject, IDisposable
 
         if (_recordProcess == null)
         {
+            IsRecording = false;
             StatusMessage = "[!] Failed to start recording.";
             return;
         }
 
-        IsRecording = true;
         StatusMessage = "[REC] Recording touch events... Press Stop when done.";
     }
 
     private async Task StopRecordingAsync()
     {
         IsRecording = false;
-        if (_recordProcess != null)
+        var process = Interlocked.Exchange(ref _recordProcess, null);
+        if (process != null)
         {
             try
             {
-                if (!_recordProcess.HasExited)
-                    _recordProcess.Kill(entireProcessTree: true);
-                _recordProcess.WaitForExit(1500);
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+                process.WaitForExit(1500);
             }
             catch { /* process already exited */ }
 
-            try { _recordProcess.Dispose(); } catch { /* best effort */ }
-            _recordProcess = null;
+            await _macroService.CompleteRecordingAsync(process);
+            try { process.Dispose(); } catch { /* best effort */ }
         }
 
         if (_recordOutputPath != null && File.Exists(_recordOutputPath))
@@ -179,36 +182,40 @@ public partial class MacroViewModel : ObservableObject, IDisposable
         if (PlaybackSpeed <= 0) PlaybackSpeed = 1.0f;
         if (LoopCount <= 0) LoopCount = 1;
 
-        _playCts?.Cancel();
-        _playCts = new CancellationTokenSource();
+        var playCts = new CancellationTokenSource();
+        Interlocked.Exchange(ref _playCts, playCts)?.Cancel();
         IsPlaying = true;
 
         try
         {
             for (int loop = 0; loop < LoopCount; loop++)
             {
-                _playCts.Token.ThrowIfCancellationRequested();
+                playCts.Token.ThrowIfCancellationRequested();
                 StatusMessage = $"Playing: {SelectedMacro.Name} (loop {loop + 1}/{LoopCount})...";
 
                 if (SelectedMacro.Macro.Events.Count > 0)
                     await _macroService.ReplayMacroAsync(SelectedDevice.Serial, SelectedMacro.Macro,
-                        speedMultiplier: PlaybackSpeed, token: _playCts.Token);
+                        speedMultiplier: PlaybackSpeed, token: playCts.Token);
                 else if (SelectedMacro.Macro.SimpleSteps.Count > 0)
                     await _macroService.ReplaySimpleMacroAsync(SelectedDevice.Serial, SelectedMacro.Macro.SimpleSteps,
-                        speedMultiplier: PlaybackSpeed, token: _playCts.Token);
+                        speedMultiplier: PlaybackSpeed, token: playCts.Token);
             }
             StatusMessage = $"Playback complete: {SelectedMacro.Name}";
         }
         catch (OperationCanceledException) { StatusMessage = "Playback cancelled."; }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[Macro] PlayMacroAsync failed"); StatusMessage = $"[!] Playback error: {ex.Message}"; }
-        finally { IsPlaying = false; }
+        finally
+        {
+            var isCurrent = ReferenceEquals(Interlocked.CompareExchange(ref _playCts, null, playCts), playCts);
+            playCts.Dispose();
+            if (isCurrent) IsPlaying = false;
+        }
     }
 
     [RelayCommand]
     private void StopPlayback()
     {
-        _playCts?.Cancel();
-        IsPlaying = false;
+        Volatile.Read(ref _playCts)?.Cancel();
         StatusMessage = "Playback stopped.";
     }
 
@@ -287,6 +294,16 @@ public partial class MacroViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        try
+        {
+            if (_recordProcess != null && !_recordProcess.HasExited)
+                _recordProcess.Kill(entireProcessTree: true);
+        }
+        catch { }
+        try { _recordProcess?.WaitForExit(1500); } catch { }
+        try { _recordProcess?.Dispose(); } catch { }
+        _recordProcess = null;
+        Volatile.Read(ref _playCts)?.Cancel();
         GC.SuppressFinalize(this);
     }
 }

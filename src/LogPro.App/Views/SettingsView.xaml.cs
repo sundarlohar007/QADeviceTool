@@ -1,6 +1,7 @@
-using System.Diagnostics;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using LogPro.Services;
 
 namespace LogPro.Views;
 
@@ -13,7 +14,10 @@ public partial class SettingsView : UserControl
 
     private void Hyperlink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
     {
-        Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+        // External browser launches are disabled by the offline hard gate.
+        AppLogger.Log.Info("[Settings] External link launch blocked by offline security policy");
+        MessageBox.Show("External links are disabled while offline security mode is active.",
+            "Offline Security", MessageBoxButton.OK, MessageBoxImage.Information);
         e.Handled = true;
     }
 }

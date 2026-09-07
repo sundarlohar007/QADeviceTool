@@ -8,8 +8,8 @@ public class SoakRunnerTests
     private static Mock<LogPro.Services.IAdbService> CreateFakeAdb()
     {
         var mock = new Mock<LogPro.Services.IAdbService>();
-        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>()))
-            .ReturnsAsync((string serial, string command) => command switch
+        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string serial, string command, CancellationToken _) => command switch
             {
                 var c when c.Contains("SurfaceFlinger --list") =>
                     "SurfaceView[com.fakegame/com.fakegame.MainActivity](BLAST)#0\n",
@@ -65,8 +65,8 @@ public class SoakRunnerTests
     {
         var mock = new Mock<LogPro.Services.IAdbService>();
         var memKb = 100_000;
-        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>()))
-            .ReturnsAsync((string s, string c) =>
+        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string s, string c, CancellationToken _) =>
             {
                 if (c.Contains("SurfaceFlinger --list")) return "SurfaceView[x]#0\n";
                 if (c.Contains("SurfaceFlinger --latency")) return "16666666\n1000\t1000\t10000000000\n";
@@ -88,8 +88,8 @@ public class SoakRunnerTests
     public async Task Run_NoLayer_FpsNullButStable()
     {
         var mock = new Mock<LogPro.Services.IAdbService>();
-        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>()))
-            .ReturnsAsync((string s, string c) => c.Contains("SurfaceFlinger --list") ? "no layers\n" : string.Empty);
+        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string s, string c, CancellationToken _) => c.Contains("SurfaceFlinger --list") ? "no layers\n" : string.Empty);
 
         var report = await SoakRunner.RunAsync(mock.Object, "FAKE01", "", TimeSpan.FromSeconds(1), _ => Task.CompletedTask);
 

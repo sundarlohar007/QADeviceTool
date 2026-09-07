@@ -11,7 +11,8 @@ public class IssueExportServiceTests
         var outDir = Path.Combine(Path.GetTempPath(), $"LogProIssue_{Guid.NewGuid():N}");
         Directory.CreateDirectory(outDir);
         var logFile = Path.Combine(outDir, "src_log.txt");
-        await File.WriteAllTextAsync(logFile, "logcat evidence line\n");
+        await File.WriteAllTextAsync(logFile,
+            "logcat evidence line\nserial=RF8M1234ABCD token=secret123 https://example.test/private\n");
 
         try
         {
@@ -34,6 +35,8 @@ public class IssueExportServiceTests
 
             var all = string.Join('\n', await Task.WhenAll(bundle.Files.Select(f => File.ReadAllTextAsync(f))));
             all.Should().NotContain("RF8M1234ABCD", "raw serial must never appear in the bundle");
+            all.Should().NotContain("secret123", "credentials must never appear in the bundle");
+            all.Should().NotContain("https://example.test", "URLs must never appear in the bundle");
 
             bundle.Files.Should().Contain(f => Path.GetFileName(f) == "session_log.txt");
         }

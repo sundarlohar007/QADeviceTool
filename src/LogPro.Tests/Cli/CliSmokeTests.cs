@@ -87,7 +87,7 @@ public class CliSmokeTests
         var outDir = Path.Combine(Path.GetTempPath(), $"LogProProfileTest_{Guid.NewGuid():N}");
         try
         {
-            var (exit, stdout, stderr) = await RunCliAsync(home, $"profile --serial FAKE01 --seconds 6 --package fakegame --out \"{outDir}\"", timeoutMs: 120000);
+            var (exit, stdout, stderr) = await RunCliAsync(home, $"profile --serial FAKE01 --seconds 6 --package com.fakegame --out \"{outDir}\"", timeoutMs: 120000);
             exit.Should().Be(0, because: $"profile should succeed; stdout: {stdout} stderr: {stderr}");
 
             var json = Path.Combine(outDir, "profile-report.json");
@@ -153,10 +153,19 @@ public class CliSmokeTests
                 await Task.Delay(300);
             }
 
+            var unauthorized = await client.GetAsync("/devices");
+            unauthorized.StatusCode.Should().Be(System.Net.HttpStatusCode.Unauthorized);
+
+            var startup = await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            startup.Should().Contain("Control API listening");
+            var keyLine = (await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5)))!;
+            keyLine.Should().StartWith("Control API key: ");
+            client.DefaultRequestHeaders.Add("X-LogPro-Api-Key", keyLine["Control API key: ".Length..]);
+
             var devicesJson = await client.GetStringAsync("/devices");
             devicesJson.Should().Contain("FAKE01");
 
-            var start = await client.GetAsync("/profile/start?serial=FAKE01&package=fakegame");
+            var start = await client.GetAsync("/profile/start?serial=FAKE01&package=com.fakegame");
             start.IsSuccessStatusCode.Should().BeTrue();
 
             // Poll until a snapshot with fps lands (first sample may still be in flight under CI load)

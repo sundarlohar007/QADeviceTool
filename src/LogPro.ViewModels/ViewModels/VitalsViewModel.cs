@@ -18,6 +18,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     private readonly IUiDispatcher _dispatcher;
     private System.Threading.Timer? _pollTimer;
     private CancellationTokenSource? _pollCts;
+    private int _disposed;
 
     [ObservableProperty] private ObservableCollection<DeviceInfo> _devices = new();
     [ObservableProperty] private DeviceInfo? _selectedDevice;
@@ -118,6 +119,8 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     private void StartPolling()
     {
         if (SelectedDevice == null) return;
+        if (_pollCts == null || _pollCts.IsCancellationRequested)
+            _pollCts = new CancellationTokenSource();
         IsPolling = true;
         _ = PollVitalsAsync();
         _pollTimer?.Change(3000, 3000);
@@ -127,38 +130,47 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     private void StopPolling()
     {
         IsPolling = false;
+        try { _pollCts?.Cancel(); } catch { }
         _pollTimer?.Change(Timeout.Infinite, Timeout.Infinite);
     }
 
-    private bool _isPollingNow;
+    private int _isPollingNow;
 
     private async Task PollVitalsAsync()
     {
-        if (_isPollingNow) return;
-        if (SelectedDevice == null || SelectedDevice.Platform != DevicePlatform.Android) return;
-        if (SelectedDevice.ConnectionState != DeviceConnectionState.Online)
+        if (Volatile.Read(ref _disposed) != 0 || Interlocked.Exchange(ref _isPollingNow, 1) != 0) return;
+        var device = SelectedDevice;
+        var token = _pollCts?.Token ?? CancellationToken.None;
+        if (device == null || device.Platform != DevicePlatform.Android)
+        {
+            Interlocked.Exchange(ref _isPollingNow, 0);
+            return;
+        }
+        if (device.ConnectionState != DeviceConnectionState.Online)
         {
             _dispatcher.Post(() =>
             {
-                MemInfoOutput = $"Device is {SelectedDevice.ConnectionState}. Cannot poll vitals.";
+                if (Volatile.Read(ref _disposed) != 0) return;
+                MemInfoOutput = $"Device is {device.ConnectionState}. Cannot poll vitals.";
                 TopProcessesOutput = string.Empty;
             });
+            Interlocked.Exchange(ref _isPollingNow, 0);
             return;
         }
 
-        _isPollingNow = true;
         try
         {
-            var serial = SelectedDevice.Serial;
-            var memResult = await _adbService.ExecuteCommandAsync(serial, "shell dumpsys meminfo");
-            var topResult = await _adbService.ExecuteCommandAsync(serial, "shell top -b -n 1");
-            var batteryResult = await _adbService.ExecuteCommandAsync(serial, "shell dumpsys battery");
-            var thermalResult = await _adbService.ExecuteCommandAsync(serial, "shell cat /sys/class/thermal/thermal_zone0/temp");
-            var wifiResult = await _adbService.ExecuteCommandAsync(serial, "shell dumpsys wifi | grep -E 'SSID|mWifiInfo'");
-            var ipResult = await _adbService.ExecuteCommandAsync(serial, "shell ip route");
+            var serial = device.Serial;
+            var memResult = await _adbService.ExecuteCommandAsync(serial, "shell dumpsys meminfo", token);
+            var topResult = await _adbService.ExecuteCommandAsync(serial, "shell top -b -n 1", token);
+            var batteryResult = await _adbService.ExecuteCommandAsync(serial, "shell dumpsys battery", token);
+            var thermalResult = await _adbService.ExecuteCommandAsync(serial, "shell cat /sys/class/thermal/thermal_zone0/temp", token);
+            var wifiResult = await _adbService.ExecuteCommandAsync(serial, "shell dumpsys wifi | grep -E 'SSID|mWifiInfo'", token);
+            var ipResult = await _adbService.ExecuteCommandAsync(serial, "shell ip route", token);
 
             _dispatcher.Post(() =>
             {
+                if (Volatile.Read(ref _disposed) != 0 || token.IsCancellationRequested) return;
                 ParseMemory(memResult);
                 ParseCpu(topResult);
                 ParseBattery(batteryResult);
@@ -168,9 +180,10 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            Services.AppLogger.Log.Debug(ex, "[Vitals] PollVitalsAsync temporary error");
+            if (ex is not OperationCanceledException)
+                Services.AppLogger.Log.Debug(ex, "[Vitals] PollVitalsAsync temporary error");
         }
-        finally { _isPollingNow = false; }
+        finally { Interlocked.Exchange(ref _isPollingNow, 0); }
     }
 
     private void ParseMemory(string? memResult)
@@ -264,6 +277,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _pollTimer?.Dispose(); _pollTimer = null;
         _pollCts?.Cancel(); _pollCts?.Dispose();

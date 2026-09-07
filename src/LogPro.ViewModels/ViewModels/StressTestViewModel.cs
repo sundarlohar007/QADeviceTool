@@ -22,8 +22,11 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     private readonly IUiDispatcher _dispatcher;
 
     private CancellationTokenSource? _runCts;
+    private System.Threading.Timer? _metricsTimer;
     private Process? _adbProcess;
     private string? _runningOnSerial;
+    private int _runActive;
+    private int _disposed;
     private DateTime _runStartedAt;
     private List<AppItem> _allApps = new();
 
@@ -77,8 +80,10 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
+        if (Volatile.Read(ref _disposed) != 0) return;
         _dispatcher.Post(() =>
         {
+            if (Volatile.Read(ref _disposed) != 0) return;
             Devices.Clear();
             foreach (var d in devices) Devices.Add(d);
             SelectedDevice ??= Devices.FirstOrDefault(d => d.Platform == DevicePlatform.Android) ?? Devices.FirstOrDefault();
@@ -87,6 +92,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 
     private void OnDeviceDisconnected(DeviceInfo device)
     {
+        if (Volatile.Read(ref _disposed) != 0) return;
         if (!IsRunning) return;
         if (_runningOnSerial != null && device.Serial == _runningOnSerial)
         {
@@ -139,29 +145,35 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task RunMonkeyAsync()
     {
-        if (IsRunning) return;
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (IsRunning || Interlocked.Exchange(ref _runActive, 1) != 0) return;
         if (SelectedDevice == null)
         {
+            Interlocked.Exchange(ref _runActive, 0);
             StatusMessage = "[!] No device selected.";
             return;
         }
         if (SelectedDevice.Platform != DevicePlatform.Android)
         {
+            Interlocked.Exchange(ref _runActive, 0);
             StatusMessage = "[!] Monkey is Android-only — pymobiledevice3 has no equivalent on iOS.";
             return;
         }
         if (string.IsNullOrWhiteSpace(TargetPackage))
         {
+            Interlocked.Exchange(ref _runActive, 0);
             StatusMessage = "[!] Search and pick an app, or type a package name.";
             return;
         }
         if (!System.Text.RegularExpressions.Regex.IsMatch(TargetPackage, @"^[a-zA-Z0-9._]+$"))
         {
+            Interlocked.Exchange(ref _runActive, 0);
             StatusMessage = "[!] Invalid package name. Letters, numbers, dots, underscores only.";
             return;
         }
         if (EventCount <= 0)
         {
+            Interlocked.Exchange(ref _runActive, 0);
             StatusMessage = "[!] Event count must be > 0.";
             return;
         }
@@ -178,6 +190,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         var totalPct = PctTouch + PctMotion + PctTrackball + PctNav + PctSyskeys + PctAppswitch;
         if (totalPct != 100)
         {
+            Interlocked.Exchange(ref _runActive, 0);
             StatusMessage = $"[!] Event percentages must sum to 100%. Current total: {totalPct}%.";
             return;
         }
@@ -194,20 +207,26 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
             }
             else
             {
+                Interlocked.Exchange(ref _runActive, 0);
                 StatusMessage = $"[!] Package '{TargetPackage}' not installed on device.";
                 return;
             }
         }
 
-        _runCts = new CancellationTokenSource();
+        var serial = SelectedDevice.Serial;
+        var package = TargetPackage;
+        var runCts = new CancellationTokenSource();
+        _runCts = runCts;
         IsRunning = true;
         _metricSnapshots.Clear();
-        var metricsTimer = new System.Threading.Timer(async _ =>
+        _runningOnSerial = serial;
+        _metricsTimer?.Dispose();
+        _metricsTimer = new System.Threading.Timer(async _ =>
         {
             try
             {
-                if (_runningOnSerial == null || _adbService == null) return;
-                var memResult = await _adbService.ExecuteCommandAsync(_runningOnSerial, "shell dumpsys meminfo " + TargetPackage);
+                if (runCts.IsCancellationRequested) return;
+                var memResult = await _adbService.ExecuteCommandAsync(serial, "shell dumpsys meminfo " + package);
                 var snapshot = new Services.MetricSnapshot { Timestamp = DateTime.Now, EventsInjected = EventsInjected };
                 var pssMatch = System.Text.RegularExpressions.Regex.Match(memResult, @"TOTAL\s+(\d+)");
                 if (pssMatch.Success && int.TryParse(pssMatch.Groups[1].Value, out var pss))
@@ -221,15 +240,14 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         EventsInjected = 0;
         ProgressPercent = 0;
         Output = string.Empty;
-        _runningOnSerial = SelectedDevice.Serial;
         _runStartedAt = DateTime.Now;
 
-        var args = $"-s \"{SelectedDevice.Serial}\" shell monkey -p {TargetPackage} " +
+        var args = $"-s \"{serial}\" shell monkey -p {package} " +
                    $"-v -v --throttle {ThrottleMs} -s {Seed} --pct-touch {PctTouch} " +
                    $"--pct-motion {PctMotion} --pct-trackball {PctTrackball} --pct-nav {PctNav} " +
                    $"--pct-syskeys {PctSyskeys} --pct-appswitch {PctAppswitch} {EventCount}";
 
-        StatusMessage = $"Running monkey on {TargetPackage} ({EventCount} events)...";
+        StatusMessage = $"Running monkey on {package} ({EventCount} events)...";
         AppendOutput($"$ adb {args}\n");
 
         try
@@ -253,13 +271,13 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
-            await process.WaitForExitAsync(_runCts.Token).ConfigureAwait(false);
+            await process.WaitForExitAsync(runCts.Token).ConfigureAwait(false);
 
             var duration = DateTime.Now - _runStartedAt;
-            var metrics = await CollectPerformanceMetricsAsync(SelectedDevice.Serial, TargetPackage).ConfigureAwait(false);
+            var metrics = await CollectPerformanceMetricsAsync(serial, package).ConfigureAwait(false);
             var report = StressReportBuilder.BuildReport(new StressRunSummary
             {
-                PackageName = TargetPackage,
+                PackageName = package,
                 DeviceName = SelectedDevice.DisplayName,
                 EventCount = EventCount,
                 EventsInjected = EventsInjected,
@@ -273,7 +291,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 
             await _dispatcher.InvokeAsync(() =>
             {
-                if (!_runCts.IsCancellationRequested)
+                if (!runCts.IsCancellationRequested)
                 {
                     StatusMessage = $"Done. {EventsInjected}/{EventCount} events. Crashes: {CrashCount} ANRs: {AnrCount}";
                     ProgressPercent = EventCount > 0 ? (double)EventsInjected / EventCount * 100 : 100;
@@ -282,20 +300,26 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         }
         catch (OperationCanceledException)
         {
-            await KillOnDeviceMonkeyAsync(_runningOnSerial);
+            await KillOnDeviceMonkeyAsync(serial);
             await _dispatcher.InvokeAsync(() => StatusMessage = "Cancelled. On-device monkey killed.");
         }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, "[StressTest] RunMonkeyAsync failed");
+            await KillOnDeviceMonkeyAsync(serial);
             await _dispatcher.InvokeAsync(() => { StatusMessage = $"[!] Error: {ex.Message}"; AppendOutput($"\nERROR: {ex.Message}"); });
         }
         finally
         {
+            _metricsTimer?.Dispose();
+            _metricsTimer = null;
             try { _adbProcess?.Dispose(); } catch { /* best effort */ }
             _adbProcess = null;
             _runningOnSerial = null;
+            if (ReferenceEquals(_runCts, runCts)) _runCts = null;
+            runCts.Dispose();
             IsRunning = false;
+            Interlocked.Exchange(ref _runActive, 0);
         }
     }
 
@@ -396,11 +420,17 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     {
         _dispatcher.Post(() =>
         {
+            if (Volatile.Read(ref _disposed) != 0) return;
             // Cap output buffer at ~200KB to prevent UI sluggishness during long runs.
             const int MaxChars = 200_000;
-            if (Output.Length > MaxChars)
-                Output = "...[truncated]...\n" + Output.Substring(Output.Length - MaxChars / 2);
-            _outputBuffer.AppendLine(line); Output = _outputBuffer.ToString();
+            _outputBuffer.AppendLine(line);
+            if (_outputBuffer.Length > MaxChars)
+            {
+                var keepFrom = _outputBuffer.Length - MaxChars / 2;
+                _outputBuffer.Remove(0, keepFrom);
+                _outputBuffer.Insert(0, "...[truncated]...\n");
+            }
+            Output = _outputBuffer.ToString();
         });
     }
 
@@ -426,8 +456,9 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
             var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             var safePkg = string.IsNullOrEmpty(TargetPackage) ? "monkey" : TargetPackage.Replace('.', '_');
             var path = Path.Combine(dir, $"monkey_{safePkg}_{stamp}.log");
-            var header = $"# LogPro monkey run\n# Device: {SelectedDevice?.DisplayName} ({SelectedDevice?.Serial})\n" +
-                         $"# Package: {TargetPackage}\n# Events: {EventCount}  Seed: {Seed}  Throttle: {ThrottleMs}ms\n" +
+            var header = $"# LogPro monkey run\n# Device: {SecurityHelper.RedactSensitiveText(SelectedDevice?.DisplayName)} " +
+                         $"({SecurityHelper.HashSerial(SelectedDevice?.Serial ?? string.Empty)})\n" +
+                         $"# Package: {SecurityHelper.RedactSensitiveText(TargetPackage)}\n# Events: {EventCount}  Seed: {Seed}  Throttle: {ThrottleMs}ms\n" +
                          $"# Crashes: {CrashCount}  ANRs: {AnrCount}  Events injected: {EventsInjected}\n\n";
             await File.WriteAllTextAsync(path, header + Output);
             StatusMessage = $"Saved → {path}";
@@ -437,8 +468,21 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        try { _runCts?.Cancel(); } catch { }
+        try
+        {
+            if (_adbProcess != null && !_adbProcess.HasExited)
+                _adbProcess.Kill(entireProcessTree: true);
+        }
+        catch { }
+        _metricsTimer?.Dispose();
+        _metricsTimer = null;
+        var serial = _runningOnSerial;
+        if (!string.IsNullOrWhiteSpace(serial))
+            _ = Task.Run(() => KillOnDeviceMonkeyAsync(serial));
         GC.SuppressFinalize(this);
     }
 }

@@ -27,7 +27,7 @@ public sealed class AvaloniaDialogService : IDialogService
         buttons.Children.Add(cancel);
         panel.Children.Add(buttons);
         window.Content = panel;
-        window.ShowDialog(Owner);
+        window.ShowDialog(Owner!);
         return result;
     }
 
@@ -49,7 +49,7 @@ public sealed class AvaloniaDialogService : IDialogService
         ok.Click += (_, _) => window.Close();
         panel.Children.Add(ok);
         window.Content = panel;
-        window.ShowDialog(Owner);
+        window.ShowDialog(Owner!);
     }
 
     public static Window? Owner { get; set; }

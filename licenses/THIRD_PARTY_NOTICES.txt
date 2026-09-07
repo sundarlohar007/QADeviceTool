@@ -1,20 +1,39 @@
 LogPro - Third-Party Open Source Software Notices
 
 This application includes the following third-party open-source software 
-components. These components are bundled as dynamically linked or standalone 
-executables. The LogPro remains proprietary software, and its source 
-code is not subject to these third-party licenses.
+components. LogPro itself is distributed under the MIT license in the repository
+root. Each bundled component retains its own license.
 
 -------------------------------------------------------------------------------
-1. Component: scrcpy
+1. Component: Android platform-tools (ADB 36.0.0)
+   License: Android SDK License Agreement / Apache 2.0 components
+   Project Link: https://developer.android.com/tools/releases/platform-tools
+
+2. Component: scrcpy 3.3.4
    License: Apache License 2.0
    Copyright (c) 2018 Genymobile
    Project Link: https://github.com/Genymobile/scrcpy
    Full license text provided in: LICENSE-scrcpy.txt
 
-2. Component: libimobiledevice
-   License: GNU Lesser General Public License (LGPL) v2.1
-   Copyright (c) 2008-202X The libimobiledevice Project Authors
-   Project Link: https://libimobiledevice.org/
-   Full license text provided in: LICENSE-libimobiledevice.txt
+3. Component: pymobiledevice3 9.12.0
+   License: GNU General Public License v3.0
+   Project Link: https://github.com/doronz88/pymobiledevice3
+   Source offer: SOURCE-OFFER-pymobiledevice3.txt
+
+4. Component: SDL2 and FFmpeg (bundled with scrcpy)
+   License: See the LICENSE file shipped in the scrcpy tool directory and the
+   upstream scrcpy distribution notices.
+   Project Link: https://github.com/Genymobile/scrcpy
+
+5. Component: Avalonia, CommunityToolkit.Mvvm
+   License: MIT
+   Project Links: https://avaloniaui.net/ and https://github.com/CommunityToolkit/dotnet
+
+6. Component: NLog
+   License: BSD-3-Clause
+   Project Link: https://github.com/NLog/NLog
+
+7. Component: Inter and Space Grotesk fonts
+   License: SIL Open Font License 1.1
+   Project Link: https://scripts.sil.org/OFL
 -------------------------------------------------------------------------------

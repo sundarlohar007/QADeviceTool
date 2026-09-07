@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
 using LogPro.Services;
+using LogPro.Helpers;
 
 namespace LogPro.ViewModels;
 
@@ -90,6 +91,12 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
         if (string.IsNullOrWhiteSpace(TargetUrl))
         {
             StatusMessage = "[!] Please enter a valid URL or Intent URI.";
+            return;
+        }
+
+        if (!SecurityHelper.IsOfflineSafeUri(TargetUrl.Trim()))
+        {
+            StatusMessage = "[!] Web, file, and network URLs are blocked by offline security policy. Use a non-network app scheme.";
             return;
         }
 

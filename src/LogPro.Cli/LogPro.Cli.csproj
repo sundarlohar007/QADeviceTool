@@ -14,4 +14,42 @@
     <ProjectReference Include="..\LogPro.Core\LogPro.Core.csproj" />
   </ItemGroup>
 
+  <!-- The Windows CLI release is standalone too: use the same tested native tools as the app. -->
+  <ItemGroup>
+    <Content Include="..\LogPro.App\tools\**\*"
+             Exclude="..\LogPro.App\tools\pymobiledevice3\build\**;..\LogPro.App\tools\pymobiledevice3\*.spec;..\LogPro.App\tools\pymobiledevice3\*.py;..\LogPro.App\tools\pymobiledevice3\**\*.dist-info\**;..\LogPro.App\tools\pymobiledevice3\**\__pycache__\**;..\LogPro.App\tools\pymobiledevice3\pymobiledevice3\_internal\numpy\**;..\LogPro.App\tools\pymobiledevice3\pymobiledevice3\_internal\**\numpy\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>tools\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\LogPro.App\tools-manifest.json" Link="tools-manifest.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\LICENSE" Link="licenses\LogPro-LICENSE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\SECURITY.md" Link="licenses\LogPro-SECURITY.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\GPL_COMPLIANCE.md" Link="licenses\LogPro-GPL_COMPLIANCE.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\THIRD_PARTY_NOTICES.txt" Link="licenses\LogPro-THIRD_PARTY_NOTICES.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\licenses\**\*" Link="licenses\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

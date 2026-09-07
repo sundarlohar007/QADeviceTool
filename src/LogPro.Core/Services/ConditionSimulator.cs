@@ -1,4 +1,5 @@
 using LogPro.Models;
+using LogPro.Helpers;
 
 namespace LogPro.Services;
 
@@ -15,6 +16,7 @@ public sealed class ConditionSimulator
     /// <summary>Grants mock-location to the app under test (Android).</summary>
     public async Task<bool> SetMockLocationAppAsync(string serial, string appPackage)
     {
+        if (!SecurityHelper.IsValidPackageName(appPackage)) return false;
         var result = await _adb.ExecuteCommandAsync(serial,
             $"shell appops set {appPackage} android:mock_location allow");
         return !result.Contains("Error", StringComparison.OrdinalIgnoreCase);
@@ -23,6 +25,7 @@ public sealed class ConditionSimulator
     /// <summary>MANDATORY reset — revokes mock-location (§12.4 safety).</summary>
     public async Task<bool> ResetLocationAsync(string serial, string appPackage)
     {
+        if (!SecurityHelper.IsValidPackageName(appPackage)) return false;
         var result = await _adb.ExecuteCommandAsync(serial,
             $"shell appops set {appPackage} android:mock_location deny");
         return !result.Contains("Error", StringComparison.OrdinalIgnoreCase);
@@ -51,6 +54,7 @@ public sealed class ConditionSimulator
     /// <summary>Applies a network preset via su + tc/netem. Returns false without root.</summary>
     public async Task<bool> ApplyNetworkConditionAsync(string serial, NetworkPreset preset, string networkInterface)
     {
+        if (!SecurityHelper.IsValidNetworkInterface(networkInterface)) return false;
         if (!await HasRootAsync(serial)) return false;
         var script = ConditionPlanners.BuildNetemScript(preset, networkInterface);
         var result = await _adb.ExecuteCommandAsync(serial, $"shell su -c \"{script.Replace("\"", "\\\"")}\"");
@@ -60,6 +64,7 @@ public sealed class ConditionSimulator
     /// <summary>Resets network conditioning.</summary>
     public async Task<bool> ResetNetworkConditionAsync(string serial, string networkInterface)
     {
+        if (!SecurityHelper.IsValidNetworkInterface(networkInterface)) return false;
         var script = ConditionPlanners.BuildNetemResetScript(networkInterface);
         var result = await _adb.ExecuteCommandAsync(serial, $"shell su -c \"{script}\"");
         return !result.Contains("Error", StringComparison.OrdinalIgnoreCase);

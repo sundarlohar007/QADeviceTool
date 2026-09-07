@@ -57,7 +57,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private DeviceInfo? _selectedDevice;
 
     [ObservableProperty]
-    private bool _anonymizeExport = false;
+    private bool _anonymizeExport = true;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _availableDevices = new();
@@ -69,6 +69,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private bool _isPaused;
 
     private bool _isSubscribedToLogBatch;
+    private int _disposed;
     private readonly HashSet<string> _autoCaptureInProgress = new();
     private readonly object _autoCaptureLock = new();
     private bool _isLoadingSession;
@@ -355,8 +356,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     private void OnLogBatchReceived(string sessionId, string batch)
     {
+        if (Volatile.Read(ref _disposed) != 0) return;
         _dispatcher.Post(() =>
         {
+            if (Volatile.Read(ref _disposed) != 0) return;
             if (SelectedSession == null || SelectedSession.Id != sessionId) return;
             if (IsPaused) return;
 
@@ -1217,9 +1220,17 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceMonitor.DeviceConnected -= OnDeviceConnected;
         _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        if (_isSubscribedToLogBatch)
+        {
+            _sessionService.LogBatchReceived -= OnLogBatchReceived;
+            _isSubscribedToLogBatch = false;
+        }
+        if (IsScreenRecording)
+            _ = StopScreenRecordAsync();
         GC.SuppressFinalize(this);
     }
 }

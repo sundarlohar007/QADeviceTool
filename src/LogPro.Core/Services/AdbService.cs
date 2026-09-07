@@ -20,14 +20,18 @@ public class AdbService : IAdbService
 
     public async Task<bool> BroadcastIntentAsync(string serial, string uri)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !SecurityHelper.IsOfflineSafeUri(uri))
+            return false;
         if (!TryBuildDeepLinkIntentArgs(serial, uri, out var args)) return false;
         var result = await RunAdbAsync(args, FastTimeoutMs);
         return result.Success && (result.Output.Contains("Starting:") || result.Output.Contains("Complete"));
     }
 
-    public async Task<string> ExecuteCommandAsync(string serial, string command)
+    public async Task<string> ExecuteCommandAsync(string serial, string command, CancellationToken cancellationToken = default)
     {
-        var result = await RunAdbAsync($"-s {serial} {command}", DefaultTimeoutMs);
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || SecurityHelper.IsNetworkCapableCommand(command))
+            return "Blocked by LogPro offline security policy.";
+        var result = await RunAdbAsync($"-s {serial} {command}", DefaultTimeoutMs, cancellationToken: cancellationToken);
         return result.Success ? result.Output : result.Error;
     }
 
@@ -36,6 +40,9 @@ public class AdbService : IAdbService
     private const int FastTimeoutMs = 5000;
     private const int MaxRetryAttempts = 2;
     private const int RetryDelayMs = 500;
+    private static readonly Regex DeviceSelectorArgument = new(
+        @"(?:^|\s)-s\s+(?:""(?<serial>[^""]+)""|(?<serial>\S+))",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public AdbService()
     {
@@ -45,19 +52,25 @@ public class AdbService : IAdbService
     // ─── Semaphore-guarded ADB execution ─────────────────────────
     // All adb calls go through these to prevent concurrent USB transport access.
 
-    private async Task<ToolLauncherResult> RunAdbAsync(string arguments, int timeoutMs = DefaultTimeoutMs, Action<string>? outputCallback = null)
+    private async Task<ToolLauncherResult> RunAdbAsync(string arguments, int timeoutMs = DefaultTimeoutMs,
+        Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
     {
-        return await RunAdbWithRetryAsync(arguments, timeoutMs, outputCallback);
+        return await RunAdbWithRetryAsync(arguments, timeoutMs, outputCallback, cancellationToken: cancellationToken);
     }
 
-    private async Task<ToolLauncherResult> RunAdbWithRetryAsync(string arguments, int timeoutMs, Action<string>? outputCallback, int attempt = 1)
+    private async Task<ToolLauncherResult> RunAdbWithRetryAsync(string arguments, int timeoutMs,
+        Action<string>? outputCallback, int attempt = 1, CancellationToken cancellationToken = default)
     {
         try
         {
+            var selector = DeviceSelectorArgument.Match(arguments);
+            if (selector.Success && !SecurityHelper.IsValidOfflineDeviceSelector(selector.Groups["serial"].Value))
+                return new ToolLauncherResult { Success = false, Error = "Blocked by LogPro offline security policy." };
+
             ToolLauncherResult? result = null;
             for (int retry = 0; retry < MaxRetryAttempts; retry++)
             {
-                result = await ToolLauncher.RunAsync(_adb, arguments, timeoutMs, outputCallback).ConfigureAwait(false);
+                result = await ToolLauncher.RunAsync(_adb, arguments, timeoutMs, outputCallback, cancellationToken).ConfigureAwait(false);
                 if (result.Success) return result;
 
                 // Only retry on transient failures, not permanent errors
@@ -66,14 +79,14 @@ public class AdbService : IAdbService
                     result.ExitCode == 1) break;
 
                 if (retry < MaxRetryAttempts - 1)
-                    await Task.Delay(RetryDelayMs).ConfigureAwait(false);
+                    await Task.Delay(RetryDelayMs, cancellationToken).ConfigureAwait(false);
             }
 
             return result!;
         }
         catch (Exception ex)
         {
-            AppLogger.Log.Error(ex, $"[AdbService] Exception in RunAdbAsync: {ex.Message}");
+            AppLogger.Log.Error(ex, "[AdbService] Exception in RunAdbAsync");
             return new ToolLauncherResult { Success = false, Error = ex.Message };
         }
     }
@@ -110,7 +123,7 @@ public class AdbService : IAdbService
         }
         else
         {
-            AppLogger.Log.Warn($"[AdbService] CheckAvailabilityAsync failed. Error: {result.Error}, Output: {result.Output}");
+            AppLogger.Log.Warn($"[AdbService] CheckAvailabilityAsync failed. Error: {SecurityHelper.RedactSensitiveText(result.Error)}, Output: {SecurityHelper.RedactSensitiveText(result.Output)}");
             status.IsInstalled = false;
             status.StatusMessage = "ADB not found. Place platform-tools in the tools/ folder.";
         }
@@ -205,13 +218,17 @@ public class AdbService : IAdbService
 
     public async Task<string?> GetDevicePropertyAsync(string serial, string property)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !SecurityHelper.IsSafeDeviceArgument(property)) return null;
         var result = await RunAdbAsync($"-s {serial} shell getprop {property}", FastTimeoutMs);
         return result.Success ? result.Output.Trim() : null;
     }
 
-    public async Task<(bool Success, string Output, string Error)> ExecuteCommandWithResultAsync(string serial, string args)
+    public async Task<(bool Success, string Output, string Error)> ExecuteCommandWithResultAsync(string serial, string args,
+        CancellationToken cancellationToken = default)
     {
-        var result = await RunAdbAsync($"-s {serial} {args}", DefaultTimeoutMs);
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || SecurityHelper.IsNetworkCapableCommand(args))
+            return (false, string.Empty, "Blocked by LogPro offline security policy.");
+        var result = await RunAdbAsync($"-s {serial} {args}", DefaultTimeoutMs, cancellationToken: cancellationToken);
         return (result.Success, result.Output, result.Error);
     }
 
@@ -220,7 +237,7 @@ public class AdbService : IAdbService
     {
         if (device.ConnectionState != DeviceConnectionState.Online)
         {
-            AppLogger.Log.Debug($"[AdbService] Skipping details for {device.Serial} - device is {device.ConnectionState}");
+            AppLogger.Log.Debug($"[AdbService] Skipping details for {SecurityHelper.HashSerial(device.Serial)} - device is {device.ConnectionState}");
             return device;
         }
 
@@ -252,7 +269,7 @@ public class AdbService : IAdbService
         }
         catch (Exception ex)
         {
-            AppLogger.Log.Error(ex, $"[AdbService] Error getting details for {device.Serial}");
+            AppLogger.Log.Error(ex, $"[AdbService] Error getting details for {SecurityHelper.HashSerial(device.Serial)}");
         }
 
         return device;
@@ -261,6 +278,9 @@ public class AdbService : IAdbService
     public async Task<System.Diagnostics.Process?> StartLogCaptureAsync(string serial, string outputFilePath,
         LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !PathHelper.IsSafeLocalPath(outputFilePath))
+            return null;
+
         var bufferArg = buffer switch
         {
             LogcatBuffer.Main => "-b main",
@@ -290,7 +310,7 @@ public class AdbService : IAdbService
 
     public async Task<bool> CaptureScreenshotAsync(string serial, string outputPath)
     {
-        if (string.IsNullOrEmpty(serial))
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !PathHelper.IsSafeLocalPath(outputPath))
         {
             AppLogger.Log.Warn("[AdbService] CaptureScreenshotAsync called with empty serial");
             return false;
@@ -309,7 +329,7 @@ public class AdbService : IAdbService
         }
         catch (Exception ex)
         {
-            AppLogger.Log.Error(ex, $"[AdbService] Screenshot failed for {serial}");
+            AppLogger.Log.Error(ex, $"[AdbService] Screenshot failed for {SecurityHelper.HashSerial(serial)}");
             return false;
         }
     }
@@ -320,15 +340,25 @@ public class AdbService : IAdbService
     /// </summary>
     public async Task<string?> StartScreenRecordAsync(string serial, string? outputDir = null, int maxDurationSec = 180, string bitRate = "8M")
     {
-        if (string.IsNullOrWhiteSpace(serial))
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) ||
+            (outputDir != null && !PathHelper.IsSafeLocalPath(outputDir)) ||
+            maxDurationSec is < 1 or > 180 ||
+            !Regex.IsMatch(bitRate, @"^\d+(?:\.\d+)?[KMG]$"))
             return null;
 
-        // Prevent concurrent recordings on the same AdbService instance
-        if (_activeRecordProcess != null && !_activeRecordProcess.HasExited)
-            return null;
+        await _screenRecordGate.WaitAsync().ConfigureAwait(false);
 
         try
         {
+            // Prevent concurrent recordings on the same AdbService instance.
+            if (_activeRecordProcess != null && !_activeRecordProcess.HasExited)
+                return null;
+            if (_activeRecordProcess != null)
+            {
+                _activeRecordProcess.Dispose();
+                _activeRecordProcess = null;
+            }
+
             _activeRecordRemotePath = $"/sdcard/qa_screenrecord_{DateTime.Now:yyyyMMdd_HHmmss}.mp4";
             var remotePath = _activeRecordRemotePath;
             var arguments = $"-s {serial} shell screenrecord --bit-rate {bitRate} --time-limit {maxDurationSec} {remotePath}";
@@ -338,14 +368,14 @@ public class AdbService : IAdbService
             // Store process reference for later stop
             _activeRecordProcess = process;
             ProcessManager.Instance.TrackProcess(process);
-            ProcessManager.Instance.TrackProcess(process);
             return remotePath;
         }
         catch (Exception ex)
         {
-            AppLogger.Log.Error(ex, $"[AdbService] StartScreenRecord failed for {serial}");
+            AppLogger.Log.Error(ex, $"[AdbService] StartScreenRecord failed for {SecurityHelper.HashSerial(serial)}");
             return null;
         }
+        finally { _screenRecordGate.Release(); }
     }
 
     /// <summary>
@@ -353,6 +383,11 @@ public class AdbService : IAdbService
     /// </summary>
     public async Task<string?> StopScreenRecordAsync(string serial, string? localOutputPath = null)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) ||
+            (localOutputPath != null && !PathHelper.IsSafeLocalPath(localOutputPath)))
+            return null;
+
+        await _screenRecordGate.WaitAsync().ConfigureAwait(false);
         try
         {
             var process = Interlocked.Exchange(ref _activeRecordProcess, null);
@@ -381,7 +416,7 @@ public class AdbService : IAdbService
                 return null;
             var localPath = localOutputPath ?? Path.Combine(
                 Helpers.PathHelper.GetDefaultSessionsDirectory(),
-                $"screenrecord_{serial}_{DateTime.Now:yyyyMMdd_HHmmss}.mp4");
+                $"screenrecord_{SecurityHelper.HashSerial(serial)}_{DateTime.Now:yyyyMMdd_HHmmss}.mp4");
 
             var pullResult = await RunAdbAsync($"-s {serial} pull \"{remoteFile}\" \"{localPath}\"", 30000);
             // Clean up remote file
@@ -391,14 +426,16 @@ public class AdbService : IAdbService
         }
         catch (Exception ex)
         {
-            AppLogger.Log.Error(ex, $"[AdbService] StopScreenRecord failed for {serial}");
+            AppLogger.Log.Error(ex, $"[AdbService] StopScreenRecord failed for {SecurityHelper.HashSerial(serial)}");
             return null;
         }
+        finally { _screenRecordGate.Release(); }
     }
 
     public bool IsScreenRecording { get { var p = _activeRecordProcess; return p != null && !p.HasExited; } }
     private System.Diagnostics.Process? _activeRecordProcess;
     private string? _activeRecordRemotePath;
+    private readonly SemaphoreSlim _screenRecordGate = new(1, 1);
 
     public async Task<string?> GetPidFromPackageNameAsync(string serial, string packageNameKeyword)
     {
@@ -427,7 +464,7 @@ public class AdbService : IAdbService
         }
         catch (Exception ex)
         {
-            AppLogger.Log.Error(ex, $"[AdbService] GetPidFromPackageNameAsync failed for {packageNameKeyword}");
+            AppLogger.Log.Error(ex, $"[AdbService] GetPidFromPackageNameAsync failed for {SecurityHelper.RedactSensitiveText(packageNameKeyword)}");
         }
 
         return null;
@@ -435,6 +472,8 @@ public class AdbService : IAdbService
 
     public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? outputCallback = null)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !PathHelper.IsSafeLocalPath(apkPath))
+            return (false, "Invalid local path or device selector.");
         var result = await RunAdbAsync($"-s {serial} install -r \"{apkPath}\"", 600000, outputCallback);
 
         if (result.Output.Contains("Failure", StringComparison.OrdinalIgnoreCase))
@@ -451,38 +490,14 @@ public class AdbService : IAdbService
         return (false, result.Output.Trim());
     }
 
-    public async Task<(bool Success, string Message)> EnableWirelessAsync(string serial, int port = 5555)
-    {
-        var result = await RunAdbAsync($"-s {serial} tcpip {port}", 10000);
-        if (!result.Success)
-            return (false, $"Failed to enable TCP mode: {result.Output.Trim()}");
+    public Task<(bool Success, string Message)> EnableWirelessAsync(string serial, int port = 5555)
+        => Task.FromResult((false, "Blocked by LogPro offline security policy: wireless ADB is disabled."));
 
-        var ipResult = await RunAdbAsync($"-s {serial} shell ip -f inet addr show wlan0", FastTimeoutMs);
-        if (ipResult.Success)
-        {
-            var match = Regex.Match(ipResult.Output, @"inet (\d+\.\d+\.\d+\.\d+)");
-            if (match.Success)
-                return (true, match.Groups[1].Value);
-        }
+    public Task<(bool Success, string Message)> ConnectWirelessAsync(string ipAddress, int port = 5555)
+        => Task.FromResult((false, "Blocked by LogPro offline security policy: wireless ADB is disabled."));
 
-        return (true, "TCP mode enabled. Find the device IP in Settings > About Phone > Status.");
-    }
-
-    public async Task<(bool Success, string Message)> ConnectWirelessAsync(string ipAddress, int port = 5555)
-    {
-        var target = $"{ipAddress}:{port}";
-        var result = await RunAdbAsync($"connect {target}", 10000);
-        if (result.Success && result.Output.Contains("connected"))
-            return (true, $"Connected to {target}");
-        return (false, result.Output.Trim());
-    }
-
-    public async Task<(bool Success, string Message)> DisconnectWirelessAsync(string ipAddress, int port = 5555)
-    {
-        var target = $"{ipAddress}:{port}";
-        var result = await RunAdbAsync($"disconnect {target}", FastTimeoutMs);
-        return (result.Success, result.Output.Trim());
-    }
+    public Task<(bool Success, string Message)> DisconnectWirelessAsync(string ipAddress, int port = 5555)
+        => Task.FromResult((false, "Blocked by LogPro offline security policy: wireless ADB is disabled."));
 
     public async Task<List<DeviceFile>> ListDirectoryAsync(string serial, string path)
     {
@@ -505,7 +520,7 @@ public class AdbService : IAdbService
         }
         catch (Exception ex)
         {
-            AppLogger.Log.Error(ex, $"[AdbService] ListDirectoryAsync failed for {path}");
+            AppLogger.Log.Error(ex, "[AdbService] ListDirectoryAsync failed");
         }
 
         return new List<DeviceFile>();
@@ -606,12 +621,14 @@ public class AdbService : IAdbService
 
     public async Task<bool> PullFileAsync(string serial, string remotePath, string localDestination)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !PathHelper.IsSafeLocalPath(localDestination)) return false;
         var result = await RunAdbAsync($"-s {serial} pull \"{remotePath}\" \"{localDestination}\"");
         return result.Success;
     }
 
     public async Task<bool> PushFileAsync(string serial, string localPath, string remoteDestination)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !PathHelper.IsSafeLocalPath(localPath)) return false;
         var result = await RunAdbAsync($"-s {serial} push \"{localPath}\" \"{remoteDestination}\"");
         return result.Success;
     }
@@ -654,7 +671,7 @@ public class AdbService : IAdbService
         }
         catch (Exception ex)
         {
-            AppLogger.Log.Error(ex, $"[AdbService] ListInstalledAppsAsync failed for {serial}");
+            AppLogger.Log.Error(ex, $"[AdbService] ListInstalledAppsAsync failed for {SecurityHelper.HashSerial(serial)}");
         }
 
         return apps.OrderBy(a => a.Name).ToList();
@@ -668,10 +685,7 @@ public class AdbService : IAdbService
     }
 
     private static bool IsValidPackageName(string packageId)
-    {
-        return !string.IsNullOrEmpty(packageId)
-            && System.Text.RegularExpressions.Regex.IsMatch(packageId, @"^[a-zA-Z0-9._]+$");
-    }
+        => SecurityHelper.IsValidPackageName(packageId);
 
     public async Task<bool> ForceStopAppAsync(string serial, string packageId)
     {
@@ -696,6 +710,8 @@ public class AdbService : IAdbService
 
     public async Task<bool> SetDeviceClipboardAsync(string serial, string text)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || text.Contains('\r') || text.Contains('\n') || text.Length > 1_000_000)
+            return false;
         // Escape single quotes for Android shell to prevent injection
         var escaped = text.Replace("\\", "\\\\").Replace("'", "\\'");
         var result = await RunAdbAsync(
@@ -710,20 +726,23 @@ public class AdbService : IAdbService
 
     public async Task<bool> SendNotificationAsync(string serial, string title, string body, string? channel = null)
     {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || title.Length > 4096 || body.Length > 1_000_000)
+            return false;
         var tag = $"LogPro_{DateTime.Now.Ticks}";
         var channelId = channel ?? "default";
         if (!System.Text.RegularExpressions.Regex.IsMatch(channelId, @"^[a-zA-Z0-9._\-]+$"))
             channelId = "default";
-        var safeTitle = title.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\"", "\\\"");
-        var safeBody = body.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\"", "\\\"");
-        var result = await RunAdbAsync($"-s {serial} shell cmd notification post -t \"{safeTitle}\" \"{safeBody}\" --channel {channelId} {tag}", FastTimeoutMs);
+        var safeTitle = EscapeSingleQuotedShell(title);
+        var safeBody = EscapeSingleQuotedShell(body);
+        var result = await RunAdbAsync($"-s {serial} shell cmd notification post -t '{safeTitle}' '{safeBody}' --channel {channelId} {tag}", FastTimeoutMs);
         return result.Success;
     }
 
     internal static bool TryBuildDeepLinkIntentArgs(string serial, string url, out string args)
     {
         var trimmed = url.Trim();
-        if (trimmed.Contains('\r') || trimmed.Contains('\n') || trimmed.Contains('`') || trimmed.Contains("$("))
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !SecurityHelper.IsOfflineSafeUri(trimmed) ||
+            trimmed.Contains('`') || trimmed.Contains("$("))
         {
             args = string.Empty;
             return false;
@@ -748,27 +767,14 @@ public class AdbService : IAdbService
         return value.Replace("'", "'\\''");
     }
 
-    public async Task<(bool Success, string Message)> PairAsync(string ipPort, string code)
-    {
-        var result = await RunAdbAsync($"pair {ipPort} {code}", 15000);
-        if (result.Success && result.Output.Contains("successfully"))
-            return (true, "Pairing successful.");
-        return (false, string.IsNullOrWhiteSpace(result.Output) ? result.Error : result.Output);
-    }
+    public Task<(bool Success, string Message)> PairAsync(string ipPort, string code)
+        => Task.FromResult((false, "Blocked by LogPro offline security policy: wireless ADB is disabled."));
 
-    public async Task<(bool Success, string Message)> ConnectAsync(string ipPort)
-    {
-        var result = await RunAdbAsync($"connect {ipPort}", 10000);
-        if (result.Success && result.Output.Contains("connected"))
-            return (true, $"Connected to {ipPort}");
-        return (false, string.IsNullOrWhiteSpace(result.Output) ? result.Error : result.Output);
-    }
+    public Task<(bool Success, string Message)> ConnectAsync(string ipPort)
+        => Task.FromResult((false, "Blocked by LogPro offline security policy: wireless ADB is disabled."));
 
-    public async Task<(bool Success, string Message)> DisconnectAsync(string ipPort)
-    {
-        var result = await RunAdbAsync($"disconnect {ipPort}", 5000);
-        return (result.Success, result.Output.Trim());
-    }
+    public Task<(bool Success, string Message)> DisconnectAsync(string ipPort)
+        => Task.FromResult((false, "Blocked by LogPro offline security policy: wireless ADB is disabled."));
 
     public Task<List<string>> DiscoverPairingPortsAsync()
     {

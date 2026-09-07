@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using LogPro.Helpers;
 using LogPro.Models;
 using System.Threading;
 
@@ -17,6 +18,7 @@ public class DeviceMonitorService : IDeviceMonitorService
     private readonly List<DeviceInfo> _devices = new();
     private readonly object _lock = new();
     private int _isPolling;
+    private int _disposed;
 
     private readonly ConcurrentDictionary<string, int> _missedPollCount = new(StringComparer.Ordinal);
     private const int MissedPollThreshold = 3;
@@ -40,9 +42,11 @@ public class DeviceMonitorService : IDeviceMonitorService
 
     public void StartMonitoring(int intervalMs = 10000)
     {
+        if (Volatile.Read(ref _disposed) != 0) return;
         StopMonitoring();
         _pollTimer = new Timer(async _ =>
         {
+            if (Volatile.Read(ref _disposed) != 0) return;
             try { await PollDevicesAsync(); }
             catch (Exception ex) { AppLogger.Log.Error(ex, "[DeviceMonitor] Poll timer crashed"); }
         }, null, 2000, intervalMs);
@@ -56,6 +60,7 @@ public class DeviceMonitorService : IDeviceMonitorService
 
     public async Task PollDevicesAsync()
     {
+        if (Volatile.Read(ref _disposed) != 0) return;
         if (Interlocked.Exchange(ref _isPolling, 1) != 0) return;
 
         try
@@ -105,12 +110,12 @@ public class DeviceMonitorService : IDeviceMonitorService
                     {
                         _missedPollCount.TryRemove(d.Serial, out _);
                         disconnected.Add(d);
-                        AppLogger.Log.Warn($"[DeviceMonitor] Device {d.Serial} disconnected after {missed} missed polls");
+                        AppLogger.Log.Warn($"[DeviceMonitor] Device {SecurityHelper.HashSerial(d.Serial)} disconnected after {missed} missed polls");
                     }
                     else
                     {
                         missedPollDevices.Add(d);
-                        AppLogger.Log.Debug($"[DeviceMonitor] Device {d.Serial} missed poll {missed}/{MissedPollThreshold} - not yet disconnected");
+                        AppLogger.Log.Debug($"[DeviceMonitor] Device {SecurityHelper.HashSerial(d.Serial)} missed poll {missed}/{MissedPollThreshold} - not yet disconnected");
                     }
                 }
             }
@@ -134,6 +139,8 @@ public class DeviceMonitorService : IDeviceMonitorService
                 finalDevices = _devices.ToList();
             }
 
+            if (Volatile.Read(ref _disposed) != 0) return;
+
             foreach (var device in connected)
                 DeviceConnected?.Invoke(device);
 
@@ -151,6 +158,7 @@ public class DeviceMonitorService : IDeviceMonitorService
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         StopMonitoring();
     }
 }

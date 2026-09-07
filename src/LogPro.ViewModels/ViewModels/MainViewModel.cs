@@ -21,6 +21,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly DependencyChecker _dependencyChecker;
     private readonly IUiDispatcher _dispatcher;
     private readonly IDeviceStore _deviceStore;
+    private int _disposed;
 
     [ObservableProperty]
     private ObservableObject? _currentView;
@@ -186,8 +187,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceStore.Changed -= OnDevicesStoreChanged;
+
+        _sessionService.StopAllCaptures();
 
         foreach (var child in new IDisposable[]
         {
@@ -198,7 +203,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
             child?.Dispose();
         }
 
-        _sessionService.StopAllCaptures();
         _scrcpyService.StopMirroring();
         _deviceMonitor.Dispose();
         _deviceStore.Dispose();

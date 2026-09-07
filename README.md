@@ -45,7 +45,10 @@ Grab the latest from the **[Releases page](https://github.com/sundarlohar007/QAD
 | `LogPro_vX_macos-arm64.zip` | macOS build (Avalonia) |
 | `LogPro_vX_linux-x64.tar.gz` | Linux build (Avalonia) |
 
-All tools are **bundled** — no separate installs of adb, scrcpy, Python or drivers required.
+The Windows installer, portable ZIP, and Windows CLI ZIP contain the tested `adb`, `scrcpy`,
+and `pymobiledevice3` tools. Android USB drivers are supplied by Windows/OEMs and are **not**
+redistributed by LogPro. The macOS/Linux Avalonia archives do not contain Windows binaries;
+install the platform-appropriate device tooling on those platforms before using devices.
 
 ## Build from source
 
@@ -54,7 +57,7 @@ git clone https://github.com/sundarlohar007/QADeviceTool.git
 cd QADeviceTool
 dotnet restore LogPro.sln
 dotnet build LogPro.sln
-dotnet test LogPro.sln          # 145+ tests, incl. hardware-free e2e (fake adb)
+dotnet test LogPro.sln          # full suite, incl. hardware-free e2e (fake adb)
 dotnet publish src/LogPro.App/LogPro.App.csproj -c Release -r win-x64 --self-contained true
 ```
 
@@ -72,7 +75,7 @@ logpro-cli matrix  --serials A,B,C --seconds N        # tier comparison
 logpro-cli location route --serial S --app P --waypoints "lat,lon;lat,lon" --speed 5
 logpro-cli location reset --serial S --app P          # MANDATORY mock-location reset
 logpro-cli network apply --serial S --preset 4g       # tc/netem conditioning (root)
-logpro-cli serve --port 8417                         # loopback control API for CI/Appium
+logpro-cli serve --port 8417                           # loopback API; prints a per-run API key
 logpro-cli issue  --serial S --out DIR                # redacted issue bundle (no network)
 logpro-cli plugins --dir DIR                          # plugin discovery
 ```
@@ -102,20 +105,22 @@ LogPro.App (WPF, Windows — shipping UI)   LogPro.Avalonia (cross-platform UI)
 
 Testing unreleased titles means **data minimization is non-negotiable**:
 
-- **Zero outbound network calls** — no telemetry, no crash upload, no cloud sync (hard gate).
-- Redaction **on by default** (`SecureMode`), device serials hashed everywhere.
+- **Zero automatic outbound network calls** — no telemetry, no crash upload, no cloud sync
+  (hard gate). Wireless ADB, network device discovery, URL/file schemes, port forwarding,
+  and arbitrary shell composition are blocked by the engine.
+- Exported text and issue bundles are always redacted; device identifiers in evidence are hashed.
 - Bug-report and issue bundles are minimized and written to disk — you upload them yourself.
-- The local control API binds to `127.0.0.1` only.
+- The local control API binds to `127.0.0.1` only and requires a per-process API key.
 - Full trust boundary: [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Pull requests welcome. CI runs build + 145+ tests (including hardware-free end-to-end tests against a
-fake `adb`), format verification and a NuGet vulnerability audit on every push; dependabot keeps
+Pull requests welcome. CI runs the full test suite (including hardware-free end-to-end tests against a
+fake `adb`), format verification and a NuGet vulnerability audit on every push; Dependabot keeps
 dependencies current with auto-merge for patch/minor updates. Please keep the **privacy hard gate**
 in mind: nothing that touches the network.
 
 ## License
 
-[MIT](LICENSE) · Third-party components: see [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) and
-[GPL_COMPLIANCE.md](GPL_COMPLIANCE.md).
+[MIT](LICENSE) · Third-party components: see [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt),
+[GPL_COMPLIANCE.md](GPL_COMPLIANCE.md), and the packaged [source offer](licenses/SOURCE-OFFER-pymobiledevice3.txt).

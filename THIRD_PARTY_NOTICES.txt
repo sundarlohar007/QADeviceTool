@@ -1,35 +1,32 @@
-THIRD PARTY NOTICES — QADeviceTool
+THIRD PARTY NOTICES - LogPro
 
 This tool bundles or invokes the following third-party components:
 
-1. ADB (Android Debug Bridge)
+1. ADB (Android Debug Bridge, platform-tools 36.0.0)
    License: Apache 2.0
    https://developer.android.com/studio/releases/platform-tools
-   NOTICE: Part of Android SDK Platform Tools. See Android SDK License Agreement.
+   NOTICE: Part of Android SDK Platform Tools. See the Android SDK License Agreement.
 
-2. scrcpy (Screen Copy)
+2. scrcpy (Screen Copy 3.3.4)
    License: Apache 2.0
    https://github.com/Genymobile/scrcpy
-   NOTICE: Copyright (C) 2018 Genymobile. Licensed under Apache 2.0.
+   NOTICE: Copyright (C) 2018 Genymobile. Licensed under Apache 2.0. The bundled
+   SDL2 and FFmpeg libraries retain their own notices in the scrcpy directory.
 
-3. pymobiledevice3
+3. pymobiledevice3 9.12.0
    License: GPL-3.0
    https://github.com/doronz88/pymobiledevice3
-   NOTE: Invoked as a subprocess (process-isolation model — see GPL_COMPLIANCE.md).
-   An unmodified PyInstaller build is distributed alongside the application for
-   out-of-the-box iOS support; source available from the upstream repository.
+   NOTE: Invoked as an unmodified subprocess; see GPL_COMPLIANCE.md and the
+   packaged source offer.
 
-4. SDL2, FFmpeg libraries (bundled with scrcpy)
-   License: SDL2 zlib license; FFmpeg LGPL/GPL components per the scrcpy build.
-   https://github.com/Genymobile/scrcpy
-   See LICENSE file shipped in the scrcpy tool directory.
-
-4. CommunityToolkit.Mvvm
+4. Avalonia, CommunityToolkit.Mvvm
    License: MIT
-   https://github.com/CommunityToolkit/dotnet
+   https://avaloniaui.net/ | https://github.com/CommunityToolkit/dotnet
 
 5. NLog
    License: BSD-3-Clause
    https://github.com/NLog/NLog
 
-6. Other NuGet packages — see nuget-packages.txt for full list.
+6. Inter and Space Grotesk fonts
+   License: SIL Open Font License 1.1
+   https://scripts.sil.org/OFL

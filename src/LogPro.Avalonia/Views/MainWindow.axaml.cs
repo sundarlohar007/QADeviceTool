@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using LogPro.ViewModels;
+using LogPro.Services;
 
 namespace LogPro.Avalonia.Views;
 
@@ -11,7 +12,11 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Closing += (_, _) => (DataContext as MainViewModel)?.Dispose();
+        Closing += (_, _) =>
+        {
+            (DataContext as MainViewModel)?.Dispose();
+            ProcessManager.Instance.KillAllTrackedProcesses();
+        };
         KeyDown += OnKeyDown;
     }
 

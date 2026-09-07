@@ -8,8 +8,8 @@ public class TierMatrixTests
     private static Mock<LogPro.Services.IAdbService> CreateFakeAdb(double fastFps, double slowFps)
     {
         var mock = new Mock<LogPro.Services.IAdbService>();
-        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>()))
-            .ReturnsAsync((string serial, string command) =>
+        mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string serial, string command, CancellationToken _) =>
             {
                 if (command.Contains("SurfaceFlinger --list"))
                     return "SurfaceView[com.fakegame/com.fakegame.MainActivity](BLAST)#0\n";

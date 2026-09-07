@@ -48,7 +48,10 @@ public sealed class PreferencesStore : IPreferencesStore
     public PreferencesStore(string? appDataDir = null)
     {
         _appDataDir = appDataDir ?? PathHelper.GetAppDataDirectory();
+        if (!PathHelper.IsSafeLocalPath(_appDataDir))
+            throw new ArgumentException("Application data must be stored on a local volume.", nameof(appDataDir));
         if (!Directory.Exists(_appDataDir)) Directory.CreateDirectory(_appDataDir);
+        PathHelper.RestrictDirectoryAccess(_appDataDir);
         SettingsFilePath = Path.Combine(_appDataDir, "settings.json");
         Load();
     }
@@ -106,12 +109,15 @@ public sealed class PreferencesStore : IPreferencesStore
             Current.DevicePreferences.Remove(rawKey);
             Current.DevicePreferences[SecurityHelper.HashSerial(rawKey)] = pref;
         }
+
+        if (rawKeys.Count > 0) Save();
     }
 
     public void Save()
     {
         try
         {
+            if (!PathHelper.IsSafeLocalPath(SettingsFilePath)) return;
             var json = JsonSerializer.Serialize(Current, LogProJsonContext.Default.AppPreferences);
             var tmpPath = SettingsFilePath + ".tmp";
             File.WriteAllText(tmpPath, json);
@@ -155,10 +161,25 @@ public sealed class PreferencesStore : IPreferencesStore
                 Directory.Delete(logsDir, true);
             }
 
-            var sessionsDir = Path.Combine(_appDataDir, "sessions");
-            if (Directory.Exists(sessionsDir))
+            var directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                Directory.Delete(sessionsDir, true);
+                Path.Combine(_appDataDir, "logs"),
+                Path.Combine(_appDataDir, "Sessions"),
+                Path.Combine(_appDataDir, "Macros"),
+                Path.Combine(_appDataDir, "crash-reports")
+            };
+            if (PathHelper.IsSafeLocalPath(Current.SessionsRootDirectory) &&
+                !string.Equals(Path.GetFullPath(Current.SessionsRootDirectory), Path.GetFullPath(_appDataDir), StringComparison.OrdinalIgnoreCase))
+                directories.Add(Current.SessionsRootDirectory);
+
+            foreach (var directory in directories)
+            {
+                try
+                {
+                    if (PathHelper.IsSafeLocalPath(directory) && Directory.Exists(directory))
+                        Directory.Delete(directory, true);
+                }
+                catch (Exception ex) { AppLogger.Log.Debug(ex, "[PreferencesStore] Failed to clear data directory"); }
             }
 
             Current = new AppPreferences();
