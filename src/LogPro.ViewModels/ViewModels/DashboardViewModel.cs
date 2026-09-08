@@ -144,15 +144,15 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task LoadToolStatusesAsync()
     {
-        IsLoading = true;
+        _dispatcher.Post(() => IsLoading = true);
         var statuses = await _dependencyChecker.CheckAllAsync();
         _dispatcher.Post(() =>
         {
             ToolStatuses.Clear();
             foreach (var status in statuses)
                 ToolStatuses.Add(status);
+            IsLoading = false;
         });
-        IsLoading = false;
     }
 
     [RelayCommand]
