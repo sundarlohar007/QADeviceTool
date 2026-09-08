@@ -27,6 +27,8 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     private string? _runningOnSerial;
     private int _runActive;
     private int _disposed;
+    private int _crashCountBacking;
+    private int _anrCountBacking;
     private DateTime _runStartedAt;
     private List<AppItem> _allApps = new();
 
@@ -281,8 +283,8 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
                 DeviceName = SelectedDevice.DisplayName,
                 EventCount = EventCount,
                 EventsInjected = EventsInjected,
-                CrashCount = CrashCount,
-                AnrCount = AnrCount,
+                CrashCount = Volatile.Read(ref _crashCountBacking),
+                AnrCount = Volatile.Read(ref _anrCountBacking),
                 Duration = duration,
                 Metrics = metrics
             });
@@ -291,6 +293,8 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 
             await _dispatcher.InvokeAsync(() =>
             {
+                CrashCount = Volatile.Read(ref _crashCountBacking);
+                AnrCount = Volatile.Read(ref _anrCountBacking);
                 if (!runCts.IsCancellationRequested)
                 {
                     StatusMessage = $"Done. {EventsInjected}/{EventCount} events. Crashes: {CrashCount} ANRs: {AnrCount}";
@@ -394,23 +398,27 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
             var num = spaceAt > 0 ? rest.Substring(0, spaceAt) : rest;
             if (int.TryParse(num, out var n))
             {
-                EventsInjected = n;
-                if (EventCount > 0)
-                    ProgressPercent = Math.Min(100, (double)n / EventCount * 100);
+                _dispatcher.Post(() =>
+                {
+                    EventsInjected = n;
+                    if (EventCount > 0)
+                        ProgressPercent = Math.Min(100, (double)n / EventCount * 100);
+                });
             }
         }
 
         // Crash + ANR detection (line-anchored to avoid false positives in payload).
         if (line.Contains("// CRASH:") || line.Contains("** Monkey aborted due to error.") || line.Contains("Process crashed"))
-            CrashCount++;
+            Interlocked.Increment(ref _crashCountBacking);
         if (line.Contains("// NOT RESPONDING:") || line.Contains("ANR in"))
-            AnrCount++;
+            Interlocked.Increment(ref _anrCountBacking);
 
         // Final summary
         if (line.StartsWith("Events injected:"))
         {
             var s = line.Substring("Events injected:".Length).Trim();
-            if (int.TryParse(s, out var total)) EventsInjected = total;
+            if (int.TryParse(s, out var total))
+                _dispatcher.Post(() => EventsInjected = total);
         }
 
         AppendOutput(line);
@@ -440,6 +448,8 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         Output = string.Empty;
         CrashCount = 0;
         AnrCount = 0;
+        Interlocked.Exchange(ref _crashCountBacking, 0);
+        Interlocked.Exchange(ref _anrCountBacking, 0);
         EventsInjected = 0;
         ProgressPercent = 0;
         StatusMessage = "Cleared.";

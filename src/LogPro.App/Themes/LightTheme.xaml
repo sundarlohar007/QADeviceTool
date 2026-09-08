@@ -20,6 +20,7 @@
     <Color x:Key="CyanDim">#1D4ED8</Color>
     <Color x:Key="CyanGlow">#DBEAFE</Color>
     <Color x:Key="Amber">#D97706</Color>
+    <Color x:Key="AmberBright">#F59E0B</Color>
     <Color x:Key="AmberDim">#92400E</Color>
     <Color x:Key="Green">#059669</Color>
     <Color x:Key="GreenDim">#065F46</Color>
@@ -41,6 +42,7 @@
     <SolidColorBrush x:Key="BrushCyanDim" Color="{StaticResource CyanDim}" />
     <SolidColorBrush x:Key="BrushCyanGlow" Color="{StaticResource CyanGlow}" />
     <SolidColorBrush x:Key="BrushAmber" Color="{StaticResource Amber}" />
+    <SolidColorBrush x:Key="BrushAmberBright" Color="{StaticResource AmberBright}" />
     <SolidColorBrush x:Key="BrushGreen" Color="{StaticResource Green}" />
     <SolidColorBrush x:Key="BrushRed" Color="{StaticResource Red}" />
     <SolidColorBrush x:Key="BrushViolet" Color="{StaticResource Violet}" />
@@ -86,6 +88,14 @@
     <SolidColorBrush x:Key="BrushInfo" Color="{StaticResource Violet}" />
     <SolidColorBrush x:Key="BrushInfoDark" Color="{StaticResource Violet}" Opacity="0.65" />
     <SolidColorBrush x:Key="BrushCyanDark" Color="{StaticResource CyanDim}" />
+
+    <!-- Frosted-glass border (light adaptation) -->
+    <LinearGradientBrush x:Key="FrostBorderBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#3094A3B8" Offset="0" />
+        <GradientStop Color="#1894A3B8" Offset="0.5" />
+        <GradientStop Color="#0C94A3B8" Offset="1" />
+    </LinearGradientBrush>
+
     <SolidColorBrush x:Key="BrushPink" Color="{StaticResource Violet}" />
     <SolidColorBrush x:Key="BrushYellow" Color="{StaticResource Amber}" />
 

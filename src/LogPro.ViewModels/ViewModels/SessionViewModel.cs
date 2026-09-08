@@ -1176,6 +1176,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 var parsed = lines.Select(ParseLogLine).ToList();
                 LogEntries.Clear();
                 LogEntries.AddRange(parsed);
+                RebuildFilteredView();
 
                 if (LogEntries.Count > 200000)
                     TrimLogEntries(150000);
@@ -1224,6 +1225,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceMonitor.DeviceConnected -= OnDeviceConnected;
         _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        _crashDetector.CrashDetected -= OnCrashDetected;
         if (_isSubscribedToLogBatch)
         {
             _sessionService.LogBatchReceived -= OnLogBatchReceived;

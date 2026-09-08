@@ -158,10 +158,13 @@ public partial class SettingsViewModel : ObservableObject
         });
 
         var allGood = statuses.All(s => s.IsInstalled);
-        StatusMessage = allGood
-            ? "All tools are installed and ready!"
-            : "Some tools are missing. Check the list above.";
-        IsChecking = false;
+        _dispatcher.Post(() =>
+        {
+            StatusMessage = allGood
+                ? "All tools are installed and ready!"
+                : "Some tools are missing. Check the list above.";
+            IsChecking = false;
+        });
     }
 
     [RelayCommand]
