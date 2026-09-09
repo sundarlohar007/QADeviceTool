@@ -80,14 +80,41 @@ public partial class App : Application
 
         // Ensure native DLL paths are initialized for iOS tools
         ToolResolver.InitializeNativePaths();
-        if (!ToolResolver.VerifyBundledToolsAsync(requireManifest: true, requireTools: true).GetAwaiter().GetResult())
+
+        // Start tool verification in background (non-blocking).
+        // Verification uses cached results when files haven't changed (§7.1).
+        // If verification fails, we'll show an error and shutdown.
+        _ = Task.Run(async () =>
         {
-            EarlyLog("FATAL: bundled tool integrity verification failed; refusing to start");
-            MessageBox.Show("The bundled device tools failed integrity verification. LogPro will not start.",
-                "LogPro Security Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            Shutdown(3);
-            return;
-        }
+            try
+            {
+                var ok = await ToolResolver.VerifyBundledToolsAsync(requireManifest: true, requireTools: true).ConfigureAwait(false);
+                if (!ok)
+                {
+                    EarlyLog("FATAL: bundled tool integrity verification failed; shutting down");
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        MessageBox.Show("The bundled device tools failed integrity verification. LogPro will now close.",
+                            "LogPro Security Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        Shutdown(3);
+                    });
+                }
+                else
+                {
+                    EarlyLog("Bundled tool integrity verification passed");
+                }
+            }
+            catch (Exception ex)
+            {
+                EarlyLog("FATAL: tool verification crashed", ex);
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"Tool verification failed: {ex.Message}. LogPro will now close.",
+                        "LogPro Security Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    Shutdown(3);
+                });
+            }
+        });
 
         // One-time branding migration: %LOCALAPPDATA%\QAQCDeviceTool -> LogPro.
         // Must precede PreferencesService static init (below) so settings load from the new path.
