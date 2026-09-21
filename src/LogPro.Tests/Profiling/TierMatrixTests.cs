@@ -51,7 +51,7 @@ public class TierMatrixTests
             new DeviceTierProfile { Serial = "SLOW01", Label = "Budget", Chipset = "Snapdragon 480", RamMb = 4096 }
         };
 
-        var results = await TierMatrix.CompareAsync(adb.Object, profiles, "com.fakegame", TimeSpan.FromSeconds(2));
+        var results = await TierMatrix.CompareAsync(adb.Object, profiles, "com.fakegame", TimeSpan.FromSeconds(2), sampleIntervalMs: 100);
 
         results.Should().HaveCount(2);
         var fast = results.Single(r => r.Profile.Serial == "FAST01");
@@ -65,9 +65,19 @@ public class TierMatrixTests
     [Fact]
     public async Task WriteJson_RoundTripsDevices()
     {
-        var adb = CreateFakeAdb(60, 30);
-        var profiles = new[] { new DeviceTierProfile { Serial = "FAST01", Label = "L1" } };
-        var results = await TierMatrix.CompareAsync(adb.Object, profiles, null, TimeSpan.FromSeconds(1));
+        var results = new[] 
+        { 
+            new TierResult 
+            { 
+                Profile = new DeviceTierProfile { Serial = "FAST01", Label = "L1" },
+                AvgFps = 59.5,
+                JankyFrames = 2,
+                MaxCpuPercent = 45.0,
+                MemoryGrowthKb = 1024,
+                BatteryDrainPercent = 1,
+                SlowSession = false
+            } 
+        };
 
         var path = Path.Combine(Path.GetTempPath(), $"tier_{Guid.NewGuid():N}.json");
         try
