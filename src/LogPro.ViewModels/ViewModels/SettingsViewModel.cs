@@ -87,9 +87,16 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         // Execute all heavy startup IO away from the main UI thread.
         _ = Task.Run(async () =>
         {
-            if (_cts.Token.IsCancellationRequested) return;
-            // Start dependency checks
-            await CheckDependenciesAsync();
+            try
+            {
+                if (_cts.Token.IsCancellationRequested) return;
+                // Start dependency checks
+                await CheckDependenciesAsync();
+            }
+            catch (Exception ex)
+            {
+                Services.AppLogger.Log.Error(ex, "[SettingsViewModel] Initialization task failed");
+            }
         }, _cts.Token);
     }
 
@@ -149,9 +156,11 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task CheckDependenciesAsync()
     {
-        IsChecking = true;
-        StatusMessage = "Checking tool availability...";
-
+        _dispatcher.Post(() =>
+        {
+            IsChecking = true;
+            StatusMessage = "Checking tool availability...";
+        });
         var statuses = await _dependencyChecker.CheckAllAsync();
 
         _dispatcher.Post(() =>

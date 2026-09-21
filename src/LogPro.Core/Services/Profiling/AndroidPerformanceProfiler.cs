@@ -7,7 +7,7 @@ namespace LogPro.Services.Profiling;
 /// (SurfaceFlinger, cpuinfo, meminfo, thermalservice, battery) — never on the UI thread,
 /// never in the caller's path. Emits <see cref="ProfilerSnapshot"/> per sample interval.
 /// </summary>
-public sealed class AndroidPerformanceProfiler : IDisposable
+public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
 {
     private readonly IAdbService _adb;
     private readonly string _serial;
@@ -191,5 +191,6 @@ public sealed class AndroidPerformanceProfiler : IDisposable
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] Battery probe failed"); return null; }
     }
 
-    public void Dispose() => StopAsync().GetAwaiter().GetResult();
+    public void Dispose() => _ = StopAsync();
+    public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 }

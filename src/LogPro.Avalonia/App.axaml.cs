@@ -10,6 +10,18 @@ public partial class App : Application
 {
     public override void Initialize()
     {
+        System.AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+        {
+            if (e.ExceptionObject is System.Exception ex)
+                LogPro.Services.AppLogger.Log.Fatal(ex, "Avalonia UnhandledException");
+        };
+
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (s, e) =>
+        {
+            LogPro.Services.AppLogger.Log.Error(e.Exception, "Avalonia UnobservedTaskException");
+            e.SetObserved();
+        };
+
         AvaloniaXamlLoader.Load(this);
     }
 
