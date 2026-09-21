@@ -304,35 +304,38 @@ public class SessionService : ISessionService
     {
         if (!_activeCaptures.TryRemove(session.Id, out var ctx)) return;
 
-        try
+        _ = Task.Run(async () =>
         {
-            ctx.Cts.Cancel();
-
-            try { ctx.Process.CancelOutputRead(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] CancelOutputRead error"); }
-
-            if (!ctx.Process.HasExited)
+            try
             {
-                bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
-                try { ctx.Process.Kill(killTree); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Kill error"); }
-                try { ctx.Process.WaitForExit(1000); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] WaitForExit error"); }
-            }
+                ctx.Cts.Cancel();
 
-            try { ctx.OutputCompleted.Task.Wait(TimeSpan.FromSeconds(2)); } catch { }
-            try { ctx.FlushTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
-            try { ctx.PidTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
-            try { ctx.Writer.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
-            try { ctx.AppWriter?.Flush(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); }
-            FlushCaptureBuffer(session.Id, ctx);
-            ctx.Writer.Dispose();
-            ctx.AppWriter?.Dispose();
-        }
-        catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] StopCapture cleanup error"); }
-        finally
-        {
-            _startingDevices.TryRemove(session.DeviceSerial, out _);
-            ctx.Process.Dispose();
-            ctx.Cts.Dispose();
-        }
+                try { ctx.Process.CancelOutputRead(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] CancelOutputRead error"); }
+
+                if (!ctx.Process.HasExited)
+                {
+                    bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
+                    try { ctx.Process.Kill(killTree); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Kill error"); }
+                    try { ctx.Process.WaitForExit(1000); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] WaitForExit error"); }
+                }
+
+                try { await Task.WhenAny(ctx.OutputCompleted.Task, Task.Delay(2000)).ConfigureAwait(false); } catch { }
+                if (ctx.FlushTask != null) try { await Task.WhenAny(ctx.FlushTask, Task.Delay(2000)).ConfigureAwait(false); } catch { }
+                if (ctx.PidTask != null) try { await Task.WhenAny(ctx.PidTask, Task.Delay(2000)).ConfigureAwait(false); } catch { }
+                try { await ctx.Writer.FlushAsync().ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
+                if (ctx.AppWriter != null) try { await ctx.AppWriter.FlushAsync().ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); }
+                FlushCaptureBuffer(session.Id, ctx);
+                ctx.Writer.Dispose();
+                ctx.AppWriter?.Dispose();
+            }
+            catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] StopCapture cleanup error"); }
+            finally
+            {
+                _startingDevices.TryRemove(session.DeviceSerial, out _);
+                ctx.Process.Dispose();
+                ctx.Cts.Dispose();
+            }
+        });
 
         session.Status = SessionStatus.Stopped;
         session.EndTime = DateTime.Now;

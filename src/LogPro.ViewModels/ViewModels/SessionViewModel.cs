@@ -1104,6 +1104,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                     _dispatcher.Post(RebuildFilteredView);
             }
             catch (OperationCanceledException) { /* debounced */ }
+            catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Search debounce error"); }
         });
     }
 

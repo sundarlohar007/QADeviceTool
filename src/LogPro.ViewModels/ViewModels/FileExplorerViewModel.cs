@@ -130,7 +130,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         try { oldCts?.Cancel(); } catch { }
         try { oldCts?.Dispose(); } catch { }
         var currentCts = _loadCts!;
-        IsLoading = true;
+        _dispatcher.Post(() => IsLoading = true);
         var device = SelectedDevice;
         var token = currentCts.Token;
 
@@ -173,7 +173,8 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            if (ReferenceEquals(_loadCts, currentCts)) IsLoading = false;
+            if (ReferenceEquals(_loadCts, currentCts))
+                _dispatcher.Post(() => { if (ReferenceEquals(_loadCts, currentCts)) IsLoading = false; });
         }
     }
 
