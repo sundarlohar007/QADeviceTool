@@ -665,7 +665,7 @@ public class SessionService : ISessionService
                 }
             }
         }
-        catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] PreferencesService load failed, keeping defaults"); }
+        catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] ParseLogLine failed"); }
 
         return result;
     }

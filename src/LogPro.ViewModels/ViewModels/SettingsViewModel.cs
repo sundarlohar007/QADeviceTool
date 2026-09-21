@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Models;
@@ -15,12 +16,14 @@ public class LogRetentionOption
 /// <summary>
 /// Settings — dependency status and app configuration.
 /// </summary>
-public partial class SettingsViewModel : ObservableObject
+public partial class SettingsViewModel : ObservableObject, IDisposable
 {
     private readonly DependencyChecker _dependencyChecker;
     private readonly ISessionService _sessionService;
     private readonly IAdbService _adbService;
     private readonly IUiDispatcher _dispatcher;
+    private readonly CancellationTokenSource _cts = new();
+    private int _disposed;
 
     [ObservableProperty]
     private ObservableCollection<ToolStatus> _toolStatuses = new();
@@ -82,11 +85,12 @@ public partial class SettingsViewModel : ObservableObject
         IsDarkTheme = UiServices.Theme.CurrentTheme == UiServices.Theme.ThemeDark;
         IsLightTheme = !IsDarkTheme;
         // Execute all heavy startup IO away from the main UI thread.
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
+            if (_cts.Token.IsCancellationRequested) return;
             // Start dependency checks
             await CheckDependenciesAsync();
-        });
+        }, _cts.Token);
     }
 
     private void InitializeLogRetentionOptions()
@@ -298,4 +302,11 @@ public partial class SettingsViewModel : ObservableObject
         catch (Exception ex) { AppLogger.Log.Error(ex, "[Settings] ExportMyData failed"); ClearDataStatus = $"Export failed: {ex.Message}"; }
     }
 
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _cts.Cancel();
+        _cts.Dispose();
+        GC.SuppressFinalize(this);
+    }
 }

@@ -18,7 +18,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 {
     private readonly IAdbService _adbService;
     private readonly IDeviceMonitorService _deviceMonitor;
-    private readonly List<object> _metricSnapshots = new();
+    private readonly List<MetricSnapshot> _metricSnapshots = new();
     private readonly IUiDispatcher _dispatcher;
 
     private CancellationTokenSource? _runCts;
@@ -148,7 +148,7 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     private async Task RunMonkeyAsync()
     {
         if (Volatile.Read(ref _disposed) != 0) return;
-        if (IsRunning || Interlocked.Exchange(ref _runActive, 1) != 0) return;
+        if (Interlocked.Exchange(ref _runActive, 1) != 0) return;
         if (SelectedDevice == null)
         {
             Interlocked.Exchange(ref _runActive, 0);
@@ -277,6 +277,8 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 
             var duration = DateTime.Now - _runStartedAt;
             var metrics = await CollectPerformanceMetricsAsync(serial, package).ConfigureAwait(false);
+            List<MetricSnapshot> snapshots;
+            lock (_metricSnapshots) { snapshots = _metricSnapshots.ToList(); }
             var report = StressReportBuilder.BuildReport(new StressRunSummary
             {
                 PackageName = package,
@@ -286,7 +288,8 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
                 CrashCount = Volatile.Read(ref _crashCountBacking),
                 AnrCount = Volatile.Read(ref _anrCountBacking),
                 Duration = duration,
-                Metrics = metrics
+                Metrics = metrics,
+                MetricSnapshots = snapshots
             });
             AppendOutput("");
             AppendOutput(report.TrimEnd());
@@ -424,12 +427,13 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         AppendOutput(line);
     }
 
+    private int _outputDirty;
+
     private void AppendOutput(string line)
     {
         _dispatcher.Post(() =>
         {
             if (Volatile.Read(ref _disposed) != 0) return;
-            // Cap output buffer at ~200KB to prevent UI sluggishness during long runs.
             const int MaxChars = 200_000;
             _outputBuffer.AppendLine(line);
             if (_outputBuffer.Length > MaxChars)
@@ -438,7 +442,16 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
                 _outputBuffer.Remove(0, keepFrom);
                 _outputBuffer.Insert(0, "...[truncated]...\n");
             }
-            Output = _outputBuffer.ToString();
+            // Debounce: flush to UI at most every 200ms to avoid O(n²) ToString per line.
+            if (Interlocked.Exchange(ref _outputDirty, 1) == 0)
+            {
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(200);
+                    Interlocked.Exchange(ref _outputDirty, 0);
+                    _dispatcher.Post(() => { if (Volatile.Read(ref _disposed) == 0) Output = _outputBuffer.ToString(); });
+                });
+            }
         });
     }
 
@@ -481,13 +494,14 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
-        try { _runCts?.Cancel(); } catch { }
+        try { _runCts?.Cancel(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[StressTest] Dispose: cancel CTS failed"); }
+        try { _runCts?.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[StressTest] Dispose: dispose CTS failed"); }
         try
         {
             if (_adbProcess != null && !_adbProcess.HasExited)
                 _adbProcess.Kill(entireProcessTree: true);
         }
-        catch { }
+        catch (Exception ex) { AppLogger.Log.Debug(ex, "[StressTest] Dispose: kill process failed"); }
         _metricsTimer?.Dispose();
         _metricsTimer = null;
         var serial = _runningOnSerial;

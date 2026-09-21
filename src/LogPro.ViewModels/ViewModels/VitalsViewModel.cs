@@ -119,8 +119,8 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     private void StartPolling()
     {
         if (SelectedDevice == null) return;
-        if (_pollCts == null || _pollCts.IsCancellationRequested)
-            _pollCts = new CancellationTokenSource();
+        _pollCts?.Dispose();
+        _pollCts = new CancellationTokenSource();
         IsPolling = true;
         _ = PollVitalsAsync();
         _pollTimer?.Change(3000, 3000);
@@ -130,7 +130,9 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     private void StopPolling()
     {
         IsPolling = false;
-        try { _pollCts?.Cancel(); } catch { }
+        try { _pollCts?.Cancel(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Vitals] StopPolling: cancel CTS failed"); }
+        try { _pollCts?.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Vitals] StopPolling: dispose CTS failed"); }
+        _pollCts = null;
         _pollTimer?.Change(Timeout.Infinite, Timeout.Infinite);
     }
 

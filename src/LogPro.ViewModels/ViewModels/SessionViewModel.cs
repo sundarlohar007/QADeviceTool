@@ -252,7 +252,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
             finally
             {
-                _autoCaptureInProgress.Remove(device.Serial);
+                lock (_autoCaptureLock)
+                {
+                    _autoCaptureInProgress.Remove(device.Serial);
+                }
             }
         });
     }
@@ -1167,8 +1170,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
 
             await _dispatcher.InvokeAsync(() => StatusMessage = "Loading log...");
+            if (Volatile.Read(ref _disposed) != 0) return;
             var content = await _sessionService.ReadLogContentAsync(session, maxLines: 200000);
 
+            if (Volatile.Read(ref _disposed) != 0) return;
             var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
             await _dispatcher.InvokeAsync(() =>
@@ -1231,6 +1236,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             _sessionService.LogBatchReceived -= OnLogBatchReceived;
             _isSubscribedToLogBatch = false;
         }
+        try { _searchDebounceCts?.Cancel(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Session] Dispose: cancel debounce CTS"); }
+        try { _searchDebounceCts?.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Session] Dispose: dispose debounce CTS"); }
         if (IsScreenRecording)
             _ = StopScreenRecordAsync();
         GC.SuppressFinalize(this);
