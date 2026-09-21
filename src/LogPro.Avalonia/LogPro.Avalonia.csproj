@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -50,6 +50,21 @@
     <Content Include="..\..\licenses\**\*" Link="licenses\%(RecursiveDir)%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Copy bundled tools (scrcpy, platform-tools, pymobiledevice3) to output.
+       Tools are stored alongside the WPF host; this reference ensures the Avalonia
+       host also ships them when built or published standalone.
+       Excludes PyInstaller intermediates, source files, dist-info, __pycache__, and the
+       numpy site-package (pymobiledevice3 doesn't need numpy at runtime). -->
+  <ItemGroup>
+    <Content Include="..\LogPro.App\tools\**\*"
+             Exclude="..\LogPro.App\tools\pymobiledevice3\build\**;..\LogPro.App\tools\pymobiledevice3\*.spec;..\LogPro.App\tools\pymobiledevice3\*.py;..\LogPro.App\tools\pymobiledevice3\**\*.dist-info\**;..\LogPro.App\tools\pymobiledevice3\**\__pycache__\**;..\LogPro.App\tools\pymobiledevice3\pymobiledevice3\_internal\numpy\**;..\LogPro.App\tools\pymobiledevice3\pymobiledevice3\_internal\**\numpy\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>tools\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Content>
   </ItemGroup>
 </Project>

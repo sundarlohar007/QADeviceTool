@@ -48,6 +48,22 @@ public static class ToolManifest
     public const string DefaultFileName = "tools-manifest.json";
     private const string CacheFileName = "tools-manifest.cache.json";
 
+    private static string GetCacheDirectory()
+    {
+        // Store cache in app data directory (outside tools) to avoid being seen as "unexpected"
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var cacheDir = Path.Combine(appData, "LogPro", "cache");
+        if (!Directory.Exists(cacheDir)) Directory.CreateDirectory(cacheDir);
+        return cacheDir;
+    }
+
+    private static string GetCachePath(string toolsRoot)
+    {
+        // Use tools root hash to isolate caches per installation
+        var toolsHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(toolsRoot)))).ToLowerInvariant()[..16];
+        return Path.Combine(GetCacheDirectory(), $"{CacheFileName}.{toolsHash}");
+    }
+
     public static async Task WriteAsync(string toolsRoot, string manifestPath)
     {
         if (!Directory.Exists(toolsRoot)) throw new DirectoryNotFoundException(toolsRoot);
@@ -167,7 +183,7 @@ public static class ToolManifest
 
     private static async Task<VerificationCache?> LoadCacheAsync(string toolsRoot, string manifestPath)
     {
-        var cachePath = Path.Combine(toolsRoot, CacheFileName);
+        var cachePath = GetCachePath(toolsRoot);
         if (!File.Exists(cachePath)) return null;
 
         try
@@ -221,7 +237,7 @@ public static class ToolManifest
                 }
             }
 
-            var cachePath = Path.Combine(toolsRoot, CacheFileName);
+            var cachePath = GetCachePath(toolsRoot);
             var json = JsonSerializer.Serialize(cache, LogProJsonContext.Default.VerificationCache);
             await File.WriteAllTextAsync(cachePath, json);
         }
@@ -232,7 +248,7 @@ public static class ToolManifest
     {
         try
         {
-            var cachePath = Path.Combine(toolsRoot, CacheFileName);
+            var cachePath = GetCachePath(toolsRoot);
             if (File.Exists(cachePath)) File.Delete(cachePath);
         }
         catch { }

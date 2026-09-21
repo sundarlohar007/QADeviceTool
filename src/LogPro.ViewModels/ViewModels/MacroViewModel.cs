@@ -142,10 +142,10 @@ public partial class MacroViewModel : ObservableObject, IDisposable
                     process.Kill(entireProcessTree: true);
                 process.WaitForExit(1500);
             }
-            catch { /* process already exited */ }
+            catch (Exception ex) { AppLogger.Log.Debug(ex, "[Macro] StopRecording: kill/wait failed"); }
 
             await _macroService.CompleteRecordingAsync(process);
-            try { process.Dispose(); } catch { /* best effort */ }
+            try { process.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Macro] StopRecording: dispose process failed"); }
         }
 
         if (_recordOutputPath != null && File.Exists(_recordOutputPath))
@@ -294,15 +294,18 @@ public partial class MacroViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
-        try
+        var process = Interlocked.Exchange(ref _recordProcess, null);
+        if (process != null)
         {
-            if (_recordProcess != null && !_recordProcess.HasExited)
-                _recordProcess.Kill(entireProcessTree: true);
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch (Exception ex) { AppLogger.Log.Debug(ex, "[Macro] Dispose: kill record process failed"); }
+            try { process.WaitForExit(1500); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Macro] Dispose: wait for exit failed"); }
+            try { process.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Macro] Dispose: dispose process failed"); }
         }
-        catch { }
-        try { _recordProcess?.WaitForExit(1500); } catch { }
-        try { _recordProcess?.Dispose(); } catch { }
-        _recordProcess = null;
         Volatile.Read(ref _playCts)?.Cancel();
         GC.SuppressFinalize(this);
     }
