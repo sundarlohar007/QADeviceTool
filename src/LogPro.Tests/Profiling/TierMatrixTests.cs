@@ -65,10 +65,10 @@ public class TierMatrixTests
     [Fact]
     public async Task WriteJson_RoundTripsDevices()
     {
-        var results = new[] 
-        { 
-            new TierResult 
-            { 
+        var results = new[]
+        {
+            new TierResult
+            {
                 Profile = new DeviceTierProfile { Serial = "FAST01", Label = "L1" },
                 AvgFps = 59.5,
                 JankyFrames = 2,
@@ -76,7 +76,7 @@ public class TierMatrixTests
                 MemoryGrowthKb = 1024,
                 BatteryDrainPercent = 1,
                 SlowSession = false
-            } 
+            }
         };
 
         var path = Path.Combine(Path.GetTempPath(), $"tier_{Guid.NewGuid():N}.json");
