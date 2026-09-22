@@ -8,10 +8,29 @@ namespace LogPro.Helpers;
 public static class SecurityHelper
 {
     /// <summary>
-    /// LogPro's privacy boundary is deliberately not user-toggleable. Features that can
-    /// initiate network traffic must be rejected by the engine, not merely hidden in UI.
+    /// LogPro's privacy boundary: the Data Channel (logs, exports, bug reports) is always
+    /// offline. The Tool Channel (updates, wireless ADB) allows controlled internet/network
+    /// access that never carries game data.
     /// </summary>
-    public static bool OfflineOnly => true;
+    public static bool OfflineOnly => false;
+
+    /// <summary>
+    /// Returns true if the IP address belongs to a private (RFC-1918) or link-local subnet.
+    /// Used to restrict wireless ADB to lab-local networks only.
+    /// </summary>
+    public static bool IsPrivateSubnet(string? ipAddress)
+    {
+        if (string.IsNullOrWhiteSpace(ipAddress)) return false;
+        // Strip port if present (e.g. "192.168.1.10:5555")
+        var host = ipAddress.Contains(':') ? ipAddress[..ipAddress.LastIndexOf(':')] : ipAddress;
+        if (!System.Net.IPAddress.TryParse(host, out var ip)) return false;
+        var bytes = ip.GetAddressBytes();
+        if (bytes.Length != 4) return false; // IPv4 only
+        return bytes[0] == 10 ||                                          // 10.0.0.0/8
+               (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||   // 172.16.0.0/12
+               (bytes[0] == 192 && bytes[1] == 168) ||                    // 192.168.0.0/16
+               (bytes[0] == 169 && bytes[1] == 254);                      // 169.254.0.0/16 link-local
+    }
 
     private static readonly Regex PackageNamePattern = new(
         @"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$",

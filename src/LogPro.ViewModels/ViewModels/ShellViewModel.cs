@@ -104,10 +104,10 @@ public partial class ShellViewModel : ObservableObject, IDisposable
         var cmd = CommandInput.Trim();
         CommandInput = string.Empty;
 
-        if (SelectedDevice.Platform == DevicePlatform.Android && !SecurityHelper.IsOfflineSafeReadOnlyCommand(cmd))
+        if (SelectedDevice.Platform == DevicePlatform.Android && SecurityHelper.IsNetworkCapableCommand(cmd))
         {
-            AppendOutput("[Blocked] Offline security mode permits read-only, non-network commands only.\n" +
-                         "Use the dedicated QA actions for installs, macros, conditions, and device changes.");
+            AppendOutput("[Blocked] Network-capable commands (connect, pair, curl, wget, etc.) are not allowed in the terminal.\n" +
+                         "Use the Wireless ADB section in Settings for device connections.");
             return;
         }
 
