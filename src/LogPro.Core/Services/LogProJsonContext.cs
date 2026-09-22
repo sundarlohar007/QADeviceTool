@@ -18,6 +18,9 @@ namespace LogPro.Services;
 [JsonSerializable(typeof(VerificationCache))]
 [JsonSerializable(typeof(FileMetadata))]
 [JsonSerializable(typeof(Dictionary<string, FileMetadata>))]
+[JsonSerializable(typeof(Models.UpdateInfo))]
+[JsonSerializable(typeof(Models.UpdatePreferences))]
+[JsonSerializable(typeof(List<Models.UpdateInfo>))]
 public partial class LogProJsonContext : JsonSerializerContext
 {
 }

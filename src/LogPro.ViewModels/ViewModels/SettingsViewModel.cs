@@ -22,6 +22,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly ISessionService _sessionService;
     private readonly IAdbService _adbService;
     private readonly IUiDispatcher _dispatcher;
+    private readonly UpdateService _updateService = new();
     private readonly CancellationTokenSource _cts = new();
     private int _disposed;
 
@@ -71,6 +72,18 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isLoading;
 
+    [ObservableProperty]
+    private ObservableCollection<UpdateInfo> _availableUpdates = new();
+
+    [ObservableProperty]
+    private bool _isCheckingUpdates;
+
+    [ObservableProperty]
+    private string _updateStatus = string.Empty;
+
+    [ObservableProperty]
+    private bool _checkForUpdatesOnStartup;
+
     public SettingsViewModel(DependencyChecker dependencyChecker, ISessionService sessionService, IAdbService adbService, IUiDispatcher? dispatcher = null)
     {
         _dependencyChecker = dependencyChecker;
@@ -84,6 +97,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
 
         IsDarkTheme = UiServices.Theme.CurrentTheme == UiServices.Theme.ThemeDark;
         IsLightTheme = !IsDarkTheme;
+        CheckForUpdatesOnStartup = PreferencesService.Current.UpdatePreferences.CheckOnStartup;
         // Execute all heavy startup IO away from the main UI thread.
         _ = Task.Run(async () =>
         {
@@ -92,6 +106,14 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
                 if (_cts.Token.IsCancellationRequested) return;
                 // Start dependency checks
                 await CheckDependenciesAsync();
+                // Auto-check for updates if enabled
+                if (CheckForUpdatesOnStartup)
+                {
+                    var prefs = PreferencesService.Current.UpdatePreferences;
+                    var hoursSinceLastCheck = (DateTime.UtcNow - prefs.LastCheckUtc).TotalHours;
+                    if (hoursSinceLastCheck >= prefs.CheckIntervalHours)
+                        await CheckForUpdatesAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -309,6 +331,91 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
                 ClearDataStatus = "App data folder not found.";
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[Settings] ExportMyData failed"); ClearDataStatus = $"Export failed: {ex.Message}"; }
+    }
+
+    // ─── Auto-Update Commands ────────────────────────────────────
+
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        _dispatcher.Post(() =>
+        {
+            IsCheckingUpdates = true;
+            UpdateStatus = "Checking for updates...";
+        });
+
+        try
+        {
+            var updates = await _updateService.CheckAllAsync(_cts.Token);
+            PreferencesService.Current.UpdatePreferences.LastCheckUtc = DateTime.UtcNow;
+            PreferencesService.Save();
+
+            var suppressed = PreferencesService.Current.UpdatePreferences.SuppressedVersions;
+            var available = updates
+                .Where(u => u.IsNewerAvailable && !suppressed.Contains($"{u.ToolName}:{u.LatestVersion}"))
+                .ToList();
+
+            _dispatcher.Post(() =>
+            {
+                AvailableUpdates.Clear();
+                foreach (var u in available)
+                    AvailableUpdates.Add(u);
+                UpdateStatus = available.Count > 0
+                    ? $"{available.Count} update(s) available"
+                    : "All tools are up to date!";
+                IsCheckingUpdates = false;
+            });
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[Settings] CheckForUpdates failed");
+            _dispatcher.Post(() =>
+            {
+                UpdateStatus = $"Update check failed: {ex.Message}";
+                IsCheckingUpdates = false;
+            });
+        }
+    }
+
+    [RelayCommand]
+    private async Task ApplyUpdateAsync(UpdateInfo update)
+    {
+        _dispatcher.Post(() => UpdateStatus = $"Updating {update.ToolName}...");
+        var (success, message) = await _updateService.ApplyUpdateAsync(update, ct: _cts.Token);
+        _dispatcher.Post(() =>
+        {
+            UpdateStatus = message;
+            if (success)
+            {
+                var item = AvailableUpdates.FirstOrDefault(u => u.ToolName == update.ToolName);
+                if (item != null) AvailableUpdates.Remove(item);
+            }
+        });
+
+        // Refresh dependency status after a tool update
+        if (success && !string.Equals(update.ToolName, "logpro", StringComparison.OrdinalIgnoreCase))
+            await CheckDependenciesAsync();
+    }
+
+    [RelayCommand]
+    private void SkipUpdate(UpdateInfo update)
+    {
+        var key = $"{update.ToolName}:{update.LatestVersion}";
+        var suppressed = PreferencesService.Current.UpdatePreferences.SuppressedVersions;
+        if (!suppressed.Contains(key))
+        {
+            suppressed.Add(key);
+            PreferencesService.Save();
+        }
+        var item = AvailableUpdates.FirstOrDefault(u => u.ToolName == update.ToolName);
+        if (item != null) AvailableUpdates.Remove(item);
+        UpdateStatus = $"Skipped {update.ToolName} v{update.LatestVersion}";
+    }
+
+    partial void OnCheckForUpdatesOnStartupChanged(bool value)
+    {
+        PreferencesService.Current.UpdatePreferences.CheckOnStartup = value;
+        PreferencesService.Save();
     }
 
     public void Dispose()

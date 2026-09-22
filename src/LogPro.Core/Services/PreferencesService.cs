@@ -15,6 +15,7 @@ public class AppPreferences
     public string? ThemePreference { get; set; }
     public bool SecureMode { get; set; } = true; // §10: redaction on by default
     public bool PrivacyNoticeAccepted { get; set; } = false;
+    public Models.UpdatePreferences UpdatePreferences { get; set; } = new();
 }
 
 public class DevicePreference

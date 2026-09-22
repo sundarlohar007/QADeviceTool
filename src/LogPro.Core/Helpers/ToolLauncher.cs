@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text.RegularExpressions;
 using LogPro.Services;
 
 namespace LogPro.Helpers;
@@ -146,9 +147,12 @@ public static class ToolLauncher
             return result;
         }
 
-        if (SecurityHelper.IsNetworkCapableCommand(arguments))
+        // Block exfiltration-capable commands but allow ADB wireless operations
+        // (wireless ADB is protected by IsPrivateSubnet at the AdbService layer)
+        if (SecurityHelper.IsNetworkCapableCommand(arguments) &&
+            !IsAdbWirelessOperation(arguments))
         {
-            result.Error = "Blocked by LogPro offline security policy.";
+            result.Error = "Blocked: network-capable command detected.";
             return result;
         }
 
@@ -260,7 +264,8 @@ public static class ToolLauncher
             return null;
         }
 
-        if (SecurityHelper.IsNetworkCapableCommand(arguments))
+        if (SecurityHelper.IsNetworkCapableCommand(arguments) &&
+            !IsAdbWirelessOperation(arguments))
         {
             AppLogger.Log.Warn($"[ToolLauncher] Blocked network-capable long-running command: {SecurityHelper.RedactSensitiveText(arguments)}");
             return null;
@@ -337,6 +342,19 @@ public static class ToolLauncher
             try { Services.AppLogger.Log.Error(ex, $"[ToolLauncher] Exception in StartLongRunning for {fullExePath}"); } catch (Exception _) { AppLogger.Log.Debug(_, "[ToolLauncher] Exception during startup"); }
             return null;
         }
+    }
+
+    /// <summary>Returns true for ADB wireless management commands (connect, pair, tcpip, disconnect).
+    /// These are safe to pass through the launcher because they are validated by
+    /// <see cref="SecurityHelper.IsPrivateSubnet"/> at the AdbService layer.</summary>
+    private static bool IsAdbWirelessOperation(string arguments)
+    {
+        var trimmed = arguments.TrimStart();
+        return trimmed.StartsWith("connect ", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("pair ", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("disconnect ", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains(" tcpip ", StringComparison.OrdinalIgnoreCase) ||
+               Regex.IsMatch(trimmed, @"-s\s+\S+\s+tcpip\s+\d+", RegexOptions.IgnoreCase);
     }
 
     /// <summary>Sanitizes command arguments for logging when Secure Mode is enabled.</summary>

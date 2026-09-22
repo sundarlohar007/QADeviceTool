@@ -490,14 +490,37 @@ public class AdbService : IAdbService
         return (false, result.Output.Trim());
     }
 
-    public Task<(bool Success, string Message)> EnableWirelessAsync(string serial, int port = 5555)
-        => Task.FromResult((false, "Blocked by LogPro offline security policy: wireless ADB is disabled."));
+    public async Task<(bool Success, string Message)> EnableWirelessAsync(string serial, int port = 5555)
+    {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial))
+            return (false, "Invalid device selector.");
+        if (port < 1 || port > 65535)
+            return (false, "Invalid port number.");
+        var result = await RunAdbAsync($"-s {serial} tcpip {port}", FastTimeoutMs);
+        return result.Success
+            ? (true, $"Wireless ADB enabled on port {port}. Use 'adb connect <device-ip>:{port}' to connect.")
+            : (false, result.Error);
+    }
 
-    public Task<(bool Success, string Message)> ConnectWirelessAsync(string ipAddress, int port = 5555)
-        => Task.FromResult((false, "Blocked by LogPro offline security policy: wireless ADB is disabled."));
+    public async Task<(bool Success, string Message)> ConnectWirelessAsync(string ipAddress, int port = 5555)
+    {
+        if (!SecurityHelper.IsPrivateSubnet(ipAddress))
+            return (false, "Only private/lab network IPs are allowed (10.x, 172.16-31.x, 192.168.x). Public IPs are blocked.");
+        var result = await RunAdbAsync($"connect {ipAddress}:{port}", FastTimeoutMs);
+        return result.Success && result.Output.Contains("connected", StringComparison.OrdinalIgnoreCase)
+            ? (true, $"Connected to {ipAddress}:{port}")
+            : (false, string.IsNullOrWhiteSpace(result.Error) ? result.Output : result.Error);
+    }
 
-    public Task<(bool Success, string Message)> DisconnectWirelessAsync(string ipAddress, int port = 5555)
-        => Task.FromResult((false, "Blocked by LogPro offline security policy: wireless ADB is disabled."));
+    public async Task<(bool Success, string Message)> DisconnectWirelessAsync(string ipAddress, int port = 5555)
+    {
+        if (!SecurityHelper.IsPrivateSubnet(ipAddress))
+            return (false, "Only private/lab network IPs are allowed.");
+        var result = await RunAdbAsync($"disconnect {ipAddress}:{port}", FastTimeoutMs);
+        return result.Success
+            ? (true, $"Disconnected from {ipAddress}:{port}")
+            : (false, result.Error);
+    }
 
     public async Task<List<DeviceFile>> ListDirectoryAsync(string serial, string path)
     {

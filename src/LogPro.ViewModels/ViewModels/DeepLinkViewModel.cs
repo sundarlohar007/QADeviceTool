@@ -94,12 +94,6 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (!SecurityHelper.IsOfflineSafeUri(TargetUrl.Trim()))
-        {
-            StatusMessage = "[!] Web, file, and network URLs are blocked by offline security policy. Use a non-network app scheme.";
-            return;
-        }
-
         IsRouting = true;
         StatusMessage = $"Sending intent to {SelectedDevice.DisplayName}...";
 
