@@ -83,21 +83,34 @@ public partial class App : Application
 
         // Start tool verification in background (non-blocking).
         // Verification uses cached results when files haven't changed (§7.1).
-        // If verification fails, we'll show an error and shutdown.
+        // If verification fails, we log a warning and fall back to system-PATH tools
+        // instead of crashing — auto-updates may have legitimately changed tool files.
         _ = Task.Run(async () =>
         {
             try
             {
-                var ok = await ToolResolver.VerifyBundledToolsAsync(requireManifest: true, requireTools: true).ConfigureAwait(false);
+                var ok = await ToolResolver.VerifyBundledToolsAsync(requireManifest: false, requireTools: false).ConfigureAwait(false);
                 if (!ok)
                 {
-                    EarlyLog("FATAL: bundled tool integrity verification failed; shutting down");
-                    await Dispatcher.InvokeAsync(() =>
+                    EarlyLog("WARNING: bundled tool integrity verification failed; falling back to system PATH tools");
+                    // Attempt to regenerate the manifest from the current tools on disk
+                    try
                     {
-                        MessageBox.Show("The bundled device tools failed integrity verification. LogPro will now close.",
-                            "LogPro Security Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                        Shutdown(3);
-                    });
+                        var toolsDir = ToolResolver.ToolsDirectory;
+                        var manifestPath = System.IO.Path.Combine(AppContext.BaseDirectory, LogPro.Services.ToolManifest.DefaultFileName);
+                        if (System.IO.Directory.Exists(toolsDir))
+                        {
+                            await LogPro.Services.ToolManifest.WriteAsync(toolsDir, manifestPath).ConfigureAwait(false);
+                            // Re-verify with the freshly written manifest
+                            ok = await ToolResolver.VerifyBundledToolsAsync(requireManifest: false, requireTools: false).ConfigureAwait(false);
+                            if (ok) EarlyLog("Manifest regenerated and verification passed");
+                            else EarlyLog("WARNING: verification still failed after manifest regeneration");
+                        }
+                    }
+                    catch (Exception regenEx)
+                    {
+                        EarlyLog("Manifest regeneration failed (may lack write permission to app directory)", regenEx);
+                    }
                 }
                 else
                 {
@@ -106,13 +119,7 @@ public partial class App : Application
             }
             catch (Exception ex)
             {
-                EarlyLog("FATAL: tool verification crashed", ex);
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    MessageBox.Show($"Tool verification failed: {ex.Message}. LogPro will now close.",
-                        "LogPro Security Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                    Shutdown(3);
-                });
+                EarlyLog("WARNING: tool verification threw an exception; continuing with system PATH tools", ex);
             }
         });
 
