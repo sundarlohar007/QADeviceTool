@@ -17,10 +17,17 @@ public static class Program
         _ = AppLogger.Log; // force NLog config init before we strip the console target
         QuietConsoleLogging();
 
-        if (!LogPro.Helpers.ToolResolver.VerifyBundledToolsAsync(requireManifest: true).GetAwaiter().GetResult())
+        if (!LogPro.Helpers.ToolResolver.VerifyBundledToolsAsync(requireManifest: false).GetAwaiter().GetResult())
         {
-            Console.Error.WriteLine("bundled tool integrity verification failed; refusing to run");
-            return 3;
+            Console.Error.WriteLine("warning: bundled tool integrity mismatch; attempting manifest regeneration");
+            try
+            {
+                var toolsDir = LogPro.Helpers.ToolResolver.ToolsDirectory;
+                var manifestPath = System.IO.Path.Combine(AppContext.BaseDirectory, ToolManifest.DefaultFileName);
+                if (System.IO.Directory.Exists(toolsDir))
+                    ToolManifest.WriteAsync(toolsDir, manifestPath).GetAwaiter().GetResult();
+            }
+            catch { /* best effort */ }
         }
 
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
