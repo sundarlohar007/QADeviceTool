@@ -108,6 +108,12 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (!SecurityHelper.IsOfflineSafeUri(TargetUrl))
+        {
+            StatusMessage = "[!] This offline build supports custom-scheme and intent: links only. HTTPS Android App Links are blocked by its network policy.";
+            return;
+        }
+
         IsRouting = true;
         StatusMessage = $"Sending intent to {SelectedDevice.DisplayName}...";
 

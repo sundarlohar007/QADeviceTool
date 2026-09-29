@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LogPro.Helpers;
 using LogPro.Models;
 using LogPro.Services;
 
@@ -67,7 +68,9 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private string _discoveredPorts = string.Empty;
 
     [ObservableProperty]
-    private string _wirelessStatus = string.Empty;
+    private string _wirelessStatus = SecurityHelper.OfflineOnly
+        ? "[!] Wireless ADB is unavailable in this offline build. Connect Android devices by USB."
+        : string.Empty;
 
     [ObservableProperty]
     private bool _isLoading;
@@ -239,7 +242,9 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
 
         DiscoveredPorts = ports.Count > 0
             ? string.Join(", ", ports)
-            : "Automatic discovery isn't reliable — enter IP:Port and code from the device (Wireless debugging > Pair device).";
+            : SecurityHelper.OfflineOnly
+                ? "Wireless ADB discovery is unavailable in this offline build."
+                : "Automatic discovery isn't reliable — enter IP:Port and code from the device (Wireless debugging > Pair device).";
 
         IsLoading = false;
     }

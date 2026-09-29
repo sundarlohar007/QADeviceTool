@@ -92,6 +92,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private string _screenRecordStatus = string.Empty;
 
     private string? _screenRecordRemotePath;
+    private string? _screenRecordSerial;
 
     [ObservableProperty]
     private bool _autoCapture;
@@ -899,6 +900,19 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 return;
             }
 
+            var sdk = await _adbService.GetDevicePropertyAsync(device.Serial, "ro.build.version.sdk");
+            if (int.TryParse(sdk, out var apiLevel) && apiLevel < 19)
+            {
+                StatusMessage = "[!] Screen recording requires Android 4.4 (API 19) or later.";
+                return;
+            }
+            var characteristics = await _adbService.GetDevicePropertyAsync(device.Serial, "ro.build.characteristics");
+            if (characteristics?.Split(',').Any(c => c.Trim().Equals("watch", StringComparison.OrdinalIgnoreCase)) == true)
+            {
+                StatusMessage = "[!] Standard ADB screen recording is not supported on Wear OS devices.";
+                return;
+            }
+
             var saveDir = SelectedSession?.SessionDirectory
                 ?? Helpers.PathHelper.GetDefaultSessionsDirectory();
             if (!Directory.Exists(saveDir)) Directory.CreateDirectory(saveDir);
@@ -908,8 +922,9 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
             if (_screenRecordRemotePath != null)
             {
+                _screenRecordSerial = device.Serial;
                 IsScreenRecording = true;
-                ScreenRecordStatus = "[REC] Recording screen...";
+                ScreenRecordStatus = "[REC] Recording screen (no audio; 3-minute maximum)...";
                 StatusMessage = ScreenRecordStatus;
             }
             else
@@ -928,14 +943,15 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var device = SelectedDevice;
-            if (device == null) return;
+            var serial = _screenRecordSerial;
+            if (serial == null) return;
 
             IsScreenRecording = false;
             ScreenRecordStatus = "Saving recording...";
             StatusMessage = ScreenRecordStatus;
 
-            var localPath = await _adbService.StopScreenRecordAsync(device.Serial);
+            var localPath = await _adbService.StopScreenRecordAsync(serial);
+            _screenRecordSerial = null;
 
             if (localPath != null && File.Exists(localPath))
             {

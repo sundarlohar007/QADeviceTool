@@ -31,4 +31,24 @@ public class SessionServiceReadLogTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    [Theory]
+    [InlineData("α\r\nβ\r\nγ\r\n", "β", "γ")]
+    [InlineData("α\nβ\nγ", "β", "γ")]
+    public async Task ReadLogContentAsync_HandlesLineEndingsAndUtf8(string text, string first, string last)
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"LogProTail_{Guid.NewGuid():N}.txt");
+        try
+        {
+            await File.WriteAllTextAsync(file, text);
+            var svc = new SessionService(_adb, _ios);
+            var session = new LogSession { LogFilePath = file };
+
+            var content = await svc.ReadLogContentAsync(session, maxLines: 2);
+
+            content.Split(Environment.NewLine).Should().Equal(first, last);
+            (await svc.ReadLogContentAsync(session, maxLines: 0)).Should().BeEmpty();
+        }
+        finally { File.Delete(file); }
+    }
 }

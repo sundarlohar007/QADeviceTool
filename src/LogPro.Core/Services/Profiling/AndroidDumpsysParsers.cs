@@ -38,9 +38,10 @@ public static class AndroidDumpsysParsers
 
             var prev = frames.LastOrDefault();
             var frameTimeMs = prev is null ? 0.0 : (presentNs - prev.PresentTimestampNs) / 1_000_000.0;
-            if (frameTimeMs > 0 && frameTimeMs < 1000) // sanity: reject gaps from buffer misses
+            if (frameTimeMs > 0 && frameTimeMs < 1000)
                 frames.Add(new FrameSample(presentNs, frameTimeMs));
-            else if (prev is null)
+            else if (prev is null || presentNs > prev.PresentTimestampNs)
+                // A long gap is a new baseline, not a reason to discard every later frame.
                 frames.Add(new FrameSample(presentNs, 0.0));
         }
 
@@ -59,7 +60,7 @@ public static class AndroidDumpsysParsers
 
         // FPS from present timestamps: count / span
         var spanMs = (frames[^1].PresentTimestampNs - frames[0].PresentTimestampNs) / 1_000_000.0;
-        var fps = spanMs > 0 ? count * 1000.0 / spanMs : 0.0;
+        var fps = spanMs > 0 ? (frames.Count - 1) * 1000.0 / spanMs : 1000.0 / times[0];
 
         var budgetMs = refreshPeriodMs * 1.05; // ~5% tolerance over vsync
         var janky = times.Count(t => t > budgetMs);

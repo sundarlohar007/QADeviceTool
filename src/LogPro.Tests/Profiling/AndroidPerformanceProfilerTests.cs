@@ -31,6 +31,7 @@ public class AndroidPerformanceProfilerTests
         var third = await profiler.SampleOnceAsync();
         third.JankyFrames.Should().Be(0);
         third.TotalFrames.Should().Be(0);
+        third.Fps.Should().BeNull("no new frames means the previous FPS is stale");
         adb.Verify(a => a.ExecuteCommandAsync("S1", $"shell dumpsys SurfaceFlinger --latency \"{layer}\"", It.IsAny<CancellationToken>()), Times.Exactly(3));
     }
 }

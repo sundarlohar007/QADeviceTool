@@ -60,11 +60,13 @@ public class ProfilerViewModelTests
         while (vm.History.Count < 2 && DateTime.UtcNow < deadline)
             await Task.Delay(200);
 
+        vm.StatusMessage.Should().Contain("no new frames");
         await vm.StopProfilingCommand.ExecuteAsync(null);
 
         vm.History.Count.Should().BeGreaterThanOrEqualTo(2, "sampler runs at ~1s intervals");
-        vm.Fps.Should().HaveValue();
-        vm.Fps!.Value.Should().BeGreaterThan(30, "fake SurfaceFlinger streams ~60fps with jank");
+        vm.History[0].Fps.Should().HaveValue();
+        vm.History[0].Fps!.Value.Should().BeGreaterThan(30, "fake SurfaceFlinger streams ~60fps with jank");
+        vm.Fps.Should().BeNull("the second sample contains no newly presented frames");
         vm.JankyFrames.Should().Be(0, "unchanged SurfaceFlinger history must not be counted again");
         vm.CpuPercent.Should().Be(38.0);
         vm.PssKb.Should().Be(384000);

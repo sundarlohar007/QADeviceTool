@@ -434,10 +434,38 @@ public class SessionService : ISessionService
     {
         if (string.IsNullOrEmpty(session.LogFilePath) || !File.Exists(session.LogFilePath))
             return "No log file found.";
+        if (maxLines <= 0) return string.Empty;
 
-        // Tail-read via StreamReader — never load a 50-100MB+ file fully into memory (BUG-17).
+        // Find the last requested line boundary from the end. A small tail request must
+        // not scan every line of a large capture just to discard almost all of them.
+        using var stream = new FileStream(session.LogFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
+            bufferSize: 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var buffer = new byte[64 * 1024];
+        var position = stream.Length;
+        var start = 0L;
+        var separators = 0;
+        var trailingLineEnding = true;
+        while (position > 0 && separators < maxLines)
+        {
+            var chunkSize = (int)Math.Min(buffer.Length, position);
+            var chunkStart = position - chunkSize;
+            stream.Position = chunkStart;
+            await stream.ReadExactlyAsync(buffer.AsMemory(0, chunkSize)).ConfigureAwait(false);
+            for (var i = chunkSize - 1; i >= 0; i--)
+            {
+                var current = buffer[i];
+                if (trailingLineEnding && current is (byte)'\r' or (byte)'\n') continue;
+                trailingLineEnding = false;
+                if (current != (byte)'\n' || ++separators != maxLines) continue;
+                start = chunkStart + i + 1;
+                break;
+            }
+            position = chunkStart;
+        }
+
+        stream.Position = start;
         var lastLines = new Queue<string>(maxLines);
-        using var reader = new StreamReader(session.LogFilePath);
+        using var reader = new StreamReader(stream);
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
         {
             if (lastLines.Count == maxLines) lastLines.Dequeue();

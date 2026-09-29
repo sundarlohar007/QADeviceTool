@@ -144,7 +144,8 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
             var initial = _lastPresentTimestampNs == 0;
             var newFrames = result.Frames.Where(f => f.PresentTimestampNs > _lastPresentTimestampNs).ToList();
             _lastPresentTimestampNs = newest;
-            var summary = AndroidDumpsysParsers.SummarizeFrames(result.Frames, result.RefreshPeriodMs);
+            if (newFrames.Count == 0) return (null, null, null, 0, 0);
+            var summary = AndroidDumpsysParsers.SummarizeFrames(newFrames, result.RefreshPeriodMs);
             var budget = result.RefreshPeriodMs * 1.05;
             return (summary.Fps, summary.FrameTimeP90Ms, summary.FrameTimeP95Ms,
                 initial ? 0 : newFrames.Count(f => f.FrameTimeMs > budget), initial ? 0 : newFrames.Count);

@@ -66,4 +66,38 @@ public class AdbServiceCommandTests
         files.Should().Contain(f => f.Name == "DCIM" && f.Path == "/sdcard/DCIM" && f.IsDirectory);
         files.Should().Contain(f => f.Name == "report.txt" && f.Path == "/sdcard/report.txt" && !f.IsDirectory);
     }
+
+    [Theory]
+    [InlineData("/", false)]
+    [InlineData("/sdcard", false)]
+    [InlineData("/storage/emulated/0", false)]
+    [InlineData("/system/bin", false)]
+    [InlineData("/sdcard/../data/secret", false)]
+    [InlineData("/sdcard/照片.png", true)]
+    [InlineData("/data/local/tmp/report.txt", true)]
+    public void FileDeletion_IsLimitedToChildrenOfWritableAreas(string path, bool expected)
+    {
+        AdbService.IsAllowedFileDeletionPath(path).Should().Be(expected);
+    }
+
+    [Fact]
+    public void NotificationCommand_FollowsAndroidPostContract()
+    {
+        var supported = AdbService.TryBuildNotificationArgs("device-1", "QA title", "QA body", null, out var args);
+
+        supported.Should().BeTrue();
+        args.Should().Contain("cmd notification post -t 'QA title' LogPro_");
+        args.Should().EndWith(" 'QA body'");
+        args.Should().NotContain("--channel");
+        AdbService.TryBuildNotificationArgs("device-1", "title", "body", "custom", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ClipboardMethods_ReportPortableAdbLimitation()
+    {
+        var adb = new AdbService();
+
+        (await adb.SetDeviceClipboardAsync("device-1", "text")).Should().BeFalse();
+        (await adb.GetDeviceClipboardAsync("device-1")).Should().Contain("unavailable");
+    }
 }
