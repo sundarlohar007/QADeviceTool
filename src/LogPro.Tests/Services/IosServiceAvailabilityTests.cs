@@ -2,6 +2,7 @@ using LogPro.Services;
 
 namespace LogPro.Tests.Services;
 
+[Collection("HeavyE2E")]
 public class IosServiceAvailabilityTests
 {
     [Fact]

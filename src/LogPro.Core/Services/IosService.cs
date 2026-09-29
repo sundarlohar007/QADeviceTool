@@ -26,6 +26,7 @@ public class IosService : IIosService
     private const int DefaultTimeoutMs = 15000;
     private const int InfoTimeoutMs = 10000;
     private const int InstallTimeoutMs = 600000;
+    private const int CliProbeTimeoutMs = 45000;
 
     private static async Task<ToolSelection> SelectToolAsync()
     {
@@ -34,13 +35,13 @@ public class IosService : IIosService
         ToolLauncherResult? bundledProbe = null;
         if (bundled != null)
         {
-            bundledProbe = await ToolLauncher.RunAsync(bundled, "--no-color syslog live --help", 20000).ConfigureAwait(false);
+            bundledProbe = await ToolLauncher.RunAsync(bundled, "--no-color syslog live --help", CliProbeTimeoutMs).ConfigureAwait(false);
             if (bundledProbe.Success)
                 return new ToolSelection(bundled, false, $"bundled ({bundled})", bundledProbe);
         }
         if (systemPython != null)
         {
-            var pythonProbe = await ToolLauncher.RunAsync(systemPython, "-m pymobiledevice3 --no-color syslog live --help", 20000).ConfigureAwait(false);
+            var pythonProbe = await ToolLauncher.RunAsync(systemPython, "-m pymobiledevice3 --no-color syslog live --help", CliProbeTimeoutMs).ConfigureAwait(false);
             if (pythonProbe.Success)
                 return new ToolSelection(systemPython, true, $"python -m pymobiledevice3 ({systemPython})", pythonProbe);
             if (bundledProbe == null)
@@ -111,7 +112,7 @@ public class IosService : IIosService
         try
         {
             var tool = await SelectedTool.Value.ConfigureAwait(false);
-            var version = tool.ProbeResult.Success ? await RunAsync(null, "version", 20000).ConfigureAwait(false) : tool.ProbeResult;
+            var version = tool.ProbeResult.Success ? await RunAsync(null, "version", CliProbeTimeoutMs).ConfigureAwait(false) : tool.ProbeResult;
             var statusMsg = tool.ProbeResult.Success && version.Success
                 ? $"Ready — {tool.ToolKind}"
                 : $"Failed: {GetFailureMessage(tool.ProbeResult.Success ? version : tool.ProbeResult)}";
