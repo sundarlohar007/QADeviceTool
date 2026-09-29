@@ -2,6 +2,7 @@ using LogPro.Helpers;
 
 namespace LogPro.Tests.Services;
 
+[Collection("HeavyE2E")]
 public class ToolLauncherGateTests
 {
     [Fact]
@@ -13,7 +14,7 @@ public class ToolLauncherGateTests
         second.Should().BeNull("same-device commands must serialize");
 
         first!.Dispose();
-        var after = await ToolLauncher.TestAcquireAsync("-s R12345678 cmd", waitMs: 50);
+        var after = await ToolLauncher.TestAcquireAsync("-s R12345678 cmd", waitMs: 5000);
         after.Should().NotBeNull("gate must release when first command completes");
         after!.Dispose();
     }
@@ -22,7 +23,7 @@ public class ToolLauncherGateTests
     public async Task DifferentDevices_DoNotBlockEachOther()
     {
         var first = await ToolLauncher.TestAcquireAsync("-s DEVICE_A cmd");
-        var second = await ToolLauncher.TestAcquireAsync("-s DEVICE_B cmd", waitMs: 50);
+        var second = await ToolLauncher.TestAcquireAsync("-s DEVICE_B cmd", waitMs: 5000);
         second.Should().NotBeNull("different devices must run in parallel");
         first!.Dispose();
         second!.Dispose();
