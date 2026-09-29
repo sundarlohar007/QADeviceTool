@@ -10,12 +10,13 @@
         <TextBlock Text="Vitals" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
           <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="220" />
-          <Button Content="{Binding IsPolling, Converter={x:Static conv:AppConverters.PollLabel}}" Command="{Binding TogglePollingCommand}" Padding="14,6" />
+          <Button Content="{Binding IsPolling, Converter={x:Static conv:AppConverters.PollLabel}}" Command="{Binding TogglePollingCommand}" IsEnabled="{Binding IsPollingSupported}" Padding="14,6" />
           <Button Content="Record" Command="{Binding RecordCommand}" Padding="14,6" />
           <Button Content="CSV" Command="{Binding ExportCsvCommand}" Padding="14,6" />
         </StackPanel>
       </DockPanel>
     </Border>
+    <TextBlock DockPanel.Dock="Top" Text="{Binding CapabilityMessage}" Foreground="{DynamicResource BrushTextSecondary}" Margin="16,8,16,0" />
     <Grid ColumnDefinitions="*,*" Margin="16">
       <StackPanel Grid.Column="0" Spacing="10">
         <Border Background="{DynamicResource BrushSurface}" CornerRadius="10" Padding="16">

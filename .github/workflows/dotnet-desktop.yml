@@ -36,6 +36,10 @@ jobs:
     - name: Execute unit tests with coverage
       run: dotnet test src\LogPro.Tests\LogPro.Tests.csproj -c Release --no-build --collect:"XPlat Code Coverage"
 
+    - name: Smoke test bundled iOS commands
+      shell: pwsh
+      run: ./scripts/test-pymobiledevice3.ps1
+
     - name: Upload coverage
       uses: actions/upload-artifact@v7
       with:

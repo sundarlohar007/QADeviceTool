@@ -49,6 +49,10 @@ jobs:
       - name: Test
         run: dotnet test ${{ env.TEST_PROJECT }} -c Release --no-build --verbosity normal
 
+      - name: Smoke test bundled iOS commands
+        shell: pwsh
+        run: ./scripts/test-pymobiledevice3.ps1
+
       - name: Determine Version
         id: version
         shell: pwsh

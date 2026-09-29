@@ -91,7 +91,7 @@ public class SessionService : ISessionService
             process = session.Platform switch
             {
                 DevicePlatform.Android => await _adbService.StartLogCaptureAsync(session.DeviceSerial, session.LogFilePath, buffer, format).ConfigureAwait(false),
-                DevicePlatform.iOS => _iosService.StartLogCapture(session.DeviceSerial, session.LogFilePath),
+                DevicePlatform.iOS => await _iosService.StartLogCaptureAsync(session.DeviceSerial, session.LogFilePath).ConfigureAwait(false),
                 _ => null
             };
         }

@@ -135,4 +135,16 @@ public class IosServiceParserTests
     {
         IosService.ParseAfcLs("", "/").Should().BeEmpty();
     }
+
+    [Fact]
+    public void ParseAfcLs_ActualCliPathShape_SkipsRequestedDirectory()
+    {
+        // afc.dirlist emits the requested root before its children, all as full paths.
+        var output = "/DCIM\n/DCIM/100APPLE\n/DCIM/readme.txt\n";
+        var files = IosService.ParseAfcLs(output, "/DCIM");
+
+        files.Should().HaveCount(2);
+        files.Should().Contain(f => f.Name == "100APPLE" && f.Path == "/DCIM/100APPLE");
+        files.Should().Contain(f => f.Name == "readme.txt" && f.Path == "/DCIM/readme.txt");
+    }
 }

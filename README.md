@@ -49,6 +49,14 @@ The Windows installer, portable ZIP, and Windows CLI ZIP contain the tested `adb
 and `pymobiledevice3` tools. Android USB drivers are supplied by Windows/OEMs and are **not**
 redistributed by LogPro. The macOS/Linux Avalonia archives do not contain Windows binaries;
 install the platform-appropriate device tooling on those platforms before using devices.
+For iOS USB devices on Windows, install the classic iTunes package to provide Apple Mobile
+Device Service, then trust the computer on the device. The bundled pymobiledevice3 executable
+does not replace that Windows service.
+
+To rebuild the Windows iOS executable, install the packages in
+`scripts/requirements-pymobiledevice3-build.txt` with Python 3.13, then run
+`pwsh -File scripts/build-pymobiledevice3.ps1`. Run
+`pwsh -File scripts/test-pymobiledevice3.ps1` to check the bundled commands.
 
 ## Build from source
 

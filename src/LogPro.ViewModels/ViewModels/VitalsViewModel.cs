@@ -25,6 +25,8 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _memInfoOutput = "Select a device and start polling.";
     [ObservableProperty] private string _topProcessesOutput = string.Empty;
     [ObservableProperty] private bool _isPolling;
+    [ObservableProperty] private bool _isPollingSupported;
+    [ObservableProperty] private string _capabilityMessage = string.Empty;
 
     [ObservableProperty] private double _cpuPercent;
     [ObservableProperty] private double _memoryPercent;
@@ -89,6 +91,10 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
+        IsPollingSupported = value?.Platform == DevicePlatform.Android;
+        CapabilityMessage = value?.Platform == DevicePlatform.iOS
+            ? "Vitals polling is currently available for Android only. iOS telemetry is not supported here."
+            : string.Empty;
         if (value == null || value.Platform != DevicePlatform.Android)
         {
             StopPolling();
@@ -118,7 +124,7 @@ public partial class VitalsViewModel : ObservableObject, IDisposable
 
     private void StartPolling()
     {
-        if (SelectedDevice == null) return;
+        if (SelectedDevice == null || SelectedDevice.Platform != DevicePlatform.Android) return;
         _pollCts?.Dispose();
         _pollCts = new CancellationTokenSource();
         IsPolling = true;
