@@ -9,10 +9,10 @@ public static class SecurityHelper
 {
     /// <summary>
     /// LogPro's privacy boundary: the Data Channel (logs, exports, bug reports) is always
-    /// offline. The Tool Channel (updates, wireless ADB) allows controlled internet/network
-    /// access that never carries game data.
+    /// offline. Updates are an explicit opt-in tool download; device discovery and ADB
+    /// remain local to the USB transport.
     /// </summary>
-    public static bool OfflineOnly => false;
+    public static bool OfflineOnly => true;
 
     /// <summary>
     /// Returns true if the IP address belongs to a private (RFC-1918) or link-local subnet.

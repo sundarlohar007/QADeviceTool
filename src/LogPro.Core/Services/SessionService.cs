@@ -174,8 +174,8 @@ public class SessionService : ISessionService
                 while (!cts.Token.IsCancellationRequested)
                 {
                     await Task.Delay(2000, cts.Token).ConfigureAwait(false);
-                    try { await writer.FlushAsync().ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
-                    if (appWriter != null) { try { await appWriter.FlushAsync().ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); } }
+                    try { lock (ctx.WriterLock) { if (!ctx.WritersClosed) { writer.Flush(); appWriter?.Flush(); } } }
+                    catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
                 }
             }
             catch (OperationCanceledException) { }
@@ -198,7 +198,8 @@ public class SessionService : ISessionService
                                 currentTargetPid = pid;
                                 // Write PID resolution notice only to app-specific log, NOT to main log buffer.
                                 var notice = $"[{DateTime.Now:HH:mm:ss.fff}] PID:{targetPackageName}={pid}";
-                                try { await appWriter.WriteLineAsync(notice).ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to write app log notice"); }
+                                try { lock (ctx.WriterLock) { if (!ctx.WritersClosed) appWriter.WriteLine(notice); } }
+                                catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to write app log notice"); }
                             }
                         }
                         catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to resolve package PID"); }
@@ -221,13 +222,14 @@ public class SessionService : ISessionService
                 }
 
                 var line = args.Data;
-                try { writer.WriteLine(line); } catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to write main log"); }
-
-                if (appWriter != null && !string.IsNullOrWhiteSpace(currentTargetPid))
+                lock (ctx.WriterLock)
                 {
-                    if (Regex.IsMatch(line, $@"\b{Regex.Escape(currentTargetPid)}\b"))
+                    if (!ctx.WritersClosed)
                     {
-                        try { appWriter.WriteLine(line); } catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to write app log"); }
+                        writer.WriteLine(line);
+                        if (appWriter != null && !string.IsNullOrWhiteSpace(currentTargetPid) &&
+                            Regex.IsMatch(line, $@"\b{Regex.Escape(currentTargetPid)}\b"))
+                            appWriter.WriteLine(line);
                     }
                 }
 
@@ -243,7 +245,6 @@ public class SessionService : ISessionService
         // cannot leave a capture permanently marked as active.
         process.Exited += (_, _) =>
         {
-            ctx.OutputCompleted.TrySetResult(true);
             _ = Task.Run(() => StopCapture(session));
         };
         process.EnableRaisingEvents = true;
@@ -310,8 +311,6 @@ public class SessionService : ISessionService
             {
                 ctx.Cts.Cancel();
 
-                try { ctx.Process.CancelOutputRead(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] CancelOutputRead error"); }
-
                 if (!ctx.Process.HasExited)
                 {
                     bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
@@ -322,11 +321,15 @@ public class SessionService : ISessionService
                 try { await Task.WhenAny(ctx.OutputCompleted.Task, Task.Delay(2000)).ConfigureAwait(false); } catch { }
                 if (ctx.FlushTask != null) try { await Task.WhenAny(ctx.FlushTask, Task.Delay(2000)).ConfigureAwait(false); } catch { }
                 if (ctx.PidTask != null) try { await Task.WhenAny(ctx.PidTask, Task.Delay(2000)).ConfigureAwait(false); } catch { }
-                try { await ctx.Writer.FlushAsync().ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
-                if (ctx.AppWriter != null) try { await ctx.AppWriter.FlushAsync().ConfigureAwait(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] AppWriter flush error"); }
+                lock (ctx.WriterLock)
+                {
+                    ctx.WritersClosed = true;
+                    try { ctx.Writer.Flush(); ctx.AppWriter?.Flush(); }
+                    catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
+                    ctx.Writer.Dispose();
+                    ctx.AppWriter?.Dispose();
+                }
                 FlushCaptureBuffer(session.Id, ctx);
-                ctx.Writer.Dispose();
-                ctx.AppWriter?.Dispose();
             }
             catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] StopCapture cleanup error"); }
             finally
@@ -509,6 +512,8 @@ public class SessionService : ISessionService
         public TaskCompletionSource<bool> OutputCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task? FlushTask { get; set; }
         public Task? PidTask { get; set; }
+        public object WriterLock { get; } = new();
+        public bool WritersClosed { get; set; }
     }
 
     /// <summary>

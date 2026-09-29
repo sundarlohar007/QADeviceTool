@@ -65,7 +65,7 @@ public class ProfilerViewModelTests
         vm.History.Count.Should().BeGreaterThanOrEqualTo(2, "sampler runs at ~1s intervals");
         vm.Fps.Should().HaveValue();
         vm.Fps!.Value.Should().BeGreaterThan(30, "fake SurfaceFlinger streams ~60fps with jank");
-        vm.JankyFrames.Should().BeGreaterThan(0, "fake stream injects jank frames");
+        vm.JankyFrames.Should().Be(0, "unchanged SurfaceFlinger history must not be counted again");
         vm.CpuPercent.Should().Be(38.0);
         vm.PssKb.Should().Be(384000);
     }

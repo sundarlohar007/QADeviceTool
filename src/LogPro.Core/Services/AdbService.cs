@@ -43,6 +43,15 @@ public class AdbService : IAdbService
     private static readonly Regex DeviceSelectorArgument = new(
         @"(?:^|\s)-s\s+(?:""(?<serial>[^""]+)""|(?<serial>\S+))",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex AdbVersionPattern = new(
+        @"version ([\d.]+)", RegexOptions.Compiled);
+    private static readonly Regex LsListingPattern = new(
+        @"^(?<perm>[bcdlps-][rwx-]{9})\s+\d+\s+\S+\s+\S+\s+(?<size>\d+)\s+(?<date>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)\s+(?<name>.+)$",
+        RegexOptions.Compiled);
+    private static readonly Regex SafePathPattern = new(
+        @"^[a-zA-Z0-9._\-/\s]+$", RegexOptions.Compiled);
+    private static readonly Regex SafeChannelPattern = new(
+        @"^[a-zA-Z0-9._\-]+$", RegexOptions.Compiled);
 
     public AdbService()
     {
@@ -59,7 +68,7 @@ public class AdbService : IAdbService
     }
 
     private async Task<ToolLauncherResult> RunAdbWithRetryAsync(string arguments, int timeoutMs,
-        Action<string>? outputCallback, int attempt = 1, CancellationToken cancellationToken = default)
+        Action<string>? outputCallback, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -68,15 +77,21 @@ public class AdbService : IAdbService
                 return new ToolLauncherResult { Success = false, Error = "Blocked by LogPro offline security policy." };
 
             ToolLauncherResult? result = null;
-            for (int retry = 0; retry < MaxRetryAttempts; retry++)
+            // A retry can replay an install, shell mutation, or file transfer. Keep it to
+            // discovery/property reads and only on known transient transport errors.
+            var readOnly = Regex.IsMatch(arguments,
+                @"^(?:devices\b|version\b|-s\s+\S+\s+shell\s+(?:getprop\b|dumpsys\b|cat\s+/proc/))",
+                RegexOptions.CultureInvariant);
+            for (int retry = 0; retry < (readOnly ? MaxRetryAttempts : 1); retry++)
             {
                 result = await ToolLauncher.RunAsync(_adb, arguments, timeoutMs, outputCallback, cancellationToken).ConfigureAwait(false);
                 if (result.Success) return result;
 
-                // Only retry on transient failures, not permanent errors
-                if (result.Error.Contains("unauthorized") || result.Error.Contains("Failure") ||
-                    result.Output.Contains("Failure") || result.Output.Contains("Error:") ||
-                    result.ExitCode == 1) break;
+                var transient = result.Error.Contains("device offline", StringComparison.OrdinalIgnoreCase) ||
+                    result.Error.Contains("device not found", StringComparison.OrdinalIgnoreCase) ||
+                    result.Error.Contains("transport", StringComparison.OrdinalIgnoreCase) ||
+                    result.Error.Contains("timed out", StringComparison.OrdinalIgnoreCase);
+                if (!transient) break;
 
                 if (retry < MaxRetryAttempts - 1)
                     await Task.Delay(RetryDelayMs, cancellationToken).ConfigureAwait(false);
@@ -116,7 +131,7 @@ public class AdbService : IAdbService
         if (result.Success)
         {
             status.IsInstalled = true;
-            var match = Regex.Match(result.Output, @"version ([\d.]+)");
+            var match = AdbVersionPattern.Match(result.Output);
             status.Version = match.Success ? match.Groups[1].Value : "Installed";
             status.Path = ToolResolver.IsBundled(_adb) ? $"Bundled: {_adb}" : (PathHelper.FindInPath("adb") ?? "In PATH");
             status.StatusMessage = "ADB is ready";
@@ -188,7 +203,8 @@ public class AdbService : IAdbService
                 if (connectionState == DeviceConnectionState.Online)
                 {
                     if (string.IsNullOrEmpty(device.Model))
-                        device.Model = await GetDevicePropertySafeAsync(serial, "ro.product.model") ?? serial;
+                        device.Model = !string.IsNullOrEmpty(device.Name) ? device.Name :
+                            !string.IsNullOrEmpty(device.Product) ? device.Product : serial;
                 }
                 else
                 {
@@ -246,8 +262,9 @@ public class AdbService : IAdbService
             var osTask = GetDevicePropertyAsync(device.Serial, "ro.build.version.release");
             var batteryTask = RunAdbAsync($"-s {device.Serial} shell dumpsys battery", FastTimeoutMs);
             var mfrTask = GetDevicePropertyAsync(device.Serial, "ro.product.manufacturer");
+            var modelTask = GetDevicePropertyAsync(device.Serial, "ro.product.model");
 
-            await Task.WhenAll(osTask, batteryTask, mfrTask);
+            await Task.WhenAll(osTask, batteryTask, mfrTask, modelTask);
 
             device.OsVersion = osTask.Result ?? "Unknown";
 
@@ -266,6 +283,8 @@ public class AdbService : IAdbService
             var manufacturer = mfrTask.Result;
             if (!string.IsNullOrEmpty(manufacturer))
                 device.Manufacturer = manufacturer;
+            if (!string.IsNullOrWhiteSpace(modelTask.Result))
+                device.Model = modelTask.Result;
         }
         catch (Exception ex)
         {
@@ -492,6 +511,7 @@ public class AdbService : IAdbService
 
     public async Task<(bool Success, string Message)> EnableWirelessAsync(string serial, int port = 5555)
     {
+        if (SecurityHelper.OfflineOnly) return (false, "Wireless ADB is disabled by the offline policy.");
         if (!SecurityHelper.IsValidOfflineDeviceSelector(serial))
             return (false, "Invalid device selector.");
         if (port < 1 || port > 65535)
@@ -504,6 +524,7 @@ public class AdbService : IAdbService
 
     public async Task<(bool Success, string Message)> ConnectWirelessAsync(string ipAddress, int port = 5555)
     {
+        if (SecurityHelper.OfflineOnly) return (false, "Wireless ADB is disabled by the offline policy.");
         if (!SecurityHelper.IsPrivateSubnet(ipAddress))
             return (false, "Only private/lab network IPs are allowed (10.x, 172.16-31.x, 192.168.x). Public IPs are blocked.");
         var result = await RunAdbAsync($"connect {ipAddress}:{port}", FastTimeoutMs);
@@ -514,6 +535,7 @@ public class AdbService : IAdbService
 
     public async Task<(bool Success, string Message)> DisconnectWirelessAsync(string ipAddress, int port = 5555)
     {
+        if (SecurityHelper.OfflineOnly) return (false, "Wireless ADB is disabled by the offline policy.");
         if (!SecurityHelper.IsPrivateSubnet(ipAddress))
             return (false, "Only private/lab network IPs are allowed.");
         var result = await RunAdbAsync($"disconnect {ipAddress}:{port}", FastTimeoutMs);
@@ -558,8 +580,7 @@ public class AdbService : IAdbService
         {
             if (line.StartsWith("total ")) continue;
 
-            var match = Regex.Match(line,
-                @"^(?<perm>[bcdlps-][rwx-]{9})\s+\d+\s+\S+\s+\S+\s+(?<size>\d+)\s+(?<date>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)\s+(?<name>.+)$");
+            var match = LsListingPattern.Match(line);
 
             if (!match.Success) continue;
 
@@ -670,7 +691,7 @@ public class AdbService : IAdbService
         if (path.Contains("..")) return false;
 
         // Strict allowlist: only alphanumeric, spaces, and safe symbols
-        return System.Text.RegularExpressions.Regex.IsMatch(path, @"^[a-zA-Z0-9._\-/\s]+$");
+        return SafePathPattern.IsMatch(path);
     }
 
     public async Task<List<AppItem>> ListInstalledAppsAsync(string serial)
@@ -753,7 +774,7 @@ public class AdbService : IAdbService
             return false;
         var tag = $"LogPro_{DateTime.Now.Ticks}";
         var channelId = channel ?? "default";
-        if (!System.Text.RegularExpressions.Regex.IsMatch(channelId, @"^[a-zA-Z0-9._\-]+$"))
+        if (!SafeChannelPattern.IsMatch(channelId))
             channelId = "default";
         var safeTitle = EscapeSingleQuotedShell(title);
         var safeBody = EscapeSingleQuotedShell(body);

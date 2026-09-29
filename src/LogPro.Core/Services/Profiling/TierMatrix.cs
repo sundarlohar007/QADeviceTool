@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LogPro.Models;
+using LogPro.Helpers;
 
 namespace LogPro.Services.Profiling;
 
@@ -61,20 +62,20 @@ public static class TierMatrix
         return await Task.WhenAll(tasks);
     }
 
-    public static async Task WriteJsonAsync(IReadOnlyList<TierResult> results, string outputPath)
+    public static async Task WriteJsonAsync(IReadOnlyList<TierResult> results, string outputPath, TimeSpan duration)
     {
         await using var stream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
         await using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
         writer.WriteStartObject();
         writer.WriteString("GeneratedUtc", DateTime.UtcNow.ToString("O"));
-        writer.WriteNumber("DurationSeconds", 0);
+        writer.WriteNumber("DurationSeconds", duration.TotalSeconds);
         writer.WritePropertyName("Devices");
         writer.WriteStartArray();
         foreach (var r in results)
         {
             writer.WriteStartObject();
-            writer.WriteString("Serial", r.Profile.Serial);
-            writer.WriteString("Label", r.Profile.Label);
+            writer.WriteString("DeviceId", SecurityHelper.HashSerial(r.Profile.Serial));
+            writer.WriteString("Label", r.Profile.Label == r.Profile.Serial ? SecurityHelper.HashSerial(r.Profile.Serial) : r.Profile.Label);
             writer.WriteString("Chipset", r.Profile.Chipset);
             writer.WriteNumber("RamMb", r.Profile.RamMb);
             writer.WriteNumber("RefreshRateHz", r.Profile.RefreshRateHz);

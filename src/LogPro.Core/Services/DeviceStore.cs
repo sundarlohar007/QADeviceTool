@@ -33,7 +33,7 @@ public sealed class DeviceStore : IDeviceStore
             bool changed;
             lock (_lock)
             {
-                changed = !ReferenceEquals(_selected, value) && _selected?.Serial != value?.Serial;
+                changed = !ReferenceEquals(_selected, value) && (_selected?.Serial != value?.Serial || _selected?.Platform != value?.Platform);
                 if (changed) _selected = value;
             }
             if (changed) RaiseChanged();
@@ -42,29 +42,29 @@ public sealed class DeviceStore : IDeviceStore
 
     public void UpdateDevices(IReadOnlyList<DeviceInfo> devices)
     {
-        DeviceInfo? selection;
         bool listChanged;
         lock (_lock)
         {
-            var serials = new HashSet<string>(devices.Select(d => d.Serial), StringComparer.Ordinal);
-            listChanged = _devices.Count != devices.Count || _devices.Any(d => !serials.Contains(d.Serial));
+            listChanged = _devices.Count != devices.Count ||
+                Enumerable.Range(0, Math.Min(_devices.Count, devices.Count))
+                    .Any(i => !SameDeviceAndMetadata(_devices[i], devices[i]));
             _devices = devices.ToList();
 
             // Preserve selection while connected; auto-select first otherwise.
-            var stillConnected = _selected != null && serials.Contains(_selected.Serial);
-            if (stillConnected)
-            {
-                selection = _selected;
-            }
-            else
-            {
-                selection = _devices.FirstOrDefault();
-                if (!ReferenceEquals(selection, _selected)) listChanged = true;
-                _selected = selection;
-            }
+            var selection = _selected == null ? null : _devices.FirstOrDefault(d => d.Serial == _selected.Serial && d.Platform == _selected.Platform);
+            selection ??= _devices.FirstOrDefault();
+            if (selection?.Serial != _selected?.Serial || selection?.Platform != _selected?.Platform) listChanged = true;
+            _selected = selection;
         }
         if (listChanged) RaiseChanged();
     }
+
+    private static bool SameDeviceAndMetadata(DeviceInfo a, DeviceInfo b) =>
+        a.Serial == b.Serial && a.Platform == b.Platform && a.Name == b.Name &&
+        a.Model == b.Model && a.Product == b.Product && a.ConnectionState == b.ConnectionState &&
+        a.BatteryLevel == b.BatteryLevel && a.BatteryStatus == b.BatteryStatus &&
+        a.OsVersion == b.OsVersion && a.Manufacturer == b.Manufacturer && a.UsbInfo == b.UsbInfo &&
+        a.Notes == b.Notes && a.Tag == b.Tag;
 
     public void Dispose()
     {

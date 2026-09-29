@@ -55,7 +55,7 @@ public class SoakRunnerTests
         report.SampleCount.Should().BeGreaterThanOrEqualTo(1);
         report.Duration.Should().Be(TimeSpan.FromSeconds(3));
         report.AvgFpsStart.Should().HaveValue();
-        report.JankyFrames.Should().BeGreaterThan(0);
+        report.JankyFrames.Should().Be(0, "unchanged SurfaceFlinger history must not be counted again");
         loadCalls.Should().Be(1, "load loop invoked exactly once");
         report.HasIssues.Should().BeFalse("stable synthetic stream must not flag");
     }

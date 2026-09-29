@@ -375,7 +375,7 @@ public static class Program
         var profiles = serials.Select((serial, i) => new LogPro.Services.Profiling.DeviceTierProfile
         {
             Serial = serial,
-            Label = i < labels.Length ? labels[i] : serial,
+            Label = i < labels.Length ? labels[i] : $"Device {i + 1}",
             Chipset = i < chipsets.Length ? chipsets[i] : string.Empty
         }).ToList();
 
@@ -386,7 +386,7 @@ public static class Program
             adb, profiles, package, TimeSpan.FromSeconds(seconds));
 
         var jsonPath = Path.Combine(outDir, "tier-comparison.json");
-        await LogPro.Services.Profiling.TierMatrix.WriteJsonAsync(results, jsonPath);
+        await LogPro.Services.Profiling.TierMatrix.WriteJsonAsync(results, jsonPath, TimeSpan.FromSeconds(seconds));
 
         Console.WriteLine($"{"Device",-14} {"Label",-12} {"AvgFPS",8} {"MinFPS",8} {"Jank",6} {"MaxCPU",8} {"MemGrw",8} {"Slow",6}");
         foreach (var r in results)

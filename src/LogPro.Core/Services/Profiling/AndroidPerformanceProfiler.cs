@@ -20,6 +20,11 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
     private Task? _loop;
     private string? _resolvedLayer;
     private bool _layerResolved;
+    private long _lastPresentTimestampNs;
+    private int _sampleNumber;
+    private (int? PssKb, int? RssKb) _lastMemory;
+    private int? _lastThermal;
+    private int? _lastBattery;
 
     public AndroidPerformanceProfiler(IAdbService adb, string serial, string? package = null,
         string? layerOverride = null, int intervalMs = 1000)
@@ -28,8 +33,9 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
             throw new ArgumentException("Invalid device selector.", nameof(serial));
         if (package != null && !LogPro.Helpers.SecurityHelper.IsValidPackageName(package))
             throw new ArgumentException("Invalid package name.", nameof(package));
-        if (layerOverride != null && !LogPro.Helpers.SecurityHelper.IsSafeDeviceArgument(layerOverride))
+        if (layerOverride != null && !IsSafeLayer(layerOverride))
             throw new ArgumentException("Invalid SurfaceFlinger layer.", nameof(layerOverride));
+        if (intervalMs < 1) throw new ArgumentOutOfRangeException(nameof(intervalMs));
 
         _adb = adb;
         _serial = serial;
@@ -51,6 +57,7 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
         var token = _cts.Token;
         _loop = Task.Run(async () =>
         {
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(_intervalMs));
             while (!token.IsCancellationRequested)
             {
                 try
@@ -65,7 +72,7 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
                 }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] Sample failed"); }
-                try { await Task.Delay(_intervalMs, token).ConfigureAwait(false); }
+                try { if (!await timer.WaitForNextTickAsync(token).ConfigureAwait(false)) break; }
                 catch (OperationCanceledException) { break; }
             }
         }, token);
@@ -88,9 +95,14 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
     {
         var fpsTask = SampleFpsAsync(cancellationToken);
         var cpu = await ProbeCpuAsync(cancellationToken).ConfigureAwait(false);
-        var mem = await ProbeMemAsync(cancellationToken).ConfigureAwait(false);
-        var thermal = await ProbeThermalAsync(cancellationToken).ConfigureAwait(false);
-        var battery = await ProbeBatteryAsync(cancellationToken).ConfigureAwait(false);
+        var sample = Interlocked.Increment(ref _sampleNumber);
+        if (sample == 1 || sample % 5 == 0)
+            _lastMemory = await ProbeMemAsync(cancellationToken).ConfigureAwait(false);
+        if (sample == 1 || sample % 10 == 0)
+        {
+            _lastThermal = await ProbeThermalAsync(cancellationToken).ConfigureAwait(false);
+            _lastBattery = await ProbeBatteryAsync(cancellationToken).ConfigureAwait(false);
+        }
         var (fps, p90, p95, janky, total) = await fpsTask.ConfigureAwait(false);
 
         return new ProfilerSnapshot
@@ -101,10 +113,10 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
             JankyFrames = janky,
             TotalFrames = total,
             CpuPercent = cpu,
-            PssKb = mem.PssKb,
-            RssKb = mem.RssKb,
-            ThermalStatus = thermal,
-            BatteryLevel = battery
+            PssKb = _lastMemory.PssKb,
+            RssKb = _lastMemory.RssKb,
+            ThermalStatus = _lastThermal,
+            BatteryLevel = _lastBattery
         };
     }
 
@@ -115,13 +127,26 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
             if (!_layerResolved)
             {
                 _resolvedLayer = _layerOverride ?? await ResolveLayerAsync(cancellationToken).ConfigureAwait(false);
-                _layerResolved = true;
+                _layerResolved = _resolvedLayer != null;
             }
             if (_resolvedLayer == null) return (null, null, null, null, null);
 
-            var output = await _adb.ExecuteCommandAsync(_serial, $"shell dumpsys SurfaceFlinger --latency {_resolvedLayer}", cancellationToken);
+            var output = await _adb.ExecuteCommandAsync(_serial, $"shell dumpsys SurfaceFlinger --latency \"{_resolvedLayer}\"", cancellationToken);
             var result = AndroidDumpsysParsers.ParseSurfaceFlingerLatency(output);
-            return AndroidDumpsysParsers.SummarizeFrames(result.Frames, result.RefreshPeriodMs);
+            if (result.Frames.Count == 0)
+            {
+                if (_layerOverride == null) _layerResolved = false;
+                return (null, null, null, null, null);
+            }
+            var newest = result.Frames[^1].PresentTimestampNs;
+            if (newest < _lastPresentTimestampNs) _lastPresentTimestampNs = 0;
+            var initial = _lastPresentTimestampNs == 0;
+            var newFrames = result.Frames.Where(f => f.PresentTimestampNs > _lastPresentTimestampNs).ToList();
+            _lastPresentTimestampNs = newest;
+            var summary = AndroidDumpsysParsers.SummarizeFrames(result.Frames, result.RefreshPeriodMs);
+            var budget = result.RefreshPeriodMs * 1.05;
+            return (summary.Fps, summary.FrameTimeP90Ms, summary.FrameTimeP95Ms,
+                initial ? 0 : newFrames.Count(f => f.FrameTimeMs > budget), initial ? 0 : newFrames.Count);
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] FPS sample failed"); return (null, null, null, null, null); }
     }
@@ -132,23 +157,28 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
         {
             var listing = await _adb.ExecuteCommandAsync(_serial, "shell dumpsys SurfaceFlinger --list", cancellationToken);
             var lines = listing.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
+            var candidates = lines.Select(x => x.Trim()).Where(IsSafeLayer).ToList();
+            if (_package != null)
             {
-                var trimmed = line.Trim();
+                var match = candidates.FirstOrDefault(x => x.Contains(_package, StringComparison.OrdinalIgnoreCase));
+                return match;
+            }
+            foreach (var trimmed in candidates)
+            {
                 if (trimmed.StartsWith("SurfaceView", StringComparison.OrdinalIgnoreCase) ||
                     trimmed.StartsWith("VRI[", StringComparison.Ordinal) ||
                     (string.IsNullOrEmpty(_package) && trimmed.Contains("BLAST", StringComparison.OrdinalIgnoreCase)))
                 {
-                    var name = trimmed.Split('[', ']')[0];
-                    if (!string.IsNullOrWhiteSpace(name)) return name;
+                    return trimmed;
                 }
-                if (_package != null && trimmed.Contains(_package, StringComparison.OrdinalIgnoreCase))
-                    return trimmed.Split('[', ']')[0];
             }
             return null;
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Profiler] Layer resolution failed"); return null; }
     }
+
+    private static bool IsSafeLayer(string? layer) => !string.IsNullOrWhiteSpace(layer) &&
+        layer.Length <= 512 && layer.All(c => char.IsAsciiLetterOrDigit(c) || c is ' ' or '.' or '_' or '-' or '/' or ':' or '[' or ']' or '(' or ')' or '#' or '@');
 
     private async Task<double?> ProbeCpuAsync(CancellationToken cancellationToken)
     {

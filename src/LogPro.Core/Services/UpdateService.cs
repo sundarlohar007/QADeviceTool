@@ -90,7 +90,7 @@ public sealed class UpdateService : IDisposable
 
     /// <summary>
     /// Downloads and installs an update for a specific tool. Returns true on success.
-    /// The download is SHA-256 verified if a checksum is available.
+    /// The download is SHA-256 verified before it can be installed.
     /// </summary>
     public async Task<(bool Success, string Message)> ApplyUpdateAsync(UpdateInfo update, IProgress<int>? progress = null, CancellationToken ct = default)
     {
@@ -99,6 +99,11 @@ public sealed class UpdateService : IDisposable
 
         if (string.IsNullOrWhiteSpace(update.DownloadUrl))
             return (false, "No download URL.");
+        if (!Regex.IsMatch(update.Sha256 ?? string.Empty, "^[a-fA-F0-9]{64}$"))
+            return (false, "No trusted SHA-256 digest is available for this release asset.");
+        if (!Uri.TryCreate(update.DownloadUrl, UriKind.Absolute, out var downloadUri) ||
+            downloadUri.Scheme != Uri.UriSchemeHttps || downloadUri.Host != "github.com")
+            return (false, "Update asset must be served from GitHub over HTTPS.");
 
         try
         {
@@ -111,13 +116,14 @@ public sealed class UpdateService : IDisposable
                 var fileName = update.FileName;
                 if (string.IsNullOrEmpty(fileName))
                     fileName = Path.GetFileName(new Uri(update.DownloadUrl).LocalPath);
+                if (fileName != Path.GetFileName(fileName) || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                    return (false, "Invalid update asset filename.");
                 var downloadPath = Path.Combine(tempDir, fileName);
 
                 AppLogger.Log.Info($"[UpdateService] Downloading {update.ToolName} v{update.LatestVersion} from {update.DownloadUrl}");
                 await DownloadFileAsync(update.DownloadUrl, downloadPath, progress, ct).ConfigureAwait(false);
 
-                // 2. Verify SHA-256 (if provided)
-                if (!string.IsNullOrWhiteSpace(update.Sha256))
+                // 2. Verify the upstream SHA-256 digest before installation.
                 {
                     var actualHash = await ComputeSha256Async(downloadPath).ConfigureAwait(false);
                     if (!string.Equals(actualHash, update.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -198,6 +204,12 @@ public sealed class UpdateService : IDisposable
                 {
                     downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
                     fileName = name;
+                    if (asset.TryGetProperty("digest", out var digest))
+                    {
+                        var value = digest.GetString() ?? "";
+                        if (value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                            sha256 = value[7..];
+                    }
                     break;
                 }
             }
@@ -293,10 +305,13 @@ public sealed class UpdateService : IDisposable
     {
         try
         {
-            // Launch the installer and let the current process exit gracefully
+            // The caller removes its download directory on return. Keep a verified copy
+            // alive so the installer can still read it after this process exits.
+            var retainedInstaller = Path.Combine(Path.GetTempPath(), $"logpro_verified_setup_{Guid.NewGuid():N}.exe");
+            File.Copy(installerPath, retainedInstaller);
             var psi = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = installerPath,
+                FileName = retainedInstaller,
                 UseShellExecute = true
             };
             System.Diagnostics.Process.Start(psi);

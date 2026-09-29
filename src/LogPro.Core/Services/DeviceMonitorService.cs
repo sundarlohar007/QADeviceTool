@@ -20,7 +20,7 @@ public class DeviceMonitorService : IDeviceMonitorService
     private int _isPolling;
     private int _disposed;
 
-    private readonly ConcurrentDictionary<string, int> _missedPollCount = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(DevicePlatform Platform, string Serial), int> _missedPollCount = new();
     private const int MissedPollThreshold = 3;
 
     public event Action<List<DeviceInfo>>? DevicesChanged;
@@ -71,31 +71,37 @@ public class DeviceMonitorService : IDeviceMonitorService
             // Poll Android and iOS in parallel
             var androidTask = _adbService.GetConnectedDevicesAsync();
             var iosTask = _iosService.GetConnectedDevicesAsync();
-            await Task.WhenAll(androidTask, iosTask).ConfigureAwait(false);
-
-            try { newDevices.AddRange(androidTask.Result); }
-            catch (Exception ex) { AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get Android devices"); }
-
-            try { newDevices.AddRange(iosTask.Result); }
-            catch (Exception ex) { AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get iOS devices"); }
-
             List<DeviceInfo> oldDevices;
             lock (_lock) { oldDevices = _devices.ToList(); }
 
-            var newSerials = new HashSet<string>(newDevices.Select(d => d.Serial), StringComparer.Ordinal);
-            var oldSerials = new HashSet<string>(oldDevices.Select(d => d.Serial), StringComparer.Ordinal);
+            try { newDevices.AddRange(await androidTask.ConfigureAwait(false)); }
+            catch (Exception ex)
+            {
+                AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get Android devices");
+                newDevices.AddRange(oldDevices.Where(d => d.Platform == DevicePlatform.Android));
+            }
+
+            try { newDevices.AddRange(await iosTask.ConfigureAwait(false)); }
+            catch (Exception ex)
+            {
+                AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get iOS devices");
+                newDevices.AddRange(oldDevices.Where(d => d.Platform == DevicePlatform.iOS));
+            }
+
+            var newSerials = new HashSet<(DevicePlatform, string)>(newDevices.Select(d => (d.Platform, d.Serial)));
+            var oldSerials = new HashSet<(DevicePlatform, string)>(oldDevices.Select(d => (d.Platform, d.Serial)));
 
             var connected = new List<DeviceInfo>();
             foreach (var d in newDevices)
             {
-                if (!oldSerials.Contains(d.Serial))
+                if (!oldSerials.Contains((d.Platform, d.Serial)))
                 {
-                    _missedPollCount.TryRemove(d.Serial, out _);
+                    _missedPollCount.TryRemove((d.Platform, d.Serial), out _);
                     connected.Add(d);
                 }
                 else
                 {
-                    _missedPollCount.TryRemove(d.Serial, out _);
+                    _missedPollCount.TryRemove((d.Platform, d.Serial), out _);
                 }
             }
 
@@ -103,12 +109,12 @@ public class DeviceMonitorService : IDeviceMonitorService
             var missedPollDevices = new List<DeviceInfo>();
             foreach (var d in oldDevices)
             {
-                if (!newSerials.Contains(d.Serial))
+                if (!newSerials.Contains((d.Platform, d.Serial)))
                 {
-                    var missed = _missedPollCount.AddOrUpdate(d.Serial, 1, (_, c) => c + 1);
+                    var missed = _missedPollCount.AddOrUpdate((d.Platform, d.Serial), 1, (_, c) => c + 1);
                     if (missed >= MissedPollThreshold)
                     {
-                        _missedPollCount.TryRemove(d.Serial, out _);
+                        _missedPollCount.TryRemove((d.Platform, d.Serial), out _);
                         disconnected.Add(d);
                         AppLogger.Log.Warn($"[DeviceMonitor] Device {SecurityHelper.HashSerial(d.Serial)} disconnected after {missed} missed polls");
                     }
@@ -123,8 +129,8 @@ public class DeviceMonitorService : IDeviceMonitorService
             bool changedProperties = false;
             foreach (var nd in newDevices)
             {
-                var od = oldDevices.FirstOrDefault(o => o.Serial == nd.Serial);
-                if (od != null && (od.ConnectionState != nd.ConnectionState || od.BatteryLevel != nd.BatteryLevel || od.Name != nd.Name))
+                var od = oldDevices.FirstOrDefault(o => o.Serial == nd.Serial && o.Platform == nd.Platform);
+                if (od != null && (od.ConnectionState != nd.ConnectionState || od.BatteryLevel != nd.BatteryLevel || od.BatteryStatus != nd.BatteryStatus || od.Name != nd.Name || od.Model != nd.Model || od.OsVersion != nd.OsVersion || od.Product != nd.Product || od.Manufacturer != nd.Manufacturer || od.UsbInfo != nd.UsbInfo || od.Notes != nd.Notes || od.Tag != nd.Tag))
                 {
                     changedProperties = true;
                 }

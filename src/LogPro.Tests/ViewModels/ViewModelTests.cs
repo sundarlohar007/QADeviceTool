@@ -68,6 +68,23 @@ public class DeviceStoreTests
         store.SelectedDevice = store.Devices[1]; // same serial — no re-fire
         fired.Should().Be(1);
     }
+
+    [Fact]
+    public void UpdateDevices_RefreshesSelectedMetadataWithoutSpuriousNotification()
+    {
+        var store = new DeviceStore(Dispatcher);
+        store.UpdateDevices(new[] { Android("A") });
+        var fired = 0;
+        store.Changed += () => fired++;
+        store.UpdateDevices(new[] { Android("A") });
+        fired.Should().Be(0);
+
+        var refreshed = Android("A");
+        refreshed.BatteryLevel = "42";
+        store.UpdateDevices(new[] { refreshed });
+        store.SelectedDevice.Should().BeSameAs(refreshed);
+        fired.Should().Be(1);
+    }
 }
 
 public class StressTestViewModelValidationTests
