@@ -697,9 +697,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
             StatusMessage = "Capturing snapshot...";
 
+            var iosResult = device.Platform == DevicePlatform.iOS
+                ? await _iosService.CaptureScreenshotWithStatusAsync(device.Serial, outputPath)
+                : default;
             bool success = device.Platform == DevicePlatform.Android
                 ? await _adbService.CaptureScreenshotAsync(device.Serial, outputPath)
-                : await _iosService.CaptureScreenshotAsync(device.Serial, outputPath);
+                : iosResult.Success;
 
             if (success)
             {
@@ -707,7 +710,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
             else
             {
-                StatusMessage = "[!] Snapshot failed. Check device connection.";
+                StatusMessage = device.Platform == DevicePlatform.iOS ? $"[!] {iosResult.Message}" : "[!] Snapshot failed. Check device connection.";
             }
         }
         catch (Exception ex)

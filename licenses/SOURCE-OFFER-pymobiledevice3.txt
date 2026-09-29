@@ -1,7 +1,9 @@
 LogPro source offer for pymobiledevice3 9.12.0
 
-LogPro distributes an unmodified PyInstaller executable containing pymobiledevice3
-9.12.0 under the GNU General Public License, version 3.0.
+LogPro distributes a PyInstaller executable containing unmodified pymobiledevice3
+9.12.0 under the GNU General Public License, version 3.0. The repository contains
+the entrypoint and build recipe in scripts/pymobiledevice3_entrypoint.py and
+scripts/build-pymobiledevice3.ps1.
 
 The complete corresponding source is available from the upstream project:
 https://github.com/doronz88/pymobiledevice3/tree/v9.12.0

@@ -4,7 +4,7 @@ namespace LogPro.Services;
 
 /// <summary>
 /// Checks availability of all required external tools and prerequisites at runtime.
-/// pymobiledevice3 is the iOS backend — no iTunes / Apple Mobile Device Service required.
+/// pymobiledevice3 is the iOS backend. On Windows, usbmux needs Apple Mobile Device Service.
 /// </summary>
 public class DependencyChecker
 {
@@ -30,6 +30,7 @@ public class DependencyChecker
 
         var results = (await Task.WhenAll(tasks)).ToList();
         results.Add(CheckAndroidDriver());
+        results.Add(CheckAppleMobileDeviceService());
         return results;
     }
 
@@ -37,6 +38,40 @@ public class DependencyChecker
     {
         var adb = await _adbService.CheckAvailabilityAsync();
         return adb.IsInstalled;
+    }
+
+    private static ToolStatus CheckAppleMobileDeviceService()
+    {
+        var status = new ToolStatus
+        {
+            Name = "Apple Mobile Device Service",
+            Description = "Required for iOS USB device discovery on Windows"
+        };
+        if (!OperatingSystem.IsWindows())
+        {
+            status.IsInstalled = true;
+            status.Version = "N/A";
+            status.StatusMessage = "Windows-only prerequisite; not applicable here.";
+            return status;
+        }
+
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SYSTEM\CurrentControlSet\Services\Apple Mobile Device Service");
+            status.IsInstalled = key != null;
+            status.Version = key != null ? "Registered" : "Missing";
+            status.StatusMessage = key != null
+                ? "Service is installed. If iOS devices are missing, check that it is running and trust the device."
+                : "Install the classic iTunes package to provide Apple Mobile Device Service for iOS USB discovery.";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Warn(ex, "[DependencyChecker] Apple Mobile Device Service check failed");
+            status.IsInstalled = false;
+            status.StatusMessage = "Could not verify Apple Mobile Device Service. Check that it is installed and running.";
+        }
+        return status;
     }
 
     private ToolStatus CheckAndroidDriver()

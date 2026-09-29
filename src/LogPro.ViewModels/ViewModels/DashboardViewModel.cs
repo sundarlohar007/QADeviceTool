@@ -213,13 +213,16 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         var fileName = $"snapshot_{deviceHash}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
         var outputPath = System.IO.Path.Combine(outputDir, fileName);
 
+        var iosResult = SelectedDevice.Platform == DevicePlatform.iOS
+            ? await _iosService.CaptureScreenshotWithStatusAsync(SelectedDevice.Serial, outputPath)
+            : default;
         bool success = SelectedDevice.Platform == DevicePlatform.Android
             ? await _adbService.CaptureScreenshotAsync(SelectedDevice.Serial, outputPath)
-            : await _iosService.CaptureScreenshotAsync(SelectedDevice.Serial, outputPath);
+            : iosResult.Success;
 
         WelcomeMessage = success
             ? $"Snapshot saved: {fileName}"
-            : "Failed to capture snapshot.";
+            : SelectedDevice.Platform == DevicePlatform.iOS ? iosResult.Message : "Failed to capture snapshot.";
     }
 
     [RelayCommand]

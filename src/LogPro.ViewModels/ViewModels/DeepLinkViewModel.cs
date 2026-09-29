@@ -74,9 +74,17 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
         }
     }
 
+    partial void OnSelectedDeviceChanged(DeviceInfo? value)
+    {
+        if (value?.Platform == DevicePlatform.iOS)
+            StatusMessage = "[!] Opening deep links is not supported for iOS by the bundled pymobiledevice3 CLI.";
+    }
+
     partial void OnTargetUrlChanged(string value)
     {
-        StatusMessage = string.Empty;
+        StatusMessage = SelectedDevice?.Platform == DevicePlatform.iOS
+            ? "[!] Opening deep links is not supported for iOS by the bundled pymobiledevice3 CLI."
+            : string.Empty;
     }
 
     [RelayCommand]
@@ -94,27 +102,22 @@ public partial class DeepLinkViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (SelectedDevice.Platform == DevicePlatform.iOS)
+        {
+            StatusMessage = "[!] Opening deep links is not supported for iOS by the bundled pymobiledevice3 CLI.";
+            return;
+        }
+
         IsRouting = true;
         StatusMessage = $"Sending intent to {SelectedDevice.DisplayName}...";
 
         try
         {
             bool success;
-            if (SelectedDevice.Platform == DevicePlatform.iOS)
-            {
-                // pymobiledevice3 has no first-class openurl command. Inform user explicitly.
-                success = await _iosService.OpenUrlAsync(SelectedDevice.Serial, TargetUrl.Trim());
-                StatusMessage = success
-                    ? $"Successfully launched: {TargetUrl}"
-                    : "[!] iOS deep links not supported via pymobiledevice3. Use Safari or a configurator.";
-            }
-            else
-            {
-                success = await _adbService.BroadcastIntentAsync(SelectedDevice.Serial, TargetUrl.Trim());
-                StatusMessage = success
-                    ? $"Successfully launched: {TargetUrl}"
-                    : "[!] Failed to route intent. Verify the URL scheme, target app install state, and that the device is unlocked.";
-            }
+            success = await _adbService.BroadcastIntentAsync(SelectedDevice.Serial, TargetUrl.Trim());
+            StatusMessage = success
+                ? $"Successfully launched: {TargetUrl}"
+                : "[!] Failed to route intent. Verify the URL scheme, target app install state, and that the device is unlocked.";
         }
         catch (Exception ex)
         {

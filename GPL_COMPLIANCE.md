@@ -8,18 +8,20 @@ while keeping QADeviceTool's own licensing independent:
    references, no derived code. All communication occurs via
    stdin/stdout/stderr of the child process (the standard process boundary).
 
-2. **UNMODIFIED BINARY:** The release bundles an unmodified PyInstaller build of
-   pymobiledevice3 (`tools/pymobiledevice3/pymobiledevice3.exe`) for
-   out-of-the-box iOS support. It is redistributed as-is, unmodified.
+2. **BUNDLED EXECUTABLE:** The release bundles a PyInstaller build of unmodified
+   pymobiledevice3 9.12.0 (`tools/pymobiledevice3/pymobiledevice3.exe`).
+   The entrypoint and build recipe are in `scripts/pymobiledevice3_entrypoint.py`
+   and `scripts/build-pymobiledevice3.ps1`; the smoke test is in
+   `scripts/test-pymobiledevice3.ps1`.
 
 3. **SOURCE OFFER:** Under GPL-3.0 §6, the complete corresponding source code
    for the bundled pymobiledevice3 9.12.0 build is available from the upstream
-   project: <https://github.com/doronz88/pymobiledevice3/tree/v9.12.0>. A written
-   source offer is included with each distribution in
+   project: <https://github.com/doronz88/pymobiledevice3/tree/v9.12.0>, together
+   with this repository's build scripts. A written source offer is included with each distribution in
    `licenses/SOURCE-OFFER-pymobiledevice3.txt`.
 
-4. **SYSTEM FALLBACK:** If the bundled binary is unavailable, IosService
-   automatically falls back to a system-installed `python -m pymobiledevice3`.
+4. **SYSTEM FALLBACK:** If the bundled binary is unavailable or fails its syslog
+   command probe, IosService falls back to a working system-installed `python -m pymobiledevice3`.
    Users may install pymobiledevice3 independently (`pip install pymobiledevice3`).
 
 5. **NO DERIVED CODE:** No pymobiledevice3 source code is included, modified,

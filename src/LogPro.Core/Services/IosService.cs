@@ -20,72 +20,43 @@ namespace LogPro.Services;
 /// </summary>
 public class IosService : IIosService
 {
-    private readonly string _exe;
-    private readonly bool _isModuleInvocation;
-    private readonly string _toolKind;
+    private sealed record ToolSelection(string Exe, bool IsModuleInvocation, string ToolKind, ToolLauncherResult ProbeResult);
+    private static readonly Lazy<Task<ToolSelection>> SelectedTool = new(SelectToolAsync);
 
     private const int DefaultTimeoutMs = 15000;
     private const int InfoTimeoutMs = 10000;
     private const int InstallTimeoutMs = 600000;
 
-    public IosService()
+    private static async Task<ToolSelection> SelectToolAsync()
     {
         var bundled = ResolveBundledExe();
-        if (bundled != null && ProbeBundledExe(bundled))
+        var systemPython = ResolveSystemPython();
+        ToolLauncherResult? bundledProbe = null;
+        if (bundled != null)
         {
-            _exe = bundled;
-            _isModuleInvocation = false;
-            _toolKind = $"bundled ({bundled})";
+            bundledProbe = await ToolLauncher.RunAsync(bundled, "--no-color syslog live --help", 20000).ConfigureAwait(false);
+            if (bundledProbe.Success)
+                return new ToolSelection(bundled, false, $"bundled ({bundled})", bundledProbe);
         }
-        else
+        if (systemPython != null)
         {
-            _exe = ResolveSystemPython() ?? "python";
-            _isModuleInvocation = true;
-            _toolKind = $"python -m pymobiledevice3 ({_exe})";
+            var pythonProbe = await ToolLauncher.RunAsync(systemPython, "-m pymobiledevice3 --no-color syslog live --help", 20000).ConfigureAwait(false);
+            if (pythonProbe.Success)
+                return new ToolSelection(systemPython, true, $"python -m pymobiledevice3 ({systemPython})", pythonProbe);
+            if (bundledProbe == null)
+                return new ToolSelection(systemPython, true, $"python -m pymobiledevice3 ({systemPython})", pythonProbe);
         }
-        AppLogger.Log.Info($"[IosService] Using {SecurityHelper.RedactSensitiveText(_toolKind, redactIdentifiers: false)}");
+
+        // Retain the bundled path so the dependency check can report its real import error.
+        var exe = bundled ?? systemPython ?? "python";
+        var probe = bundledProbe ?? new ToolLauncherResult { Error = "pymobiledevice3 is not installed." };
+        return new ToolSelection(exe, bundled == null, bundled != null ? $"bundled ({bundled})" : $"python -m pymobiledevice3 ({exe})", probe);
     }
 
     private static string? ResolveBundledExe()
     {
         var path = Path.Combine(ToolLauncher.ToolsDirectory, "pymobiledevice3", "pymobiledevice3.exe");
         return File.Exists(path) ? path : null;
-    }
-
-    private static bool ProbeBundledExe(string path)
-    {
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = path,
-                Arguments = "version",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(path) ?? Environment.CurrentDirectory
-            };
-            ToolLauncher.ConfigureOfflineEnvironment(psi);
-            using var p = System.Diagnostics.Process.Start(psi);
-            if (p == null) return false;
-            var stdout = p.StandardOutput.ReadToEndAsync();
-            var stderr = p.StandardError.ReadToEndAsync();
-            if (!p.WaitForExit(5000))
-            {
-                try { p.Kill(true); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[IosService] failed to determine pymd3 binary"); }
-                try { p.WaitForExit(2000); } catch { }
-                try { Task.WaitAll(new[] { stdout, stderr }, TimeSpan.FromSeconds(2)); } catch { }
-                return false;
-            }
-            try { Task.WaitAll(new[] { stdout, stderr }, TimeSpan.FromSeconds(2)); } catch { }
-            return p.ExitCode == 0;
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log.Warn(ex, "[IosService] Bundled pymobiledevice3.exe probe failed");
-            return false;
-        }
     }
 
     private static string? ResolveSystemPython()
@@ -97,10 +68,6 @@ public class IosService : IIosService
             .Select(p => Path.Combine(p, "python.exe"))
             .FirstOrDefault(File.Exists);
     }
-
-    /// <summary>Builds full argument string with optional UDID flag.</summary>
-    private string BuildArgs(string? udid, string subcommand)
-        => BuildCommandArgs(_isModuleInvocation, udid, subcommand);
 
     internal static string BuildCommandArgs(bool isModuleInvocation, string? udid, string subcommand)
     {
@@ -118,11 +85,22 @@ public class IosService : IIosService
             return new ToolLauncherResult { Success = false, Error = "Blocked by LogPro offline security policy." };
         if (string.IsNullOrWhiteSpace(subcommand) || subcommand.Any(c => c is '\r' or '\n'))
             return new ToolLauncherResult { Success = false, Error = "Invalid iOS command." };
-        return await ToolLauncher.RunAsync(_exe, BuildArgs(udid, subcommand), timeoutMs, outputCallback, cancellationToken).ConfigureAwait(false);
+        var tool = await SelectedTool.Value.ConfigureAwait(false);
+        return await ToolLauncher.RunAsync(tool.Exe, BuildCommandArgs(tool.IsModuleInvocation, udid, subcommand), timeoutMs, outputCallback, cancellationToken).ConfigureAwait(false);
     }
 
-    private System.Diagnostics.Process? StartLong(string? udid, string subcommand, bool drainStdout = true)
-        => ToolLauncher.StartLongRunning(_exe, BuildArgs(udid, subcommand), drainStdout: drainStdout);
+    private static string GetFailureMessage(ToolLauncherResult result)
+    {
+        var text = !string.IsNullOrWhiteSpace(result.Error) ? result.Error : result.Output;
+        var line = text.Split('\n', '\r', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim();
+        return SecurityHelper.RedactSensitiveText(string.IsNullOrWhiteSpace(line) ? $"exit code {result.ExitCode}" : line);
+    }
+
+    private async Task<System.Diagnostics.Process?> StartLongAsync(string? udid, string subcommand, bool drainStdout = true)
+    {
+        var tool = await SelectedTool.Value.ConfigureAwait(false);
+        return ToolLauncher.StartLongRunning(tool.Exe, BuildCommandArgs(tool.IsModuleInvocation, udid, subcommand), drainStdout: drainStdout);
+    }
 
     public Task<ToolLauncherResult> ExecuteCommandAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs,
         Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
@@ -132,17 +110,18 @@ public class IosService : IIosService
     {
         try
         {
-            var result = await RunAsync(null, "version", InfoTimeoutMs).ConfigureAwait(false);
-            var statusMsg = result.Success
-                ? $"Ready — {_toolKind}"
-                : $"Failed (exit={result.ExitCode}): {result.Error?.Trim() ?? result.Output?.Trim() ?? "unknown"}";
+            var tool = await SelectedTool.Value.ConfigureAwait(false);
+            var version = tool.ProbeResult.Success ? await RunAsync(null, "version", 20000).ConfigureAwait(false) : tool.ProbeResult;
+            var statusMsg = tool.ProbeResult.Success && version.Success
+                ? $"Ready — {tool.ToolKind}"
+                : $"Failed: {GetFailureMessage(tool.ProbeResult.Success ? version : tool.ProbeResult)}";
             return new ToolStatus
             {
                 Name = "pymobiledevice3 (iOS Tools)",
                 Description = "Required for iOS device communication",
-                IsInstalled = result.Success,
-                Version = result.Success ? (result.Output?.Trim() ?? "unknown") : "n/a",
-                Path = _exe,
+                IsInstalled = tool.ProbeResult.Success && version.Success,
+                Version = version.Success ? version.Output.Trim() : "n/a",
+                Path = tool.Exe,
                 StatusMessage = statusMsg
             };
         }
@@ -265,7 +244,7 @@ public class IosService : IIosService
         }
     }
 
-    public System.Diagnostics.Process? StartLogCapture(string udid, string outputFilePath)
+    public async Task<System.Diagnostics.Process?> StartLogCaptureAsync(string udid, string outputFilePath)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !PathHelper.IsSafeLocalPath(outputFilePath))
             return null;
@@ -273,26 +252,29 @@ public class IosService : IIosService
         {
             // syslog live streams to stdout by default; SessionService reads stdout and
             // writes the file itself. Using --out would bypass the capture pipeline entirely.
-            return StartLong(udid, "syslog live", drainStdout: false);
+            return await StartLongAsync(udid, "syslog live", drainStdout: false).ConfigureAwait(false);
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] StartLogCapture failed"); return null; }
     }
 
     public async Task<bool> CaptureScreenshotAsync(string udid, string outputPath)
+        => (await CaptureScreenshotWithStatusAsync(udid, outputPath).ConfigureAwait(false)).Success;
+
+    public async Task<(bool Success, string Message)> CaptureScreenshotWithStatusAsync(string udid, string outputPath)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !PathHelper.IsSafeLocalPath(outputPath))
-            return false;
+            return (false, "Invalid device or output path.");
         try
         {
             // developer screenshot uses the deprecated lockdown screenshot service — works without DeveloperDiskImage.
             var result = await RunAsync(udid, $"developer screenshot {Quote(outputPath)}", DefaultTimeoutMs).ConfigureAwait(false);
-            if (!result.Success && (result.Error.Contains("Developer") || result.Error.Contains("DeveloperDiskImage") || result.Error.Contains("Developer Mode")))
-            {
-                throw new Exception("Enable Developer Mode on device: Settings > Privacy & Security > Developer Mode");
-            }
-            return result.Success && File.Exists(outputPath);
+            if (result.Success && File.Exists(outputPath)) return (true, "Screenshot saved.");
+            var error = GetFailureMessage(result);
+            if (error.Contains("Developer", StringComparison.OrdinalIgnoreCase))
+                return (false, "iOS screenshot requires Developer Mode and possibly a mounted Developer Disk Image.");
+            return (false, result.Success ? "Screenshot command succeeded but produced no image." : $"iOS screenshot failed: {error}");
         }
-        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] CaptureScreenshotAsync failed"); return false; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] CaptureScreenshotAsync failed"); return (false, ex.Message); }
     }
 
     public async Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath, Action<string>? outputCallback = null)
@@ -410,10 +392,12 @@ public class IosService : IIosService
         try
         {
             var result = await RunAsync(udid, $"afc ls {Quote(path)}", DefaultTimeoutMs).ConfigureAwait(false);
-            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return files;
+            if (!result.Success)
+                throw new IOException($"iOS AFC could not list {path}: {GetFailureMessage(result)}");
+            if (string.IsNullOrWhiteSpace(result.Output)) return files;
             files = ParseAfcLs(result.Output, path);
         }
-        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] ListDirectoryAsync failed"); }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] ListDirectoryAsync failed"); throw; }
         return files;
     }
 
@@ -431,17 +415,16 @@ public class IosService : IIosService
             if (string.IsNullOrEmpty(rawName)) continue;
             // Skip noise (dot entries, total lines)
             if (rawName == "." || rawName == "..") continue;
+            // pymobiledevice3 9.12.0 dirlist prints the requested directory first.
+            if (NormalizeDevicePath(rawName.TrimEnd('/')) == basePath) continue;
 
             var hadTrailingSlash = rawName.EndsWith("/");
             var normalized = rawName.Trim('/');
             var name = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? normalized;
             if (string.IsNullOrWhiteSpace(name)) continue;
 
-            // AFC listings often omit trailing slash markers for directories.
-            // Prefer navigability for dotless entries; opening a false-positive
-            // file simply returns an empty/error listing instead of blocking browse.
-            // Only mark as directory if there is a trailing slash marker.
-            // Extensionless files (README, Makefile, LICENSE) are common on iOS app containers.
+            // A trailing slash is the only directory marker available in plain ls output.
+            // Callers should request a directory-aware format when supported by the CLI.
             var isDir = hadTrailingSlash;
 
             files.Add(new DeviceFile
@@ -477,8 +460,8 @@ public class IosService : IIosService
         { AppLogger.Log.Warn("[IosService] Unsafe path rejected"); return false; }
         try
         {
-            var result = await RunAsync(udid, $"afc pull {Quote(remotePath)} {Quote(localPath)}", 60000).ConfigureAwait(false);
-            return result.Success;
+            var result = await RunAsync(udid, $"afc pull --ignore-errors {Quote(remotePath)} {Quote(localPath)}", 60000).ConfigureAwait(false);
+            return result.Success && File.Exists(localPath);
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PullFileAsync failed"); return false; }
     }
@@ -502,12 +485,6 @@ public class IosService : IIosService
         try
         {
             var result = await RunAsync(udid, $"afc rm {Quote(path)}", InfoTimeoutMs).ConfigureAwait(false);
-            if (!result.Success)
-            {
-                // afc rm only deletes files; try rmdir for directories
-                var rmdirResult = await RunAsync(udid, $"afc rmdir {Quote(path)}", InfoTimeoutMs).ConfigureAwait(false);
-                return rmdirResult.Success;
-            }
             return result.Success;
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] DeleteFileAsync failed"); return false; }
@@ -541,12 +518,30 @@ public class IosService : IIosService
             return false;
         try
         {
-            // crash pull has signature: pull [--remote-file PATH] [OUT]; we use defaults and let it pull all,
-            // then move the named file. Simpler: use afc-style targeted pull via crash pull subcommand if exposed.
             var dir = Path.GetDirectoryName(outputPath) ?? Environment.CurrentDirectory;
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-            var result = await RunAsync(udid, $"crash pull --path {Quote(crashName)} {Quote(dir)}", 30000).ConfigureAwait(false);
-            return result.Success;
+            var stagingDir = Path.Combine(dir, $".logpro-crash-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(stagingDir);
+            try
+            {
+                var result = await RunAsync(udid, $"crash pull --remote-file {Quote(crashName)} {Quote(stagingDir)}", 30000).ConfigureAwait(false);
+                if (!result.Success) return false;
+                var pulled = Path.Combine(stagingDir, Path.GetFileName(crashName));
+                if (!File.Exists(pulled) || !PathHelper.IsSafeLocalPath(pulled)) return false;
+                File.Move(pulled, outputPath, overwrite: true);
+                return File.Exists(outputPath);
+            }
+            finally
+            {
+                var resolvedParent = Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                var resolvedStaging = Path.GetFullPath(stagingDir);
+                if (resolvedStaging.StartsWith(resolvedParent, StringComparison.OrdinalIgnoreCase) &&
+                    PathHelper.IsSafeLocalPath(resolvedStaging) && Directory.Exists(resolvedStaging))
+                {
+                    try { Directory.Delete(resolvedStaging, recursive: true); }
+                    catch (Exception ex) { AppLogger.Log.Warn(ex, "[IosService] Could not clean crash-log staging directory"); }
+                }
+            }
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PullCrashLogAsync failed"); return false; }
     }
@@ -562,20 +557,14 @@ public class IosService : IIosService
     }
 
     /// <summary>
-    /// Posts a Darwin notification name. pymobiledevice3 only supports posting the
-    /// notification name (notify_post); the title/body params are not honored by pymd3.
-    /// We pass `body` as the notification name when present, else `title`.
+    /// A user-visible iOS notification requires an installed app and notification permission.
+    /// The CLI's `notification post` only posts a Darwin notification name, so it cannot
+    /// satisfy this method's title/body contract.
     /// </summary>
-    public async Task<bool> SendNotificationAsync(string udid, string title, string body)
+    public Task<bool> SendNotificationAsync(string udid, string title, string body)
     {
-        try
-        {
-            var name = !string.IsNullOrWhiteSpace(body) ? body : title;
-            if (string.IsNullOrWhiteSpace(name)) return false;
-            var result = await RunAsync(udid, $"notification post --insecure {Quote(name)}", InfoTimeoutMs).ConfigureAwait(false);
-            return result.Success;
-        }
-        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] SendNotificationAsync failed"); return false; }
+        AppLogger.Log.Warn("[IosService] User-visible notifications are unsupported on iOS without an app integration");
+        return Task.FromResult(false);
     }
 
     public async Task<List<DeviceInfo>> DiscoverNetworkDevicesAsync()
@@ -621,10 +610,10 @@ public class IosService : IIosService
     /// pymobiledevice3 `developer shell` opens an interactive IPython REPL — not pipeable.
     /// Returns the long-running process; callers must drive stdin themselves.
     /// </summary>
-    public System.Diagnostics.Process? StartDeveloperShell(string udid)
+    public async Task<System.Diagnostics.Process?> StartDeveloperShellAsync(string udid)
     {
         if (SecurityHelper.OfflineOnly) return null;
-        try { return StartLong(udid, "developer shell"); }
+        try { return await StartLongAsync(udid, "developer shell").ConfigureAwait(false); }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] StartDeveloperShell failed"); return null; }
     }
 
@@ -639,28 +628,17 @@ public class IosService : IIosService
     }
 
     /// <summary>
-    /// pymobiledevice3 has no direct openurl command. Always returns false.
-    /// Use the Springboard launch path (DVT) on devices with Developer Mode enabled
-    /// if URL launching is needed.
+    /// The bundled pymobiledevice3 CLI has no URL-opening command.
     /// </summary>
-    public async Task<bool> OpenUrlAsync(string udid, string url)
+    public Task<bool> OpenUrlAsync(string udid, string url)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsOfflineSafeUri(url))
         {
             AppLogger.Log.Warn("[IosService] Network URL blocked by offline security policy");
-            return false;
+            return Task.FromResult(false);
         }
-        try
-        {
-            // Try pymobiledevice3 developer dvt launch for URL opening (requires Developer Mode)
-            var result = await RunAsync(udid, $"developer dvt launch {Quote(url)}", InfoTimeoutMs).ConfigureAwait(false);
-            if (result.Success) return true;
-
-            // Fallback: try apps open-url (available in newer pymobiledevice3 versions)
-            var result2 = await RunAsync(udid, $"apps open-url {Quote(url)}", InfoTimeoutMs).ConfigureAwait(false);
-            return result2.Success;
-        }
-        catch (Exception ex) { AppLogger.Log.Warn(ex, "[IosService] OpenUrlAsync failed"); return false; }
+        AppLogger.Log.Warn("[IosService] URL opening is unsupported by the bundled pymobiledevice3 CLI");
+        return Task.FromResult(false);
     }
     /// <summary>
     /// Resolves an app's container directory via `apps query`.

@@ -96,7 +96,14 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 StatusMessage = "[!] Device requires trust. Accept trust dialog on iOS device.";
                 return;
             }
+            if (value.ConnectionState != DeviceConnectionState.Online)
+            {
+                Files.Clear();
+                StatusMessage = $"[!] Device is {value.ConnectionState}.";
+                return;
+            }
             CurrentPath = "/";
+            StatusMessage = "iOS: browsing AFC media files only. System and app files are unavailable here.";
         }
         else
         {
@@ -163,7 +170,9 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                     Files.Add(f);
 
                 CurrentPath = path;
-                StatusMessage = $"Loaded {loadedFiles.Count} items.";
+                StatusMessage = device.Platform == DevicePlatform.iOS
+                    ? $"Loaded {loadedFiles.Count} media items. iOS AFC cannot show system/app files or folder types; double-click an item to open a folder."
+                    : $"Loaded {loadedFiles.Count} items.";
             });
         }
         catch (Exception ex)
@@ -208,6 +217,20 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         if (file.IsDirectory)
         {
             await LoadDirectoryAsync(file.Path);
+        }
+        else if (SelectedDevice?.Platform == DevicePlatform.iOS)
+        {
+            // AFC's plain listing may omit directory markers. Probe the selected path
+            // so a directory remains navigable even when it was printed without '/'.
+            try
+            {
+                await _iosService.ListDirectoryAsync(SelectedDevice.Serial, file.Path);
+                await LoadDirectoryAsync(file.Path);
+            }
+            catch (IOException)
+            {
+                StatusMessage = $"Selected '{file.Name}'. Use Download to transfer it.";
+            }
         }
         else
         {
