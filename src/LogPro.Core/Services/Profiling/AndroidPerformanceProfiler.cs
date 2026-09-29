@@ -96,8 +96,9 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
         var fpsTask = SampleFpsAsync(cancellationToken);
         var cpu = await ProbeCpuAsync(cancellationToken).ConfigureAwait(false);
         var sample = Interlocked.Increment(ref _sampleNumber);
-        if (sample == 1 || sample % 5 == 0)
-            _lastMemory = await ProbeMemAsync(cancellationToken).ConfigureAwait(false);
+        // Memory is a soak-test correctness metric: sample every time so growth
+        // between adjacent snapshots cannot be hidden by a cache interval.
+        _lastMemory = await ProbeMemAsync(cancellationToken).ConfigureAwait(false);
         if (sample == 1 || sample % 10 == 0)
         {
             _lastThermal = await ProbeThermalAsync(cancellationToken).ConfigureAwait(false);
