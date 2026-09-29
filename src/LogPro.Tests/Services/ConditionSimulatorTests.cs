@@ -37,7 +37,7 @@ public class ConditionPlannersTests
             ConditionPlanners.Presets.Single(p => p.Name == "3g"), "wlan0");
         script.Should().Contain("delay 150ms 30ms");
         script.Should().Contain("loss 2%");
-        script.Should().Contain("tbf rate 1500kbit");
+        script.Should().Contain("rate 1500kbit");
         script.Should().Contain("dev wlan0");
     }
 
@@ -53,8 +53,8 @@ public class ConditionSimulatorTests
     private static (ConditionSimulator Sim, Mock<IAdbService> Adb) Create()
     {
         var adb = new Mock<IAdbService>();
-        adb.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string s, string c, CancellationToken _) => string.Empty);
+        adb.Setup(a => a.ExecuteCommandWithResultAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((true, string.Empty, string.Empty));
         return (new ConditionSimulator(adb.Object), adb);
     }
 
@@ -65,15 +65,15 @@ public class ConditionSimulatorTests
         await sim.SetMockLocationAppAsync("S1", "com.game");
         await sim.ResetLocationAsync("S1", "com.game");
 
-        adb.Verify(a => a.ExecuteCommandAsync("S1", "shell appops set com.game android:mock_location allow", It.IsAny<CancellationToken>()), Times.Once);
-        adb.Verify(a => a.ExecuteCommandAsync("S1", "shell appops set com.game android:mock_location deny", It.IsAny<CancellationToken>()), Times.Once);
+        adb.Verify(a => a.ExecuteCommandWithResultAsync("S1", "shell appops set com.game android:mock_location allow", It.IsAny<CancellationToken>()), Times.Once);
+        adb.Verify(a => a.ExecuteCommandWithResultAsync("S1", "shell appops set com.game android:mock_location deny", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task ApplyNetwork_NoRoot_ReturnsFalse()
     {
         var adb = new Mock<IAdbService>();
-        adb.Setup(a => a.ExecuteCommandAsync("S1", "shell su -c id", It.IsAny<CancellationToken>())).ReturnsAsync("not root");
+        adb.Setup(a => a.ExecuteCommandWithResultAsync("S1", "shell su -c id", It.IsAny<CancellationToken>())).ReturnsAsync((true, "not root", string.Empty));
         var sim = new ConditionSimulator(adb.Object);
 
         (await sim.ApplyNetworkConditionAsync("S1", ConditionPlanners.Presets[2], "wlan0")).Should().BeFalse();
@@ -83,13 +83,13 @@ public class ConditionSimulatorTests
     public async Task ApplyNetwork_Root_AppliesScript()
     {
         var adb = new Mock<IAdbService>();
-        adb.Setup(a => a.ExecuteCommandAsync("S1", "shell su -c id", It.IsAny<CancellationToken>())).ReturnsAsync("uid=0(root)");
-        adb.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.Is<string>(c => c != "shell su -c id"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(string.Empty);
+        adb.Setup(a => a.ExecuteCommandWithResultAsync("S1", "shell su -c id", It.IsAny<CancellationToken>())).ReturnsAsync((true, "uid=0(root)", string.Empty));
+        adb.Setup(a => a.ExecuteCommandWithResultAsync(It.IsAny<string>(), It.Is<string>(c => c != "shell su -c id"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((true, string.Empty, string.Empty));
         var sim = new ConditionSimulator(adb.Object);
 
         (await sim.ApplyNetworkConditionAsync("S1", ConditionPlanners.Presets[0], "wlan0")).Should().BeTrue();
-        adb.Verify(a => a.ExecuteCommandAsync(It.IsAny<string>(),
+        adb.Verify(a => a.ExecuteCommandWithResultAsync(It.IsAny<string>(),
             It.Is<string>(c => c.Contains("netem delay 300ms 80ms")), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -98,7 +98,18 @@ public class ConditionSimulatorTests
     {
         var (sim, adb) = Create();
         await sim.InjectFixAsync("S1", 51.5074, -0.1278);
-        adb.Verify(a => a.ExecuteCommandAsync(It.IsAny<string>(),
+        adb.Verify(a => a.ExecuteCommandWithResultAsync(It.IsAny<string>(),
             It.Is<string>(c => c.Contains("51.507400") && c.Contains("-0.127800")), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SetMockLocation_FailedExitWithEmptyError_ReturnsFalse()
+    {
+        var adb = new Mock<IAdbService>();
+        adb.Setup(a => a.ExecuteCommandWithResultAsync("S1", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((false, string.Empty, string.Empty));
+        var sim = new ConditionSimulator(adb.Object);
+
+        (await sim.SetMockLocationAppAsync("S1", "com.game")).Should().BeFalse();
     }
 }

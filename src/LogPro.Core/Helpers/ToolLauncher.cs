@@ -23,13 +23,14 @@ public static class ToolLauncher
     // (StartLongRunning) intentionally bypass the gate — they'd hold it for hours.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _deviceLocks = new(StringComparer.Ordinal);
     private static readonly SemaphoreSlim _globalCap = new(Environment.ProcessorCount);
-    private static readonly SemaphoreSlim _globalOnly = new(Environment.ProcessorCount);
     private static readonly SemaphoreSlim _longRunningCap = new(Math.Max(1, Environment.ProcessorCount));
     private static readonly System.Text.RegularExpressions.Regex _deviceKeyRegex =
         new(@"(?:-s|--udid)\s+(\S+)", System.Text.RegularExpressions.RegexOptions.Compiled);
     private static readonly System.Text.RegularExpressions.Regex _deviceArgumentRegex = new(
         @"(?:^|\s)(?:-s|--udid)\s+(?:""(?<selector>[^""]+)""|(?<selector>\S+))",
         System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    private static readonly Regex _tcpipPattern = new(
+        @"-s\s+\S+\s+tcpip\s+\d+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private const int MaxCapturedOutputChars = 1_000_000;
 
     private static async Task<IDisposable> EnterDeviceGateAsync(string arguments, CancellationToken cancellationToken = default)
@@ -37,8 +38,8 @@ public static class ToolLauncher
         var m = _deviceKeyRegex.Match(arguments);
         if (!m.Success)
         {
-            await _globalOnly.WaitAsync(cancellationToken).ConfigureAwait(false);
-            return new GateRelease(_globalOnly, null);
+            await _globalCap.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return new GateRelease(_globalCap, null);
         }
 
         var deviceLock = _deviceLocks.GetOrAdd(m.Groups[1].Value, _ => new SemaphoreSlim(1, 1));
@@ -76,10 +77,10 @@ public static class ToolLauncher
         if (!m.Success)
         {
             if (waitMs > 0)
-                return await _globalOnly.WaitAsync(waitMs).ConfigureAwait(false)
-                    ? new GateRelease(_globalOnly, null) : null;
-            await _globalOnly.WaitAsync().ConfigureAwait(false);
-            return new GateRelease(_globalOnly, null);
+                return await _globalCap.WaitAsync(waitMs).ConfigureAwait(false)
+                    ? new GateRelease(_globalCap, null) : null;
+            await _globalCap.WaitAsync().ConfigureAwait(false);
+            return new GateRelease(_globalCap, null);
         }
 
         var deviceLock = _deviceLocks.GetOrAdd(m.Groups[1].Value, _ => new SemaphoreSlim(1, 1));
@@ -130,8 +131,9 @@ public static class ToolLauncher
         if (Path.IsPathRooted(exeName))
             return exeName;
 
-        var bundledPath = Path.Combine(_toolsDir, exeName);
-        return File.Exists(bundledPath) ? bundledPath : exeName;
+        // Delegate to ToolResolver which handles subdirectory scanning, caching,
+        // and untrusted-tool safety. Falls back to bare name (PATH lookup) if not found.
+        return ToolResolver.Resolve(exeName);
     }
 
     public static async Task<ToolLauncherResult> RunAsync(string exeName, string arguments, int timeoutMs = 15000,
@@ -147,10 +149,9 @@ public static class ToolLauncher
             return result;
         }
 
-        // Block exfiltration-capable commands but allow ADB wireless operations
-        // (wireless ADB is protected by IsPrivateSubnet at the AdbService layer)
+        // The offline device channel does not permit network-capable commands.
         if (SecurityHelper.IsNetworkCapableCommand(arguments) &&
-            !IsAdbWirelessOperation(arguments))
+            (SecurityHelper.OfflineOnly || !IsAdbWirelessOperation(arguments)))
         {
             result.Error = "Blocked: network-capable command detected.";
             return result;
@@ -354,7 +355,7 @@ public static class ToolLauncher
                trimmed.StartsWith("pair ", StringComparison.OrdinalIgnoreCase) ||
                trimmed.StartsWith("disconnect ", StringComparison.OrdinalIgnoreCase) ||
                trimmed.Contains(" tcpip ", StringComparison.OrdinalIgnoreCase) ||
-               Regex.IsMatch(trimmed, @"-s\s+\S+\s+tcpip\s+\d+", RegexOptions.IgnoreCase);
+               _tcpipPattern.IsMatch(trimmed);
     }
 
     /// <summary>Sanitizes command arguments for logging when Secure Mode is enabled.</summary>
@@ -363,9 +364,10 @@ public static class ToolLauncher
 
     internal static void ConfigureOfflineEnvironment(ProcessStartInfo startInfo)
     {
+        // Strip proxy and Python vars that could leak data or break bundled tools
         foreach (var name in new[]
         {
-            "ADB_SERVER_SOCKET", "ADB_MDNS_AUTO_CONNECT", "ADB_MDNS_OPENSCREEN",
+            "ADB_SERVER_SOCKET",
             "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
             "http_proxy", "https_proxy", "all_proxy", "no_proxy",
             "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP"

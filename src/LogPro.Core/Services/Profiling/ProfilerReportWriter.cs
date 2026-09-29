@@ -85,7 +85,9 @@ public static class ProfilerReportWriter
             BatteryDrainPercent = battery.Count > 1 ? Math.Max(0, battery[0] - battery[^1]) : 0,
             MaxThermalStatus = thermal.Count > 0 ? thermal.Max() : 0,
             // §12.1 slow-session norms: sustained P90 frame time over 50 ms (20 FPS casual)
-            SlowSession = snapshots.Any(s => s.FrameTimeP90Ms is > 50)
+            SlowSession = snapshots.Zip(snapshots.Skip(1), (a, b) =>
+                a.TotalFrames is > 0 && b.TotalFrames is > 0 &&
+                a.FrameTimeP90Ms is > 50 && b.FrameTimeP90Ms is > 50).Any(x => x)
         };
     }
 

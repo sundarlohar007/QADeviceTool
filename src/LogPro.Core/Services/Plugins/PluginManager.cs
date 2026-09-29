@@ -122,7 +122,7 @@ internal sealed class RegexLogParser : ILogParserPlugin
         Version = manifest.Version;
         Type = manifest.Type;
         _rules = rules.Select(r => (
-            new Regex(r.Pattern, RegexOptions.Compiled),
+            new Regex(r.Pattern, RegexOptions.Compiled, TimeSpan.FromMilliseconds(100)),
             r.Level,
             string.IsNullOrWhiteSpace(r.TagGroup) ? null : r.TagGroup,
             string.IsNullOrWhiteSpace(r.MessageGroup) ? null : r.MessageGroup)).ToList();
@@ -137,7 +137,9 @@ internal sealed class RegexLogParser : ILogParserPlugin
     {
         foreach (var (regex, level, tagGroup, messageGroup) in _rules)
         {
-            var match = regex.Match(rawLine);
+            Match match;
+            try { match = regex.Match(rawLine); }
+            catch (RegexMatchTimeoutException) { continue; }
             if (!match.Success) continue;
 
             var tag = tagGroup != null && match.Groups[tagGroup].Success ? match.Groups[tagGroup].Value : string.Empty;

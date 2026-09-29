@@ -74,7 +74,7 @@ public static class PathHelper
         var safeName = SanitizeFileName(deviceName);
         var time = DateTime.Now.ToString("hh.mm.sstt");
         var date = DateTime.Now.ToString("dd.MM.yyyy");
-        var dirName = $"{safeName}_{time}_{date}";
+        var dirName = $"{safeName}_{time}_{date}_{Guid.NewGuid():N}";
         var requestedRoot = string.IsNullOrWhiteSpace(rootDirectory) ? GetDefaultSessionsDirectory() : rootDirectory;
         if (!TryGetSafeLocalDirectory(requestedRoot, out var root))
             throw new ArgumentException("Session output must be on a local, non-reparse-point volume.", nameof(rootDirectory));

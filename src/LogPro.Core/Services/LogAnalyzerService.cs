@@ -42,7 +42,14 @@ public class LogAnalyzerService
         foreach (var rule in Rules)
         {
             if (!rule.IsEnabled) continue;
-            if (rule.Regex.IsMatch(line))
+            bool matched;
+            try { matched = rule.Regex.IsMatch(line); }
+            catch (RegexMatchTimeoutException)
+            {
+                rule.IsEnabled = false;
+                continue;
+            }
+            if (matched)
             {
                 matches.Add((rule, line, lineIndex));
                 RuleMatched?.Invoke(rule, line, lineIndex);
@@ -92,12 +99,12 @@ public class AlertRule
             {
                 try
                 {
-                    _cachedRegex = new Regex(Pattern, RegexOptions.Compiled | RegexOptions.IgnoreCase);
+                    _cachedRegex = new Regex(Pattern, RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
                 }
                 catch (ArgumentException)
                 {
                     // Return a never-match regex if pattern is invalid
-                    _cachedRegex = new Regex(@"^\b$", RegexOptions.Compiled);
+                    _cachedRegex = new Regex(@"^\b$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
                 }
             }
             return _cachedRegex;

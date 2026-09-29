@@ -82,9 +82,10 @@ public class TierMatrixTests
         var path = Path.Combine(Path.GetTempPath(), $"tier_{Guid.NewGuid():N}.json");
         try
         {
-            await TierMatrix.WriteJsonAsync(results, path);
+            await TierMatrix.WriteJsonAsync(results, path, TimeSpan.FromSeconds(30));
             var json = await File.ReadAllTextAsync(path);
-            json.Should().Contain("FAST01");
+            json.Should().NotContain("FAST01");
+            json.Should().Contain("\"DurationSeconds\": 30");
             json.Should().Contain("L1");
             json.Should().Contain("AvgFps");
         }

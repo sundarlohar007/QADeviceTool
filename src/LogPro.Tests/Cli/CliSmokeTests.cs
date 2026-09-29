@@ -100,7 +100,7 @@ public class CliSmokeTests
 
             var summary = doc.RootElement.GetProperty("Summary");
             summary.GetProperty("AvgFps").GetDouble().Should().BeGreaterThan(30.0, "fake layer streams ~60fps");
-            summary.GetProperty("JankyFrames").GetInt32().Should().BeGreaterThan(0, "fake layer injects jank frames");
+            summary.GetProperty("JankyFrames").GetInt32().Should().Be(0, "fake layer returns an unchanged rolling buffer");
 
             File.Exists(Path.Combine(outDir, "profile.csv")).Should().BeTrue();
             stdout.Should().Contain("Avg FPS");

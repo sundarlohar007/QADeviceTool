@@ -17,18 +17,18 @@ public sealed class ConditionSimulator
     public async Task<bool> SetMockLocationAppAsync(string serial, string appPackage)
     {
         if (!SecurityHelper.IsValidPackageName(appPackage)) return false;
-        var result = await _adb.ExecuteCommandAsync(serial,
+        var result = await _adb.ExecuteCommandWithResultAsync(serial,
             $"shell appops set {appPackage} android:mock_location allow");
-        return !result.Contains("Error", StringComparison.OrdinalIgnoreCase);
+        return result.Success;
     }
 
     /// <summary>MANDATORY reset — revokes mock-location (§12.4 safety).</summary>
     public async Task<bool> ResetLocationAsync(string serial, string appPackage)
     {
         if (!SecurityHelper.IsValidPackageName(appPackage)) return false;
-        var result = await _adb.ExecuteCommandAsync(serial,
+        var result = await _adb.ExecuteCommandWithResultAsync(serial,
             $"shell appops set {appPackage} android:mock_location deny");
-        return !result.Contains("Error", StringComparison.OrdinalIgnoreCase);
+        return result.Success;
     }
 
     /// <summary>
@@ -39,16 +39,16 @@ public sealed class ConditionSimulator
     {
         var latStr = lat.ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture);
         var lonStr = lon.ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture);
-        var result = await _adb.ExecuteCommandAsync(serial,
+        var result = await _adb.ExecuteCommandWithResultAsync(serial,
             $"shell am broadcast -a logpro.intent.MOCK_LOCATION --ef lat {latStr} --ef lon {lonStr}");
-        return !result.Contains("Error", StringComparison.OrdinalIgnoreCase);
+        return result.Success;
     }
 
     /// <summary>Detects root (required for tc-based conditioning).</summary>
     public async Task<bool> HasRootAsync(string serial)
     {
-        var result = await _adb.ExecuteCommandAsync(serial, "shell su -c id");
-        return result.Contains("uid=0");
+        var result = await _adb.ExecuteCommandWithResultAsync(serial, "shell su -c id");
+        return result.Success && result.Output.Contains("uid=0", StringComparison.Ordinal);
     }
 
     /// <summary>Applies a network preset via su + tc/netem. Returns false without root.</summary>
@@ -57,8 +57,8 @@ public sealed class ConditionSimulator
         if (!SecurityHelper.IsValidNetworkInterface(networkInterface)) return false;
         if (!await HasRootAsync(serial)) return false;
         var script = ConditionPlanners.BuildNetemScript(preset, networkInterface);
-        var result = await _adb.ExecuteCommandAsync(serial, $"shell su -c \"{script.Replace("\"", "\\\"")}\"");
-        return !result.Contains("Error", StringComparison.OrdinalIgnoreCase);
+        var result = await _adb.ExecuteCommandWithResultAsync(serial, $"shell su -c \"{script.Replace("\"", "\\\"")}\"");
+        return result.Success;
     }
 
     /// <summary>Resets network conditioning.</summary>
@@ -66,7 +66,7 @@ public sealed class ConditionSimulator
     {
         if (!SecurityHelper.IsValidNetworkInterface(networkInterface)) return false;
         var script = ConditionPlanners.BuildNetemResetScript(networkInterface);
-        var result = await _adb.ExecuteCommandAsync(serial, $"shell su -c \"{script}\"");
-        return !result.Contains("Error", StringComparison.OrdinalIgnoreCase);
+        var result = await _adb.ExecuteCommandWithResultAsync(serial, $"shell su -c \"{script}\"");
+        return result.Success;
     }
 }

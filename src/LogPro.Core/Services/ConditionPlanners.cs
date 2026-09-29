@@ -89,8 +89,7 @@ public static class ConditionPlanners
         var loss = preset.LossPercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
         var sb = new StringBuilder();
         sb.AppendLine($"tc qdisc del dev {networkInterface} root 2>/dev/null");
-        sb.AppendLine($"tc qdisc add dev {networkInterface} root netem delay {preset.LatencyMs}ms {preset.JitterMs}ms loss {loss}%");
-        sb.AppendLine($"tc qdisc add dev {networkInterface} root tbf rate {ToKbit(preset.BandwidthMbps)}kbit burst 32kbit latency 50ms");
+        sb.AppendLine($"tc qdisc add dev {networkInterface} root netem delay {preset.LatencyMs}ms {preset.JitterMs}ms loss {loss}% rate {ToKbit(preset.BandwidthMbps)}kbit");
         return sb.ToString();
     }
 
