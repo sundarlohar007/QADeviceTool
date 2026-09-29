@@ -49,9 +49,7 @@ public class AdbService : IAdbService
         @"^(?<perm>[bcdlps-][rwx-]{9})\s+\d+\s+\S+\s+\S+\s+(?<size>\d+)\s+(?<date>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)\s+(?<name>.+)$",
         RegexOptions.Compiled);
     private static readonly Regex SafePathPattern = new(
-        @"^[a-zA-Z0-9._\-/\s]+$", RegexOptions.Compiled);
-    private static readonly Regex SafeChannelPattern = new(
-        @"^[a-zA-Z0-9._\-]+$", RegexOptions.Compiled);
+        @"^[\p{L}\p{N}._\-/ ]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public AdbService()
     {
@@ -147,6 +145,9 @@ public class AdbService : IAdbService
     }
 
     public async Task<List<DeviceInfo>> GetConnectedDevicesAsync()
+        => (await GetConnectedDevicesWithStatusAsync().ConfigureAwait(false)).Devices;
+
+    public async Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync()
     {
         var devices = new List<DeviceInfo>();
 
@@ -156,7 +157,7 @@ public class AdbService : IAdbService
             if (!result.Success || string.IsNullOrWhiteSpace(result.Output))
             {
                 AppLogger.Log.Debug("[AdbService] No devices found or ADB command failed");
-                return devices;
+                return (result.Success && !string.IsNullOrWhiteSpace(result.Output), devices);
             }
 
             var lines = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
@@ -217,9 +218,10 @@ public class AdbService : IAdbService
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, "[AdbService] Exception in GetConnectedDevicesAsync");
+            return (false, devices);
         }
 
-        return devices;
+        return (true, devices);
     }
 
     private async Task<string?> GetDevicePropertySafeAsync(string serial, string property)
@@ -337,14 +339,19 @@ public class AdbService : IAdbService
 
         try
         {
-            var remotePath = "/sdcard/qa_screenshot.png";
-            var capResult = await RunAdbAsync($"-s {serial} shell screencap -p {remotePath}", DefaultTimeoutMs);
-            if (!capResult.Success) return false;
+            var remotePath = $"/sdcard/qa_screenshot_{Guid.NewGuid():N}.png";
+            try
+            {
+                var capResult = await RunAdbAsync($"-s {serial} shell screencap -p {remotePath}", DefaultTimeoutMs);
+                if (!capResult.Success) return false;
 
-            var pullResult = await RunAdbAsync($"-s {serial} pull {remotePath} \"{outputPath}\"", DefaultTimeoutMs);
-            await RunAdbAsync($"-s {serial} shell rm {remotePath}", FastTimeoutMs);
-
-            return pullResult.Success;
+                var pullResult = await RunAdbAsync($"-s {serial} pull {remotePath} \"{outputPath}\"", DefaultTimeoutMs);
+                return pullResult.Success;
+            }
+            finally
+            {
+                await RunAdbAsync($"-s {serial} shell rm {remotePath}", FastTimeoutMs);
+            }
         }
         catch (Exception ex)
         {
@@ -378,14 +385,15 @@ public class AdbService : IAdbService
                 _activeRecordProcess = null;
             }
 
-            _activeRecordRemotePath = $"/sdcard/qa_screenrecord_{DateTime.Now:yyyyMMdd_HHmmss}.mp4";
-            var remotePath = _activeRecordRemotePath;
+            var remotePath = $"/sdcard/qa_screenrecord_{Guid.NewGuid():N}.mp4";
             var arguments = $"-s {serial} shell screenrecord --bit-rate {bitRate} --time-limit {maxDurationSec} {remotePath}";
             var process = await StartAdbLongRunning(arguments);
             if (process == null) return null;
 
-            // Store process reference for later stop
             _activeRecordProcess = process;
+            _activeRecordRemotePath = remotePath;
+            _activeRecordSerial = serial;
+            _activeRecordOutputDir = outputDir;
             ProcessManager.Instance.TrackProcess(process);
             return remotePath;
         }
@@ -409,37 +417,53 @@ public class AdbService : IAdbService
         await _screenRecordGate.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (!string.Equals(serial, _activeRecordSerial, StringComparison.Ordinal))
+                return null;
+
             var process = Interlocked.Exchange(ref _activeRecordProcess, null);
+            var remoteFile = Interlocked.Exchange(ref _activeRecordRemotePath, null);
+            var outputDir = Interlocked.Exchange(ref _activeRecordOutputDir, null);
+            _activeRecordSerial = null;
 
             if (process != null && !process.HasExited)
             {
-                // Send SIGINT (2) to screenrecord on the device to gracefully finalize the MP4 header.
-                // On Android, kill -2 sends SIGINT which makes screenrecord write the MP4 trailer.
                 try
                 {
                     var pidResult = await RunAdbAsync($"-s {serial} shell pidof screenrecord", FastTimeoutMs);
-                    if (pidResult.Success && !string.IsNullOrWhiteSpace(pidResult.Output))
+                    if (pidResult.Success && remoteFile != null)
                     {
-                        var pid = pidResult.Output.Trim();
-                        await RunAdbAsync($"-s {serial} shell kill -2 {pid}", FastTimeoutMs);
-                        await Task.Delay(500); // wait for mp4 finalization
+                        foreach (var pid in pidResult.Output.Split(new[] { ' ', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            if (!int.TryParse(pid, out var parsedPid) || parsedPid <= 0) continue;
+                            var cmdline = await RunAdbAsync($"-s {serial} shell cat /proc/{parsedPid}/cmdline", FastTimeoutMs);
+                            if (cmdline.Success && cmdline.Output.Contains(remoteFile, StringComparison.Ordinal))
+                                await RunAdbAsync($"-s {serial} shell kill -2 {parsedPid}", FastTimeoutMs);
+                        }
                     }
                 }
                 catch (Exception ex) { AppLogger.Log.Warn(ex, "[AdbService] StopScreenRecord failed"); }
-                try { process.Kill(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[AdbService] ScreenRecord kill error"); }
-                process.Dispose();
+                try
+                {
+                    using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await process.WaitForExitAsync(exitTimeout.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    try { process.Kill(false); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[AdbService] ScreenRecord kill error"); }
+                }
             }
+            process?.Dispose();
 
-            var remoteFile = Interlocked.Exchange(ref _activeRecordRemotePath, null);
             if (string.IsNullOrEmpty(remoteFile))
                 return null;
             var localPath = localOutputPath ?? Path.Combine(
-                Helpers.PathHelper.GetDefaultSessionsDirectory(),
+                outputDir ?? Helpers.PathHelper.GetDefaultSessionsDirectory(),
                 $"screenrecord_{SecurityHelper.HashSerial(serial)}_{DateTime.Now:yyyyMMdd_HHmmss}.mp4");
+            Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
 
             var pullResult = await RunAdbAsync($"-s {serial} pull \"{remoteFile}\" \"{localPath}\"", 30000);
-            // Clean up remote file
-            await RunAdbAsync($"-s {serial} shell rm \"{remoteFile}\"", FastTimeoutMs);
+            if (pullResult.Success)
+                await RunAdbAsync($"-s {serial} shell rm \"{remoteFile}\"", FastTimeoutMs);
 
             return pullResult.Success ? localPath : null;
         }
@@ -454,6 +478,8 @@ public class AdbService : IAdbService
     public bool IsScreenRecording { get { var p = _activeRecordProcess; return p != null && !p.HasExited; } }
     private System.Diagnostics.Process? _activeRecordProcess;
     private string? _activeRecordRemotePath;
+    private string? _activeRecordSerial;
+    private string? _activeRecordOutputDir;
     private readonly SemaphoreSlim _screenRecordGate = new(1, 1);
 
     public async Task<string?> GetPidFromPackageNameAsync(string serial, string packageNameKeyword)
@@ -548,7 +574,8 @@ public class AdbService : IAdbService
     {
         try
         {
-            if (!IsSafePath(path)) return new List<DeviceFile>();
+            if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !IsSafePath(path))
+                throw new ArgumentException("Unsupported Android device selector or path.", nameof(path));
             var safePath = path.Replace("'", "'\\''");
             var command = $"-s {serial} shell \"ls -lAL '{safePath}'\"";
             var result = await RunAdbAsync(command, DefaultTimeoutMs);
@@ -561,14 +588,15 @@ public class AdbService : IAdbService
 
             // Detect permission denied on restricted paths like /data/
             var fallback = await RunAdbAsync($"-s {serial} shell \"ls -1Ap '{safePath}'\"", DefaultTimeoutMs);
-            return fallback.Success ? ParseSimpleDirectoryListing(fallback.Output, path) : new List<DeviceFile>(); // Permission denied returns empty listing
+            if (!fallback.Success)
+                throw new IOException("ADB could not list this directory. It may be restricted on this Android device.");
+            return ParseSimpleDirectoryListing(fallback.Output, path);
         }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, "[AdbService] ListDirectoryAsync failed");
+            throw;
         }
-
-        return new List<DeviceFile>();
     }
 
     internal static List<DeviceFile> ParseAndroidLsListing(string output, string parentPath)
@@ -665,21 +693,21 @@ public class AdbService : IAdbService
 
     public async Task<bool> PullFileAsync(string serial, string remotePath, string localDestination)
     {
-        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !PathHelper.IsSafeLocalPath(localDestination)) return false;
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localDestination)) return false;
         var result = await RunAdbAsync($"-s {serial} pull \"{remotePath}\" \"{localDestination}\"");
         return result.Success;
     }
 
     public async Task<bool> PushFileAsync(string serial, string localPath, string remoteDestination)
     {
-        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !PathHelper.IsSafeLocalPath(localPath)) return false;
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !IsSafePath(remoteDestination) || !PathHelper.IsSafeLocalPath(localPath)) return false;
         var result = await RunAdbAsync($"-s {serial} push \"{localPath}\" \"{remoteDestination}\"");
         return result.Success;
     }
 
     public async Task<bool> DeleteFileAsync(string serial, string remotePath)
     {
-        if (!IsSafePath(remotePath)) return false;
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !IsAllowedFileDeletionPath(remotePath)) return false;
         var safePath = remotePath.Replace("'", "'\\''");
         var result = await RunAdbAsync($"-s {serial} shell \"rm -rf '{safePath}'\"");
         return result.Success;
@@ -688,10 +716,20 @@ public class AdbService : IAdbService
     private static bool IsSafePath(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
-        if (path.Contains("..")) return false;
+        if (!path.StartsWith('/') || path.Split('/').Any(segment => segment is "." or "..")) return false;
 
-        // Strict allowlist: only alphanumeric, spaces, and safe symbols
         return SafePathPattern.IsMatch(path);
+    }
+
+    internal static bool IsAllowedFileDeletionPath(string path)
+    {
+        if (!IsSafePath(path)) return false;
+        var normalized = path.TrimEnd('/');
+        if (normalized.Length == 0) return false;
+        return normalized.StartsWith("/sdcard/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("/storage/emulated/0/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("/storage/self/primary/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("/data/local/tmp/", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<List<AppItem>> ListInstalledAppsAsync(string serial)
@@ -752,34 +790,37 @@ public class AdbService : IAdbService
         return result.Success ? result.Output : "Failed to retrieve app details.";
     }
 
-    public async Task<bool> SetDeviceClipboardAsync(string serial, string text)
+    public Task<bool> SetDeviceClipboardAsync(string serial, string text)
     {
-        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || text.Contains('\r') || text.Contains('\n') || text.Length > 1_000_000)
-            return false;
-        // Escape single quotes for Android shell to prevent injection
-        var escaped = text.Replace("\\", "\\\\").Replace("'", "\\'");
-        var result = await RunAdbAsync(
-            $"-s {serial} shell cmd clipboard set '{escaped}'", FastTimeoutMs);
-        return result.Success;
+        // There is no portable ADB clipboard set command across supported Android builds.
+        // A device-side companion app would be required to provide this feature reliably.
+        return Task.FromResult(false);
     }
-    public async Task<string> GetDeviceClipboardAsync(string serial)
+
+    public Task<string> GetDeviceClipboardAsync(string serial)
     {
-        var result = await RunAdbAsync($"-s {serial} shell dumpsys clipboard", FastTimeoutMs);
-        return result.Success ? result.Output : "Failed to read clipboard.";
+        return Task.FromResult("Device clipboard reading is unavailable through portable ADB. Android clipboard privacy restrictions may also apply.");
     }
 
     public async Task<bool> SendNotificationAsync(string serial, string title, string body, string? channel = null)
     {
-        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || title.Length > 4096 || body.Length > 1_000_000)
+        if (!TryBuildNotificationArgs(serial, title, body, channel, out var args)) return false;
+        var result = await RunAdbAsync(args, FastTimeoutMs);
+        return result.Success;
+    }
+
+    internal static bool TryBuildNotificationArgs(string serial, string title, string body, string? channel, out string args)
+    {
+        args = string.Empty;
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || title.Length > 4096 || body.Length > 1_000_000 ||
+            title.Contains('\n') || title.Contains('\r') || body.Contains('\n') || body.Contains('\r') ||
+            (channel != null && !channel.Equals("default", StringComparison.OrdinalIgnoreCase)))
             return false;
         var tag = $"LogPro_{DateTime.Now.Ticks}";
-        var channelId = channel ?? "default";
-        if (!SafeChannelPattern.IsMatch(channelId))
-            channelId = "default";
         var safeTitle = EscapeSingleQuotedShell(title);
         var safeBody = EscapeSingleQuotedShell(body);
-        var result = await RunAdbAsync($"-s {serial} shell cmd notification post -t '{safeTitle}' '{safeBody}' --channel {channelId} {tag}", FastTimeoutMs);
-        return result.Success;
+        args = $"-s {serial} shell cmd notification post -t '{safeTitle}' {tag} '{safeBody}'";
+        return true;
     }
 
     internal static bool TryBuildDeepLinkIntentArgs(string serial, string url, out string args)

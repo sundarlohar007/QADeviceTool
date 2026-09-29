@@ -104,10 +104,10 @@ public partial class ShellViewModel : ObservableObject, IDisposable
         var cmd = CommandInput.Trim();
         CommandInput = string.Empty;
 
-        if (SelectedDevice.Platform == DevicePlatform.Android && SecurityHelper.IsNetworkCapableCommand(cmd))
+        if (SelectedDevice.Platform == DevicePlatform.Android && !SecurityHelper.IsOfflineSafeReadOnlyCommand(cmd))
         {
-            AppendOutput("[Blocked] Network-capable commands (connect, pair, curl, wget, etc.) are not allowed in the terminal.\n" +
-                         "Use the Wireless ADB section in Settings for device connections.");
+            AppendOutput("[Blocked] This terminal only permits read-only Android commands (for example, 'shell getprop', 'shell dumpsys', 'shell ls', and 'logcat -d').\n" +
+                         "Commands that change device state or use the network are unavailable under the offline policy.");
             return;
         }
 

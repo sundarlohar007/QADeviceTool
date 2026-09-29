@@ -6,6 +6,8 @@ namespace LogPro.Services;
 public interface IAdbService
 {
     Task<List<DeviceInfo>> GetConnectedDevicesAsync();
+    async Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync()
+        => (true, await GetConnectedDevicesAsync().ConfigureAwait(false));
     Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device);
     Task<bool> CaptureScreenshotAsync(string serial, string outputPath);
     Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? progressCallback = null);

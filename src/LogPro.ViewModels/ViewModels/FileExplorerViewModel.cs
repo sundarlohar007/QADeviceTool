@@ -343,7 +343,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 }
                 else
                 {
-                    StatusMessage = "Delete failed.";
+                    StatusMessage = "[!] Delete failed. Android deletion is limited to shared storage and /data/local/tmp; other locations may also require device permissions.";
                 }
             }
             catch (Exception ex)

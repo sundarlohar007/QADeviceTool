@@ -39,6 +39,21 @@ public class SurfaceFlingerLatencyParserTests
     }
 
     [Fact]
+    public void Parse_LongGapResetsBaselineAndKeepsLaterFrames()
+    {
+        var output = LatencyOutput(16_666_666,
+            (1, 1, 100_000_000),
+            (2, 2, 2_100_000_000),
+            (3, 3, 2_116_666_666));
+
+        var frames = AndroidDumpsysParsers.ParseSurfaceFlingerLatency(output).Frames;
+
+        frames.Should().HaveCount(3);
+        frames[1].FrameTimeMs.Should().Be(0);
+        frames[2].FrameTimeMs.Should().BeApproximately(16.67, 0.1);
+    }
+
+    [Fact]
     public void Summarize_ComputesFpsAndJank()
     {
         // 120 frames at 60fps + 10 janky frames at 40ms

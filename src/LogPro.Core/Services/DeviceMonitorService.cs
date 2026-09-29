@@ -69,12 +69,22 @@ public class DeviceMonitorService : IDeviceMonitorService
 
 
             // Poll Android and iOS in parallel
-            var androidTask = _adbService.GetConnectedDevicesAsync();
+            var androidTask = _adbService.GetConnectedDevicesWithStatusAsync();
             var iosTask = _iosService.GetConnectedDevicesAsync();
             List<DeviceInfo> oldDevices;
             lock (_lock) { oldDevices = _devices.ToList(); }
 
-            try { newDevices.AddRange(await androidTask.ConfigureAwait(false)); }
+            try
+            {
+                var android = await androidTask.ConfigureAwait(false);
+                if (android.Success)
+                    newDevices.AddRange(android.Devices);
+                else
+                {
+                    AppLogger.Log.Warn("[DeviceMonitor] ADB discovery failed; retaining the previous Android device state");
+                    newDevices.AddRange(oldDevices.Where(d => d.Platform == DevicePlatform.Android));
+                }
+            }
             catch (Exception ex)
             {
                 AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get Android devices");

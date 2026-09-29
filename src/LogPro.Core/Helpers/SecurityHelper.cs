@@ -111,17 +111,29 @@ public static class SecurityHelper
     /// </summary>
     public static bool IsOfflineSafeReadOnlyCommand(string? command)
     {
-        if (string.IsNullOrWhiteSpace(command)) return false;
+        if (string.IsNullOrWhiteSpace(command) || command.Length > 512) return false;
         if (command.Any(c => c is '\r' or '\n' or ';' or '|' or '&' or '`' or '$' or '<' or '>')) return false;
         if (IsNetworkCapableCommand(command)) return false;
 
-        var normalized = command.Trim();
-        return new[]
+        var normalized = Regex.Replace(command.Trim(), @" +", " ");
+        if (normalized.Contains("..", StringComparison.Ordinal)) return false;
+        var readOnlyForms = new[]
         {
-            "shell getprop", "shell dumpsys", "shell ps", "shell top", "shell cat",
-            "shell ls", "shell pm list", "shell wm size", "shell settings get",
-            "logcat -d", "logcat -b", "version", "devices"
-        }.Any(prefix => normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            @"version",
+            @"devices(?: -l)?",
+            @"shell getprop(?: [A-Za-z0-9._-]+)?",
+            @"shell dumpsys (?:battery|cpuinfo|thermalservice|wifi|activity|window|power|display|meminfo(?: [A-Za-z0-9._-]+)?|package(?: [A-Za-z0-9._-]+)?|gfxinfo(?: [A-Za-z0-9._-]+)?|SurfaceFlinger(?: --list| --latency ""[A-Za-z0-9._/\[\]()#@ -]+"")?)",
+            @"shell ps(?: -A(?: -o PID,NAME)?)?",
+            @"shell top -b -n [1-9][0-9]{0,2}",
+            @"shell cat /[A-Za-z0-9._/-]+",
+            @"shell ls(?: -[lALap]+)?(?: /[\p{L}\p{N}._/ -]+)?",
+            @"shell pm list (?:packages(?: -3)?|permissions|features|libraries|users|instrumentation)",
+            @"shell wm size",
+            @"shell settings get (?:system|secure|global) [A-Za-z0-9._-]+",
+            @"logcat -d(?: -b (?:main|system|events|crash|radio|all))?",
+            @"logcat -b (?:main|system|events|crash|radio|all) -d"
+        };
+        return readOnlyForms.Any(form => Regex.IsMatch(normalized, "^(?:" + form + ")$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant));
     }
 
     /// <summary>

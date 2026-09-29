@@ -49,7 +49,17 @@ public class SecurityHelperTests
     public void ReadOnlyCommandPolicy_RejectsShellCompositionAndWrites()
     {
         SecurityHelper.IsOfflineSafeReadOnlyCommand("shell dumpsys meminfo").Should().BeTrue();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("shell getprop ro.build.version.sdk").Should().BeTrue();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("shell ls /sdcard/照片").Should().BeTrue();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("logcat -d -b crash").Should().BeTrue();
         SecurityHelper.IsOfflineSafeReadOnlyCommand("shell dumpsys meminfo; curl https://example.test").Should().BeFalse();
         SecurityHelper.IsOfflineSafeReadOnlyCommand("shell rm -rf /data").Should().BeFalse();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("shell lsfoo").Should().BeFalse();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("shell sh -c id").Should().BeFalse();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("shell settings put global airplane_mode_on 1").Should().BeFalse();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("shell dumpsys battery set level 1").Should().BeFalse();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("shell dumpsys battery unplug").Should().BeFalse();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("shell wm size 720x1280").Should().BeFalse();
+        SecurityHelper.IsOfflineSafeReadOnlyCommand("logcat -b main -c").Should().BeFalse();
     }
 }

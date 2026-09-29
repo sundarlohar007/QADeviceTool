@@ -91,6 +91,12 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
             ThermalStatus = snapshot.ThermalStatus;
             BatteryLevel = snapshot.BatteryLevel;
             JankyFrames += snapshot.JankyFrames ?? 0;
+            if (!snapshot.TotalFrames.HasValue)
+                StatusMessage = "FPS unavailable: this Android device or app does not expose a usable SurfaceFlinger layer. Other available metrics continue sampling.";
+            else if (snapshot.TotalFrames == 0 && History.Count > 0)
+                StatusMessage = "Profiling — no new frames in the latest sample.";
+            else
+                StatusMessage = $"Profiling {SelectedDevice?.DisplayName ?? "Android device"}…";
 
             History.Add(snapshot);
             if (History.Count > 600) History.RemoveAt(0);
