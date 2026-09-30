@@ -7,21 +7,44 @@
   <DockPanel>
     <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
       <DockPanel>
-        <TextBlock Text="Shell" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+        <StackPanel>
+          <TextBlock Text="Shell" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+          <TextBlock Text="Read-only ADB and iOS diagnostics" Foreground="{DynamicResource BrushTextSecondary}" />
+        </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
-          <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="220" />
+          <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="220">
+            <ComboBox.ItemTemplate>
+              <DataTemplate><TextBlock Text="{Binding DisplayName}" /></DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
           <Button Content="Clear" Command="{Binding ClearOutputCommand}" Padding="12,6" />
+          <Button Content="Copy" Command="{Binding CopyOutputCommand}" Padding="12,6" />
+          <Button Content="Export" Command="{Binding ExportOutputCommand}" Padding="12,6" />
         </StackPanel>
       </DockPanel>
     </Border>
     <DockPanel Margin="16">
-      <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,8,0,0">
-        <TextBox Grid.Column="0" Text="{Binding CommandInput}" PlaceholderText="adb shell dumpsys …" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
-        <Button Grid.Column="1" Content="Execute" Command="{Binding ExecuteCommandCommand}" IsEnabled="{Binding IsExecuting, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="16,6" />
-      </Grid>
-      <ScrollViewer>
-        <TextBlock Text="{Binding ShellOutput}" Foreground="{DynamicResource BrushLogText}" FontFamily="Consolas, Menlo, monospace" FontSize="12" TextWrapping="NoWrap" />
-      </ScrollViewer>
+      <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,8,0,0">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Suggestions" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding SuggestedCommands}" SelectedItem="{Binding SelectedSuggestion}" Width="220" />
+          <TextBlock Text="History" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding CommandHistory}" SelectedItem="{Binding SelectedHistoryCommand}" Width="220" />
+          <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" />
+        </StackPanel>
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <TextBox Grid.Column="0" Text="{Binding CommandInput}" PlaceholderText="shell dumpsys battery / lockdown info" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" KeyDown="CommandInput_KeyDown" />
+          <Button Grid.Column="1" Content="Execute" Command="{Binding ExecuteCommandCommand}" Padding="16,6" />
+          <Button Grid.Column="2" Content="Stop" Command="{Binding StopCommandCommand}" IsEnabled="{Binding IsExecuting}" Padding="16,6" />
+        </Grid>
+      </StackPanel>
+      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+        <TextBox x:Name="SearchTextBox" Width="180" PlaceholderText="Search output" />
+        <Button Content="Find next" Click="FindNext_Click" />
+        <CheckBox Content="Pause display" IsChecked="{Binding IsOutputPaused}" VerticalAlignment="Center" />
+        <CheckBox Content="Follow output" IsChecked="{Binding FollowTail}" VerticalAlignment="Center" />
+      </StackPanel>
+      <TextBox x:Name="OutputTextBox" Text="{Binding ShellOutput, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Consolas, Menlo, monospace" FontSize="12" Background="Transparent" BorderThickness="0" TextChanged="OutputTextBox_TextChanged" />
     </DockPanel>
   </DockPanel>
 </UserControl>
