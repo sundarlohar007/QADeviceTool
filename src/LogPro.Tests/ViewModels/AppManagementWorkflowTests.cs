@@ -26,12 +26,18 @@ public class AppManagementWorkflowTests
 
     private static DeviceInfo Device(string serial, DevicePlatform platform = DevicePlatform.Android) => new()
     {
-        Serial = serial, Name = serial, Platform = platform, ConnectionState = DeviceConnectionState.Online
+        Serial = serial,
+        Name = serial,
+        Platform = platform,
+        ConnectionState = DeviceConnectionState.Online
     };
 
     private static AppItem App(string id, AppCategory category = AppCategory.User, bool running = false) => new()
     {
-        PackageId = id, Name = id, Category = category, IsRunning = running
+        PackageId = id,
+        Name = id,
+        Category = category,
+        IsRunning = running
     };
 
     private static (AppManagementViewModel Vm, Mock<IDeviceMonitorService> Monitor,

@@ -733,8 +733,12 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
     private static AppItem CloneApp(AppItem app) => new()
     {
-        PackageId = app.PackageId, Name = app.Name, Version = app.Version,
-        Platform = app.Platform, Category = app.Category, IsRunning = app.IsRunning
+        PackageId = app.PackageId,
+        Name = app.Name,
+        Version = app.Version,
+        Platform = app.Platform,
+        Category = app.Category,
+        IsRunning = app.IsRunning
     };
 
     [RelayCommand]
