@@ -828,13 +828,20 @@ public class AdbService : IAdbService
             .Where(line => line.StartsWith("package:", StringComparison.Ordinal))
             .Select(line => line["package:".Length..].Trim())
             .Select(line => new { Text = line, VersionAt = line.IndexOf(" versionCode:", StringComparison.Ordinal) })
-            .Select(line => new {
+            .Select(line => new
+            {
                 Package = line.VersionAt < 0 ? line.Text : line.Text[..line.VersionAt],
                 Version = line.VersionAt < 0 ? "" : "code " + line.Text[(line.VersionAt + " versionCode:".Length)..].Trim()
             })
             .Where(line => SecurityHelper.IsValidPackageName(line.Package))
-            .Select(line => new AppItem { PackageId = line.Package, Name = line.Package, Version = line.Version,
-                Category = category, Platform = DevicePlatform.Android })
+            .Select(line => new AppItem
+            {
+                PackageId = line.Package,
+                Name = line.Package,
+                Version = line.Version,
+                Category = category,
+                Platform = DevicePlatform.Android
+            })
             .ToList();
 
     private static string GetInventoryFailure(ToolLauncherResult result)
