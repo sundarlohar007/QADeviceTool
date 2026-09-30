@@ -129,6 +129,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
         _deviceMonitor.DeviceConnected += OnDeviceConnected;
         _deviceMonitor.DeviceDisconnected += OnDeviceDisconnected;
+        _sessionService.CaptureStarted += OnCaptureStarted;
+        _sessionService.CaptureStopped += OnCaptureStopped;
 
         // Populate device list from current state (devices may already be connected)
         var currentDevices = _deviceMonitor.CurrentDevices;
@@ -267,15 +269,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         {
             try
             {
-                var stoppedSession = _sessionService.StopCaptureForDevice(device.Serial, Sessions);
+                var stoppedSession = _sessionService.GetActiveSessionForDevice(device.Serial);
                 if (stoppedSession != null)
                 {
-                    if (_isSubscribedToLogBatch)
-                    {
-                        _sessionService.LogBatchReceived -= OnLogBatchReceived;
-                        _isSubscribedToLogBatch = false;
-                    }
-                    IsCapturing = false;
+                    _sessionService.StopCapture(stoppedSession);
+                    if (SelectedSession?.Id == stoppedSession.Id)
+                        IsCapturing = false;
                     StatusMessage = $"[STOP] Device disconnected. {stoppedSession.LogLineCount} lines captured > {System.IO.Path.GetFileName(stoppedSession.LogFilePath)}";
                     OnPropertyChanged(nameof(SelectedSession));
                 }
@@ -288,12 +287,56 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         try
         {
+            var active = _sessionService.ActiveSessions;
             var saved = _sessionService.GetSavedSessions();
             Sessions.Clear();
+            foreach (var session in active)
+                Sessions.Add(session);
             foreach (var s in saved)
-                Sessions.Add(s);
+                if (!active.Any(a => string.Equals(a.SessionDirectory, s.SessionDirectory, StringComparison.OrdinalIgnoreCase)))
+                    Sessions.Add(s);
+            if (active.Count > 0)
+            {
+                SelectedSession = active[0];
+                IsCapturing = true;
+                if (!_isSubscribedToLogBatch)
+                {
+                    _sessionService.LogBatchReceived += OnLogBatchReceived;
+                    _isSubscribedToLogBatch = true;
+                }
+            }
         }
         catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Operation failed"); }
+    }
+
+    private void OnCaptureStarted(LogSession session)
+    {
+        _dispatcher.Post(() =>
+        {
+            if (Volatile.Read(ref _disposed) != 0) return;
+            if (Sessions.All(s => s.Id != session.Id))
+            {
+                Sessions.Insert(0, session);
+                SelectedSession = session;
+            }
+            if (SelectedSession?.Id == session.Id)
+                IsCapturing = true;
+            if (!_isSubscribedToLogBatch)
+            {
+                _sessionService.LogBatchReceived += OnLogBatchReceived;
+                _isSubscribedToLogBatch = true;
+            }
+        });
+    }
+
+    private void OnCaptureStopped(LogSession session)
+    {
+        _dispatcher.Post(() =>
+        {
+            if (Volatile.Read(ref _disposed) != 0) return;
+            if (SelectedSession?.Id == session.Id)
+                IsCapturing = false;
+        });
     }
 
     [RelayCommand]
@@ -1134,6 +1177,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedSessionChanged(LogSession? value)
     {
+        IsCapturing = value?.Status == SessionStatus.Capturing;
         if (value != null)
         {
             _ = LoadSessionLogSafeAsync(value);
@@ -1250,6 +1294,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceMonitor.DeviceConnected -= OnDeviceConnected;
         _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        _sessionService.CaptureStarted -= OnCaptureStarted;
+        _sessionService.CaptureStopped -= OnCaptureStopped;
         _crashDetector.CrashDetected -= OnCrashDetected;
         if (_isSubscribedToLogBatch)
         {

@@ -10,7 +10,9 @@
       <DockPanel>
         <StackPanel>
           <TextBlock Text="Dashboard" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
-          <TextBlock Text="Devices, sessions and tool health at a glance" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0" />
+          <TextBlock Text="{Binding SelectedDevice.DisplayName, StringFormat='Selected device: {0}'}" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0" />
+          <TextBlock Text="{Binding DiscoveryMessage}" IsVisible="{Binding HasDiscoveryError}" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding PlatformNotice}" IsVisible="{Binding HasPlatformNotice}" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" />
         </StackPanel>
         <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshDevicesCommand}" Padding="14,6" />
       </DockPanel>
@@ -23,8 +25,8 @@
           <Border Grid.Column="0" Background="{DynamicResource BrushSurface}" CornerRadius="10" Padding="16">
             <StackPanel Spacing="4">
               <TextBlock Text="Connected Devices" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
-              <TextBlock Text="{Binding Devices.Count}" Foreground="{DynamicResource BrushAccent}" FontSize="28" FontWeight="Bold" />
-              <TextBlock Text="iOS &amp; Android" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
+              <TextBlock Text="{Binding OnlineDeviceCount}" Foreground="{DynamicResource BrushAccent}" FontSize="28" FontWeight="Bold" />
+              <TextBlock Text="{Binding DeviceCountSubtitle}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" TextWrapping="Wrap" />
             </StackPanel>
           </Border>
           <Border Grid.Column="1" Background="{DynamicResource BrushSurface}" CornerRadius="10" Padding="16">
@@ -36,41 +38,50 @@
           </Border>
           <Border Grid.Column="2" Background="{DynamicResource BrushSurface}" CornerRadius="10" Padding="16">
             <StackPanel Spacing="4">
-              <TextBlock Text="Welcome" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
-              <TextBlock Text="{Binding WelcomeMessage}" Foreground="{DynamicResource BrushTextPrimary}" FontSize="14" TextWrapping="Wrap" MaxLines="2" />
+              <TextBlock Text="Status" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
+              <TextBlock Text="{Binding WelcomeMessage}" Foreground="{DynamicResource BrushTextPrimary}" FontSize="14" TextWrapping="Wrap" />
             </StackPanel>
           </Border>
         </Grid>
 
         <!-- Quick actions -->
         <WrapPanel>
-          <Button Margin="0,0,8,0" Content="Start Session" Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="16,8" />
-          <Button Margin="0,0,8,0" Content="Mirror Screen" Command="{Binding QuickMirrorCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="16,8" />
-          <Button Margin="0,0,8,0" Content="Snapshot" Command="{Binding QuickSnapshotCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="16,8" />
+          <Button Margin="0,0,8,0" Content="Start Session" Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding CanUseSelectedDevice}" Padding="16,8" />
+          <Button Margin="0,0,8,0" Content="{Binding MirrorActionText}" Command="{Binding QuickMirrorCommand}" IsEnabled="{Binding CanMirrorSelectedDevice}" Padding="16,8" />
+          <Button Margin="0,0,8,0" Content="Snapshot" Command="{Binding QuickSnapshotCommand}" IsEnabled="{Binding CanUseSelectedDevice}" Padding="16,8" />
         </WrapPanel>
 
         <!-- Devices -->
         <Border Background="{DynamicResource BrushSurface}" CornerRadius="10" Padding="16">
           <StackPanel Spacing="8">
-            <TextBlock Text="CONNECTED DEVICES" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
-            <ItemsControl ItemsSource="{Binding Devices}">
-              <ItemsControl.ItemTemplate>
+            <TextBlock Text="DETECTED DEVICES" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
+            <ListBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice, Mode=TwoWay}" Background="Transparent" BorderThickness="0">
+              <ListBox.ItemTemplate>
                 <DataTemplate>
                   <Border Background="{DynamicResource BrushElevated}" CornerRadius="8" Padding="12" Margin="0,2">
                     <DockPanel>
-                      <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Fill="{DynamicResource BrushOk}" Margin="0,0,10,0" VerticalAlignment="Center" />
+                      <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Fill="{Binding ConnectionState, Converter={x:Static conv:AppConverters.ConnectionToBrush}}" Margin="0,0,10,0" VerticalAlignment="Center" />
                       <StackPanel>
                         <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextPrimary}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
                         <TextBlock Text="{Binding Serial}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
                       </StackPanel>
                     </DockPanel>
                   </Border>
                 </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+              </ListBox.ItemTemplate>
+            </ListBox>
             <TextBlock Text="No devices connected. Connect a device via USB."
                        Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,8,0,0"
                        IsVisible="{Binding !Devices.Count}" />
+          </StackPanel>
+        </Border>
+
+        <Border Background="{DynamicResource BrushSurface}" CornerRadius="10" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock Text="RECENT ACTIVITY" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
+            <TextBlock Text="No activity yet. Connect a device or start a session." Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" IsVisible="{Binding !HasRecentActivity}" />
+            <ItemsControl ItemsSource="{Binding RecentActivity}" />
           </StackPanel>
         </Border>
 
@@ -94,6 +105,7 @@
             </ItemsControl>
             <TextBlock Text="Loading tool status…" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11"
                        IsVisible="{Binding IsLoading}" />
+            <TextBlock Text="{Binding ToolCheckError}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" TextWrapping="Wrap" />
           </StackPanel>
         </Border>
       </StackPanel>

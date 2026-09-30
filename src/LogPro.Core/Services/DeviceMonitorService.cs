@@ -19,6 +19,7 @@ public class DeviceMonitorService : IDeviceMonitorService
     private readonly object _lock = new();
     private int _isPolling;
     private int _disposed;
+    private string? _lastDiscoveryError;
 
     private readonly ConcurrentDictionary<(DevicePlatform Platform, string Serial), int> _missedPollCount = new();
     private const int MissedPollThreshold = 3;
@@ -26,6 +27,7 @@ public class DeviceMonitorService : IDeviceMonitorService
     public event Action<List<DeviceInfo>>? DevicesChanged;
     public event Action<DeviceInfo>? DeviceConnected;
     public event Action<DeviceInfo>? DeviceDisconnected;
+    public event Action<string?>? DiscoveryStatusChanged;
 
     public IReadOnlyList<DeviceInfo> CurrentDevices
     {
@@ -33,6 +35,7 @@ public class DeviceMonitorService : IDeviceMonitorService
     }
 
     public bool IsMonitoring => _pollTimer != null;
+    public string? LastDiscoveryError => Volatile.Read(ref _lastDiscoveryError);
 
     public DeviceMonitorService(IAdbService adbService, IIosService iosService)
     {
@@ -66,11 +69,12 @@ public class DeviceMonitorService : IDeviceMonitorService
         try
         {
             var newDevices = new List<DeviceInfo>();
+            var discoveryErrors = new List<string>();
 
 
             // Poll Android and iOS in parallel
             var androidTask = _adbService.GetConnectedDevicesWithStatusAsync();
-            var iosTask = _iosService.GetConnectedDevicesAsync();
+            var iosTask = _iosService.GetConnectedDevicesWithStatusAsync();
             List<DeviceInfo> oldDevices;
             lock (_lock) { oldDevices = _devices.ToList(); }
 
@@ -82,20 +86,40 @@ public class DeviceMonitorService : IDeviceMonitorService
                 else
                 {
                     AppLogger.Log.Warn("[DeviceMonitor] ADB discovery failed; retaining the previous Android device state");
+                    discoveryErrors.Add("Android discovery failed. Check ADB and the USB connection.");
                     newDevices.AddRange(oldDevices.Where(d => d.Platform == DevicePlatform.Android));
                 }
             }
             catch (Exception ex)
             {
                 AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get Android devices");
+                discoveryErrors.Add("Android discovery failed. Check ADB and the USB connection.");
                 newDevices.AddRange(oldDevices.Where(d => d.Platform == DevicePlatform.Android));
             }
 
-            try { newDevices.AddRange(await iosTask.ConfigureAwait(false)); }
+            try
+            {
+                var ios = await iosTask.ConfigureAwait(false);
+                if (ios.Success)
+                    newDevices.AddRange(ios.Devices);
+                else
+                {
+                    discoveryErrors.Add("iOS discovery failed. Check pymobiledevice3, Apple Mobile Device Service, and device trust.");
+                    newDevices.AddRange(oldDevices.Where(d => d.Platform == DevicePlatform.iOS));
+                }
+            }
             catch (Exception ex)
             {
                 AppLogger.Log.Warn(ex, "[DeviceMonitor] Failed to get iOS devices");
+                discoveryErrors.Add("iOS discovery failed. Check the Apple Mobile Device Service and device trust.");
                 newDevices.AddRange(oldDevices.Where(d => d.Platform == DevicePlatform.iOS));
+            }
+
+            var discoveryError = discoveryErrors.Count == 0 ? null : string.Join(" ", discoveryErrors);
+            if (Interlocked.Exchange(ref _lastDiscoveryError, discoveryError) != discoveryError)
+            {
+                try { DiscoveryStatusChanged?.Invoke(discoveryError); }
+                catch (Exception ex) { AppLogger.Log.Warn(ex, "[DeviceMonitor] Discovery status observer failed"); }
             }
 
             var newSerials = new HashSet<(DevicePlatform, string)>(newDevices.Select(d => (d.Platform, d.Serial)));

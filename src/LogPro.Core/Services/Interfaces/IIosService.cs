@@ -6,6 +6,7 @@ namespace LogPro.Services;
 public interface IIosService
 {
     Task<List<DeviceInfo>> GetConnectedDevicesAsync();
+    Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync();
     Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device);
     Task<bool> CaptureScreenshotAsync(string serial, string outputPath);
     Task<(bool Success, string Message)> CaptureScreenshotWithStatusAsync(string serial, string outputPath);

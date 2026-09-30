@@ -56,6 +56,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
+        OnDevicesChanged(_deviceMonitor.CurrentDevices.ToList());
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)

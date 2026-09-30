@@ -329,7 +329,7 @@
                                 </Style>
                             </Ellipse.Style>
                         </Ellipse>
-                        <TextBlock Text="SYSTEM STATUS: NOMINAL" FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,24,0" />
+                        <TextBlock Text="DEVICE STATUS" FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,24,0" />
                         <TextBlock FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,24,0">
                             <Run Text="Devices: " /><Run Text="{Binding ConnectedDeviceCount}" />
                         </TextBlock>

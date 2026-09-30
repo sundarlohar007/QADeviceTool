@@ -81,9 +81,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _deviceStore.UpdateDevices(_deviceMonitor.CurrentDevices);
 
         // Initialize child ViewModels — share the container's dispatcher so the whole graph is headless-testable
-        DashboardVM = new DashboardViewModel(_adbService, _iosService, _scrcpyService, _sessionService, _deviceMonitor, _dependencyChecker, _dispatcher);
+        DashboardVM = new DashboardViewModel(_adbService, _iosService, _scrcpyService, _sessionService, _deviceMonitor, _dependencyChecker, _deviceStore, _dispatcher);
         SessionVM = new SessionViewModel(_sessionService, _adbService, _iosService, _deviceMonitor, _dispatcher);
         DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor, _sessionService, _dispatcher);
+        DeviceVM.PropertyChanged += OnDeviceViewModelPropertyChanged;
         AppManagementVM = new AppManagementViewModel(_adbService, _iosService, _deviceMonitor, _sessionService, _dispatcher);
         ShellVM = new ShellViewModel(_deviceMonitor, _iosService, _dispatcher);
         DeepLinkVM = new DeepLinkViewModel(_adbService, _iosService, _deviceMonitor, _dispatcher);
@@ -113,18 +114,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _deviceStore.UpdateDevices(devices);
             ConnectedDeviceCount = _deviceStore.Devices.Count;
             StatusBarText = ConnectedDeviceCount > 0
-                ? $"{ConnectedDeviceCount} device(s) connected"
-                : "No devices connected";
+                ? $"{ConnectedDeviceCount} device(s) detected"
+                : "No devices detected";
         });
     }
 
     private void OnDevicesStoreChanged()
     {
+        OnPropertyChanged(nameof(SelectedDevice));
         // Propagate device selection to all child ViewModels
         var selection = _deviceStore.SelectedDevice;
         if (selection != null)
         {
             DashboardVM?.OnDeviceSelected(selection);
+            if (DeviceVM != null && (DeviceVM.SelectedDevice?.Serial != selection.Serial ||
+                DeviceVM.SelectedDevice.Platform != selection.Platform))
+                DeviceVM.SelectedDevice = DeviceVM.Devices.FirstOrDefault(d => d.Serial == selection.Serial &&
+                    d.Platform == selection.Platform) ?? selection;
             SessionVM?.OnDeviceSelected(selection);
             ShellVM?.OnDeviceSelected(selection);
             DeepLinkVM?.OnDeviceSelected(selection);
@@ -134,6 +140,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
             StressTestVM?.OnDeviceSelected(selection);
             AppManagementVM?.OnDeviceSelected(selection);
         }
+        else if (DeviceVM != null)
+        {
+            DeviceVM.SelectedDevice = null;
+        }
+    }
+
+    private void OnDeviceViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(DeviceViewModel.SelectedDevice) && DeviceVM.SelectedDevice != null)
+            _deviceStore.SelectedDevice = DeviceVM.SelectedDevice;
     }
 
     [RelayCommand]
@@ -178,6 +194,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _ => DashboardVM
         };
         if (CurrentView is VitalsViewModel vvm2) vvm2.OnNavigatedTo();
+        if (CurrentView is DashboardViewModel dashboard) dashboard.RefreshMirrorState();
     }
 
     public void Cleanup()
@@ -191,6 +208,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceStore.Changed -= OnDevicesStoreChanged;
+        DeviceVM.PropertyChanged -= OnDeviceViewModelPropertyChanged;
 
         _sessionService.StopAllCaptures();
 

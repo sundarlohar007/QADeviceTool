@@ -10,6 +10,10 @@ public interface ISessionService
 
 
     event Action<string, string>? LogBatchReceived;
+    event Action<LogSession>? CaptureStarted;
+    event Action<LogSession>? CaptureStopped;
+
+    IReadOnlyList<LogSession> ActiveSessions { get; }
 
     string SessionsRootDirectory { get; set; }
 

@@ -28,6 +28,10 @@ public class SessionService : ISessionService
     /// The string key is the session Id so consumers can filter to their session.
     /// </summary>
     public event Action<string, string>? LogBatchReceived;
+    public event Action<LogSession>? CaptureStarted;
+    public event Action<LogSession>? CaptureStopped;
+
+    public IReadOnlyList<LogSession> ActiveSessions => _activeCaptures.Values.Select(ctx => ctx.Session).ToList();
 
     public string SessionsRootDirectory
     {
@@ -241,6 +245,7 @@ public class SessionService : ISessionService
                 AppLogger.Log.Error(ex, "Error processing log output line");
             }
         };
+        PublishCaptureEvent(CaptureStarted, session);
         // Attach the exit handler before enabling events so a fast tool/device disconnect
         // cannot leave a capture permanently marked as active.
         process.Exited += (_, _) =>
@@ -342,6 +347,7 @@ public class SessionService : ISessionService
 
         session.Status = SessionStatus.Stopped;
         session.EndTime = DateTime.Now;
+        PublishCaptureEvent(CaptureStopped, session);
 
         if (_activeCaptures.Count == 0)
         {
@@ -494,6 +500,16 @@ public class SessionService : ISessionService
     /// Whether any capture is currently active.
     /// </summary>
     public bool HasActiveCapture => _activeCaptures.Count > 0;
+
+    private static void PublishCaptureEvent(Action<LogSession>? handlers, LogSession session)
+    {
+        if (handlers == null) return;
+        foreach (Action<LogSession> handler in handlers.GetInvocationList())
+        {
+            try { handler(session); }
+            catch (Exception ex) { AppLogger.Log.Warn(ex, "[SessionService] Capture observer failed"); }
+        }
+    }
 
     public LogSession? GetActiveSessionForDevice(string deviceSerial)
     {
