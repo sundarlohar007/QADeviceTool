@@ -8,6 +8,14 @@ using LogPro.Services;
 
 namespace LogPro.ViewModels;
 
+public sealed record FileBreadcrumb(string Name, string Path);
+
+public partial class FileTransfer : ObservableObject
+{
+    public required string Description { get; init; }
+    [ObservableProperty] private string _state = "Queued";
+}
+
 public partial class FileExplorerViewModel : ObservableObject, IDisposable
 {
     private readonly IAdbService _adbService;
@@ -15,10 +23,43 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly IUiDispatcher _dispatcher;
     private CancellationTokenSource? _loadCts;
+    private CancellationTokenSource? _transferCts;
+    private readonly List<DeviceFile> _allFiles = new();
+    private readonly Queue<(FileTransfer Job, DeviceInfo Device, string Remote, string Local, bool Upload, string? BundleId)> _transferQueue = new();
+    private bool _processingTransfers;
+    private bool _reconcilingDevices;
     private int _disposed;
 
     [ObservableProperty]
     private ObservableCollection<DeviceFile> _files = new();
+
+    public ObservableCollection<DeviceInfo> AvailableDevices { get; } = new();
+    public ObservableCollection<FileBreadcrumb> Breadcrumbs { get; } = new();
+    public ObservableCollection<FileTransfer> Transfers { get; } = new();
+    public ObservableCollection<AppItem> AvailableApps { get; } = new();
+
+    [ObservableProperty]
+    private AppItem? _selectedApp;
+
+    [ObservableProperty]
+    private string _appRemotePath = "/Documents/";
+
+    public bool IsIosDevice => SelectedDevice?.Platform == DevicePlatform.iOS && CanTransfer;
+    public string AppAccessNotice => "App containers work only for apps that permit File Sharing. The pinned iOS CLI cannot list app folders outside its interactive shell. Enter a known file path to download, or a folder ending in / to upload, under /Documents/.";
+
+    [ObservableProperty]
+    private string _pathInput = "/sdcard/";
+
+    [ObservableProperty]
+    private string _filterText = "";
+
+    [ObservableProperty]
+    private bool _isTransferring;
+
+    public bool CanUseSelectedFile => SelectedDevice?.ConnectionState == DeviceConnectionState.Online &&
+        SelectedFile != null && SelectedFile.Name != "..";
+
+    public bool CanTransfer => SelectedDevice?.ConnectionState == DeviceConnectionState.Online;
 
     [ObservableProperty]
     private DeviceInfo? _selectedDevice;
@@ -46,6 +87,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
 
         // Auto-select first device if available
         var initialDevices = _deviceMonitor.CurrentDevices;
+        foreach (var device in initialDevices) AvailableDevices.Add(device);
         if (initialDevices.Any())
         {
             SelectedDevice = initialDevices.First();
@@ -56,7 +98,37 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     {
         _dispatcher.Post(() =>
         {
-            if (SelectedDevice != null && !devices.Any(d => d.Serial == SelectedDevice.Serial))
+            var selected = SelectedDevice;
+            _reconcilingDevices = true;
+            try
+            {
+                for (var index = 0; index < devices.Count; index++)
+                {
+                    var found = -1;
+                    for (var candidate = index; candidate < AvailableDevices.Count; candidate++)
+                        if (SameDevice(AvailableDevices[candidate], devices[index])) { found = candidate; break; }
+                    if (found < 0) AvailableDevices.Insert(index, devices[index]);
+                    else
+                    {
+                        if (found != index) AvailableDevices.Move(found, index);
+                        if (AvailableDevices[index].ConnectionState != devices[index].ConnectionState)
+                            AvailableDevices[index] = devices[index];
+                    }
+                }
+                while (AvailableDevices.Count > devices.Count) AvailableDevices.RemoveAt(AvailableDevices.Count - 1);
+            }
+            finally { _reconcilingDevices = false; }
+            var match = selected == null ? null : devices.FirstOrDefault(d => SameDevice(d, selected));
+            if (match != null && match.ConnectionState == selected!.ConnectionState &&
+                !SameDevice(SelectedDevice, selected))
+            {
+                _reconcilingDevices = true;
+                try { SelectedDevice = AvailableDevices.First(d => SameDevice(d, selected)); }
+                finally { _reconcilingDevices = false; }
+            }
+            if (match != null && match.ConnectionState != selected!.ConnectionState)
+                SelectedDevice = match;
+            if (SelectedDevice != null && match == null)
             {
                 SelectedDevice = null;
                 Files.Clear();
@@ -70,20 +142,49 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 {
                     SelectedDevice = device;
                 }
+                else if (selected != null)
+                {
+                    InvalidateLoad();
+                    CancelTransfer();
+                    _allFiles.Clear();
+                    Files.Clear();
+                    StatusMessage = "Device disconnected.";
+                }
             }
         });
     }
 
     public void OnDeviceSelected(DeviceInfo device)
     {
-        SelectedDevice = device;
+        var match = AvailableDevices.FirstOrDefault(d => SameDevice(d, device) &&
+            d.ConnectionState == device.ConnectionState) ?? device;
+        if (SameDevice(SelectedDevice, match) && SelectedDevice?.ConnectionState == match.ConnectionState)
+            return;
+        else
+            SelectedDevice = match;
     }
+
+    private static bool SameDevice(DeviceInfo? a, DeviceInfo? b) => a != null && b != null &&
+        a.Serial == b.Serial && a.Platform == b.Platform;
 
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
+        if (_reconcilingDevices) return;
+        InvalidateLoad();
+        _transferCts?.Cancel();
+        while (_transferQueue.Count > 0) _transferQueue.Dequeue().Job.State = "Cancelled";
+        _allFiles.Clear();
+        Breadcrumbs.Clear();
+        AvailableApps.Clear();
+        SelectedApp = null;
+        SelectedFile = null;
+        OnPropertyChanged(nameof(CanTransfer));
+        OnPropertyChanged(nameof(IsIosDevice));
         if (value == null)
         {
             Files.Clear();
+            CurrentPath = "/";
+            PathInput = "/";
             StatusMessage = "No device selected.";
             return;
         }
@@ -103,7 +204,8 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 return;
             }
             CurrentPath = "/";
-            StatusMessage = "iOS: browsing AFC media files only. System and app files are unavailable here.";
+            PathInput = CurrentPath;
+            StatusMessage = "Main list shows iOS AFC media files. Use App Documents below for eligible apps.";
         }
         else
         {
@@ -114,16 +216,39 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 return;
             }
             CurrentPath = "/sdcard/";
+            PathInput = CurrentPath;
         }
 
-        _ = Task.Run(async () => { try { await LoadDirectoryAsync(CurrentPath); } catch (Exception ex) { AppLogger.Log.Warn(ex, "[FileExplorer] Initial directory load failed"); _dispatcher.Post(() => StatusMessage = "[!] Failed to load directory."); } });
+        _ = LoadDirectoryAsync(CurrentPath);
     }
 
-    partial void OnCurrentPathChanged(string value)
+    partial void OnSelectedFileChanged(DeviceFile? value) => OnPropertyChanged(nameof(CanUseSelectedFile));
+    partial void OnFilterTextChanged(string value) => ApplyFilter();
+
+    private void InvalidateLoad()
     {
-        if (string.IsNullOrWhiteSpace(value))
+        var previous = Interlocked.Exchange(ref _loadCts, null);
+        try { previous?.Cancel(); } catch (ObjectDisposedException) { }
+        IsLoading = false;
+    }
+
+    private void ApplyFilter()
+    {
+        Files.Clear();
+        foreach (var file in _allFiles.Where(f => f.Name == ".." ||
+            f.Name.Contains(FilterText ?? "", StringComparison.OrdinalIgnoreCase)))
+            Files.Add(file);
+    }
+
+    private void UpdateBreadcrumbs(string path)
+    {
+        Breadcrumbs.Clear();
+        Breadcrumbs.Add(new FileBreadcrumb("/", "/"));
+        var current = "";
+        foreach (var part in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
-            _dispatcher.Post(() => CurrentPath = "/");
+            current += "/" + part;
+            Breadcrumbs.Add(new FileBreadcrumb(part, current));
         }
     }
 
@@ -131,11 +256,16 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     private async Task LoadDirectoryAsync(string path)
     {
         if (Volatile.Read(ref _disposed) != 0) return;
-        if (SelectedDevice == null) return;
+        if (SelectedDevice?.ConnectionState != DeviceConnectionState.Online) return;
+        if (string.IsNullOrWhiteSpace(path) || !path.StartsWith('/') ||
+            path.Any(char.IsControl) || path.Split('/').Any(segment => segment is "." or ".."))
+        {
+            StatusMessage = "Enter an absolute device path without . or .. segments.";
+            return;
+        }
 
         var oldCts = Interlocked.Exchange(ref _loadCts, new CancellationTokenSource());
         try { oldCts?.Cancel(); } catch { }
-        try { oldCts?.Dispose(); } catch { }
         var currentCts = _loadCts!;
         _dispatcher.Post(() => IsLoading = true);
         var device = SelectedDevice;
@@ -154,11 +284,11 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
             _dispatcher.Post(() =>
             {
                 if (Volatile.Read(ref _disposed) != 0 || !ReferenceEquals(_loadCts, currentCts) || token.IsCancellationRequested) return;
-                Files.Clear();
+                _allFiles.Clear();
 
                 if (path != "/" && path != "")
                 {
-                    Files.Add(new DeviceFile
+                    _allFiles.Add(new DeviceFile
                     {
                         Name = "..",
                         Path = GetParentDirectory(path),
@@ -167,23 +297,35 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 }
 
                 foreach (var f in loadedFiles)
-                    Files.Add(f);
+                    _allFiles.Add(f);
 
                 CurrentPath = path;
+                PathInput = path;
+                SelectedFile = null;
+                UpdateBreadcrumbs(path);
+                ApplyFilter();
                 StatusMessage = device.Platform == DevicePlatform.iOS
-                    ? $"Loaded {loadedFiles.Count} media items. iOS AFC cannot show system/app files or folder types; double-click an item to open a folder."
+                    ? $"Loaded {loadedFiles.Count} media items. iOS AFC cannot show system or app files; folder type is checked when opened."
                     : $"Loaded {loadedFiles.Count} items.";
             });
         }
         catch (Exception ex)
         {
             Services.AppLogger.Log.Debug(ex, "[FileExplorer] LoadDirectoryAsync failed");
-            _dispatcher.Post(() => StatusMessage = $"Error loading directory: {ex.Message}");
+            _dispatcher.Post(() =>
+            {
+                if (ReferenceEquals(_loadCts, currentCts) && !token.IsCancellationRequested)
+                    StatusMessage = $"Error loading directory: {ex.Message}";
+            });
         }
         finally
         {
-            if (ReferenceEquals(_loadCts, currentCts))
-                _dispatcher.Post(() => { if (ReferenceEquals(_loadCts, currentCts)) IsLoading = false; });
+            _dispatcher.Post(() =>
+            {
+                if (ReferenceEquals(_loadCts, currentCts))
+                { _loadCts = null; IsLoading = false; }
+                currentCts.Dispose();
+            });
         }
     }
 
@@ -206,8 +348,12 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task NavigateToPathAsync()
     {
-        await LoadDirectoryAsync(CurrentPath);
+        await LoadDirectoryAsync(PathInput.Trim());
     }
+
+    [RelayCommand]
+    private Task NavigateBreadcrumbAsync(FileBreadcrumb? breadcrumb) =>
+        breadcrumb == null ? Task.CompletedTask : LoadDirectoryAsync(breadcrumb.Path);
 
     [RelayCommand]
     private async Task ItemDoubleClickedAsync(DeviceFile? file)
@@ -238,103 +384,211 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         }
     }
 
+    private async Task<bool> IsIosDirectoryAsync(DeviceInfo device, DeviceFile file)
+    {
+        if (file.IsDirectory) return true;
+        try { await _iosService.ListDirectoryAsync(device.Serial, file.Path); return true; }
+        catch (IOException) { return false; }
+    }
+
     [RelayCommand]
     private async Task DownloadFileAsync()
     {
-        if (SelectedDevice == null || SelectedFile == null) return;
-        if (SelectedFile.Name == "..") return;
-
-        var savePath = UiServices.Files.SaveFile("Download File from Device", "All files (*.*)|*.*", SelectedFile.Name);
-        if (savePath != null)
-        {
-            IsLoading = true;
-            try
-            {
-                StatusMessage = $"Downloading {SelectedFile.Name}...";
-
-                var success = SelectedDevice.Platform == DevicePlatform.Android
-                    ? await _adbService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, savePath)
-                    : await _iosService.PullFileAsync(SelectedDevice.Serial, SelectedFile.Path, savePath);
-
-                StatusMessage = success ? $"Downloaded successfully to {savePath}" : "Download failed.";
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log.Error(ex, "[FileExplorer] DownloadFileAsync failed");
-                StatusMessage = $"Download error: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
+        var device = SelectedDevice;
+        var file = SelectedFile;
+        if (!CanUseSelectedFile || device == null || file == null) return;
+        var isDirectory = file.IsDirectory || device.Platform == DevicePlatform.iOS &&
+            await IsIosDirectoryAsync(device, file);
+        if (!SameDevice(device, SelectedDevice) || !ReferenceEquals(file, SelectedFile)) return;
+        var destination = isDirectory
+            ? await UiServices.Files.OpenFolderAsync("Choose a download folder")
+            : await UiServices.Files.SaveFileAsync("Download File from Device", "All files (*.*)|*.*", file.Name);
+        if (destination == null) return;
+        EnqueueTransfer(new FileTransfer { Description = $"Download {file.Name}" }, device, file.Path, destination, false);
     }
 
     [RelayCommand]
     private async Task UploadFileAsync()
     {
-        if (SelectedDevice == null) return;
+        var device = SelectedDevice;
+        if (!CanTransfer || device == null) return;
+        var source = await UiServices.Files.OpenFileAsync("Upload File to Device", "All files (*.*)|*.*");
+        if (source == null || !SameDevice(device, SelectedDevice)) return;
+        var name = Path.GetFileName(source);
+        if (string.IsNullOrWhiteSpace(name) || name is "." or ".." || name.Contains('/') || name.Contains('\\'))
+        { StatusMessage = "Invalid file name."; return; }
+        EnqueueTransfer(new FileTransfer { Description = $"Upload {name}" }, device,
+            CurrentPath.TrimEnd('/') + "/" + name, source, true);
+    }
 
-        var openPath = UiServices.Files.OpenFile("Upload File to Device", "All files (*.*)|*.*");
-        if (openPath != null)
+    private void EnqueueTransfer(FileTransfer job, DeviceInfo device, string remote, string local, bool upload)
+    {
+        AddTransfer(job);
+        _transferQueue.Enqueue((job, device, remote, local, upload, null));
+        if (!_processingTransfers) _ = ProcessTransfersAsync();
+    }
+
+    private void AddTransfer(FileTransfer job)
+    {
+        Transfers.Add(job);
+        while (Transfers.Count > 50)
         {
-            IsLoading = true;
-            try
+            var finished = Transfers.FirstOrDefault(t => t.State is "Completed" or "Failed" or "Cancelled");
+            if (finished == null) break;
+            Transfers.Remove(finished);
+        }
+    }
+
+    private async Task ProcessTransfersAsync()
+    {
+        _processingTransfers = true;
+        try
+        {
+            while (_transferQueue.Count > 0 && Volatile.Read(ref _disposed) == 0)
             {
-                var fileName = Path.GetFileName(openPath);
-                if (fileName.Contains("/") || fileName.Contains("\\") || fileName.Contains(".."))
+                var item = _transferQueue.Dequeue();
+                if (!SameDevice(item.Device, SelectedDevice)) { item.Job.State = "Cancelled"; continue; }
+                using var cts = new CancellationTokenSource();
+                _transferCts = cts;
+                IsTransferring = true;
+                item.Job.State = "Transferring";
+                StatusMessage = item.Job.Description + "...";
+                try
                 {
-                    StatusMessage = "[!] Invalid file name.";
-                    IsLoading = false;
-                    return;
+                    var ok = item.BundleId != null
+                        ? item.Upload
+                            ? await _iosService.PushAppFileAsync(item.Device.Serial, item.BundleId, item.Local, item.Remote, cts.Token)
+                            : await _iosService.PullAppFileAsync(item.Device.Serial, item.BundleId, item.Remote, item.Local, cts.Token)
+                        : item.Upload
+                        ? item.Device.Platform == DevicePlatform.Android
+                            ? await _adbService.PushFileAsync(item.Device.Serial, item.Local, item.Remote, cts.Token)
+                            : await _iosService.PushFileAsync(item.Device.Serial, item.Local, item.Remote, cts.Token)
+                        : item.Device.Platform == DevicePlatform.Android
+                            ? await _adbService.PullFileAsync(item.Device.Serial, item.Remote, item.Local, cts.Token)
+                            : await _iosService.PullFileAsync(item.Device.Serial, item.Remote, item.Local, cts.Token);
+                    item.Job.State = cts.IsCancellationRequested ? "Cancelled" : ok ? "Completed" : "Failed";
+                    if (SameDevice(item.Device, SelectedDevice))
+                    {
+                        StatusMessage = item.BundleId != null && !ok && !cts.IsCancellationRequested
+                            ? $"{item.Job.Description} failed. This app may not allow iOS File Sharing, or the document path may not exist."
+                            : $"{item.Job.Description}: {item.Job.State}.";
+                        if (ok && item.Upload && item.BundleId == null) await LoadDirectoryAsync(CurrentPath);
+                    }
                 }
-                var remotePath = CurrentPath.TrimEnd('/') + "/" + fileName;
-
-                StatusMessage = $"Uploading {fileName}...";
-
-                var success = SelectedDevice.Platform == DevicePlatform.Android
-                    ? await _adbService.PushFileAsync(SelectedDevice.Serial, openPath, remotePath)
-                    : await _iosService.PushFileAsync(SelectedDevice.Serial, openPath, remotePath);
-
-                StatusMessage = success ? $"Uploaded successfully." : "Upload failed.";
-
-                if (success)
+                catch (Exception ex)
                 {
-                    await LoadDirectoryAsync(CurrentPath);
+                    AppLogger.Log.Error(ex, "[FileExplorer] Transfer failed");
+                    item.Job.State = cts.IsCancellationRequested ? "Cancelled" : "Failed";
+                    if (SameDevice(item.Device, SelectedDevice)) StatusMessage = $"Transfer failed: {ex.Message}";
+                }
+                finally
+                {
+                    if (ReferenceEquals(_transferCts, cts)) _transferCts = null;
+                    IsTransferring = false;
                 }
             }
-            catch (Exception ex)
-            {
-                AppLogger.Log.Error(ex, "[FileExplorer] UploadFileAsync failed");
-                StatusMessage = $"Upload error: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
+        }
+        finally { _processingTransfers = false; }
+    }
+
+    [RelayCommand]
+    private void CancelTransfer()
+    {
+        _transferCts?.Cancel();
+        while (_transferQueue.Count > 0) _transferQueue.Dequeue().Job.State = "Cancelled";
+    }
+
+    [RelayCommand]
+    private async Task LoadIosAppsAsync()
+    {
+        var device = SelectedDevice;
+        if (device?.Platform != DevicePlatform.iOS || !CanTransfer) return;
+        try
+        {
+            StatusMessage = "Loading iOS apps...";
+            var apps = await _iosService.ListInstalledAppsAsync(device.Serial);
+            if (!SameDevice(device, SelectedDevice)) return;
+            AvailableApps.Clear();
+            foreach (var app in apps.OrderBy(a => a.Name)) AvailableApps.Add(app);
+            StatusMessage = $"Found {apps.Count} apps. Only apps with File Sharing enabled permit document transfers.";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[FileExplorer] Could not list iOS apps");
+            StatusMessage = $"Cannot list iOS apps: {ex.Message}";
         }
     }
 
     [RelayCommand]
+    private async Task DownloadAppDocumentAsync()
+    {
+        var device = SelectedDevice;
+        var app = SelectedApp;
+        var remote = AppRemotePath.Trim();
+        if (device?.Platform != DevicePlatform.iOS || app == null || !IsValidAppPath(remote))
+        { StatusMessage = "Choose an iOS app and an absolute /Documents/ file path."; return; }
+        var destination = await UiServices.Files.SaveFileAsync("Download app document", "All files (*.*)|*.*",
+            Path.GetFileName(remote));
+        if (destination == null || !SameDevice(device, SelectedDevice)) return;
+        EnqueueAppTransfer(new FileTransfer { Description = $"Download {app.Name} document" },
+            device, app.PackageId, remote, destination, false);
+    }
+
+    [RelayCommand]
+    private async Task UploadAppDocumentAsync()
+    {
+        var device = SelectedDevice;
+        var app = SelectedApp;
+        if (device?.Platform != DevicePlatform.iOS || app == null) return;
+        var folder = AppRemotePath.Trim();
+        if (!folder.StartsWith("/Documents/", StringComparison.Ordinal) || !folder.EndsWith('/') ||
+            folder.Any(char.IsControl) || folder.Split('/').Any(segment => segment is "." or ".."))
+        { StatusMessage = "Enter an app destination folder under /Documents/ ending in /."; return; }
+        var source = await UiServices.Files.OpenFileAsync("Upload app document", "All files (*.*)|*.*");
+        if (source == null || !SameDevice(device, SelectedDevice)) return;
+        var remote = folder + Path.GetFileName(source);
+        if (!IsValidAppPath(remote)) { StatusMessage = "Enter an absolute /Documents/ destination."; return; }
+        EnqueueAppTransfer(new FileTransfer { Description = $"Upload {app.Name} document" },
+            device, app.PackageId, remote, source, true);
+    }
+
+    private void EnqueueAppTransfer(FileTransfer job, DeviceInfo device, string bundleId, string remote, string local, bool upload)
+    {
+        AddTransfer(job);
+        _transferQueue.Enqueue((job, device, remote, local, upload, bundleId));
+        if (!_processingTransfers) _ = ProcessTransfersAsync();
+    }
+
+    private static bool IsValidAppPath(string path) => path.StartsWith("/Documents/", StringComparison.Ordinal) &&
+        !path.EndsWith('/') && !path.Any(char.IsControl) &&
+        !path.Split('/').Any(segment => segment is "." or "..");
+
+    [RelayCommand]
     private async Task DeleteFileAsync()
     {
-        if (SelectedDevice == null || SelectedFile == null) return;
-        if (SelectedFile.Name == "..") return;
+        var device = SelectedDevice;
+        var file = SelectedFile;
+        if (!CanUseSelectedFile || device == null || file == null) return;
+        var isDirectory = file.IsDirectory || device.Platform == DevicePlatform.iOS &&
+            await IsIosDirectoryAsync(device, file);
+        if (!SameDevice(device, SelectedDevice) || !ReferenceEquals(file, SelectedFile)) return;
+        var confirm = await UiServices.Dialogs.ConfirmAsync("Confirm Delete",
+            isDirectory
+                ? $"Permanently delete this folder and everything inside it?\n\n{file.Path}"
+                : $"Permanently delete this file?\n\n{file.Path}");
 
-        var confirm = UiServices.Dialogs.Confirm(
-            "Confirm Delete",
-            $"Are you sure you want to permanently delete from device:\n\n{SelectedFile.Path}");
-
-        if (confirm)
+        if (confirm && SameDevice(device, SelectedDevice) && ReferenceEquals(file, SelectedFile))
         {
             IsLoading = true;
             try
             {
-                StatusMessage = $"Deleting {SelectedFile.Name}...";
+                StatusMessage = $"Deleting {file.Name}...";
 
-                var success = SelectedDevice.Platform == DevicePlatform.Android
-                    ? await _adbService.DeleteFileAsync(SelectedDevice.Serial, SelectedFile.Path)
-                    : await _iosService.DeleteFileAsync(SelectedDevice.Serial, SelectedFile.Path);
+                var success = device.Platform == DevicePlatform.Android
+                    ? await _adbService.DeleteFileAsync(device.Serial, file.Path)
+                    : await _iosService.DeleteFileAsync(device.Serial, file.Path);
+
+                if (!SameDevice(device, SelectedDevice)) return;
 
                 if (success)
                 {
@@ -343,13 +597,15 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 }
                 else
                 {
-                    StatusMessage = "[!] Delete failed. Android deletion is limited to shared storage and /data/local/tmp; other locations may also require device permissions.";
+                    StatusMessage = device.Platform == DevicePlatform.Android
+                        ? "Delete failed. Android deletion is limited to shared storage and /data/local/tmp, subject to device permissions."
+                        : "Delete failed. iOS AFC cannot modify this location or the device denied access.";
                 }
             }
             catch (Exception ex)
             {
                 AppLogger.Log.Error(ex, "[FileExplorer] DeleteFileAsync failed");
-                StatusMessage = $"Delete error: {ex.Message}";
+                if (SameDevice(device, SelectedDevice)) StatusMessage = $"Delete error: {ex.Message}";
             }
             finally
             {
@@ -373,9 +629,8 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
-        var cts = Interlocked.Exchange(ref _loadCts, null);
-        try { cts?.Cancel(); } catch { }
-        cts?.Dispose();
+        InvalidateLoad();
+        CancelTransfer();
         GC.SuppressFinalize(this);
     }
 }

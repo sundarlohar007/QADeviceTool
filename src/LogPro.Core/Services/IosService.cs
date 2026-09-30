@@ -77,7 +77,7 @@ public class IosService : IIosService
         return $"{prefix}--no-color {subcommand}{udidFlag}";
     }
 
-    private static string Quote(string s) => $"\"{s.Replace("\"", "\\\"")}\"";
+    private static string Quote(string s) => ToolLauncher.QuoteArgument(s);
 
     private async Task<ToolLauncherResult> RunAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs,
         Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
@@ -418,7 +418,7 @@ public class IosService : IIosService
         var basePath = NormalizeDevicePath(parentPath);
         foreach (var line in output.Split('\n', '\r'))
         {
-            var rawName = line.Trim();
+            var rawName = line.TrimEnd('\r');
             if (string.IsNullOrEmpty(rawName)) continue;
             // Skip noise (dot entries, total lines)
             if (rawName == "." || rawName == "..") continue;
@@ -439,7 +439,7 @@ public class IosService : IIosService
                 Name = name,
                 Path = CombineDevicePath(basePath, name),
                 IsDirectory = isDir,
-                Size = 0,
+                Size = -1,
                 ModifiedDate = DateTime.MinValue
             });
         }
@@ -462,24 +462,40 @@ public class IosService : IIosService
     }
 
     public async Task<bool> PullFileAsync(string udid, string remotePath, string localPath)
+        => await PullFileAsync(udid, remotePath, localPath, CancellationToken.None);
+
+    public async Task<bool> PullFileAsync(string udid, string remotePath, string localPath, CancellationToken cancellationToken)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath))
         { AppLogger.Log.Warn("[IosService] Unsafe path rejected"); return false; }
         try
         {
-            var result = await RunAsync(udid, $"afc pull --ignore-errors {Quote(remotePath)} {Quote(localPath)}", 60000).ConfigureAwait(false);
-            return result.Success && File.Exists(localPath);
+            var isDirectory = Directory.Exists(localPath);
+            var target = isDirectory ? localPath : localPath + ".logpro-part-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                var result = await RunAsync(udid, $"afc pull {Quote(remotePath)} {Quote(target)}", 300000, cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (!result.Success) return false;
+                if (isDirectory) return Directory.Exists(Path.Combine(localPath, Path.GetFileName(remotePath.TrimEnd('/'))));
+                if (!File.Exists(target)) return false;
+                File.Move(target, localPath, true);
+                return true;
+            }
+            finally { if (!isDirectory && File.Exists(target)) File.Delete(target); }
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PullFileAsync failed"); return false; }
     }
 
     public async Task<bool> PushFileAsync(string udid, string localPath, string remotePath)
+        => await PushFileAsync(udid, localPath, remotePath, CancellationToken.None);
+
+    public async Task<bool> PushFileAsync(string udid, string localPath, string remotePath, CancellationToken cancellationToken)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath))
         { AppLogger.Log.Warn("[IosService] Unsafe path rejected"); return false; }
         try
         {
-            var result = await RunAsync(udid, $"afc push {Quote(localPath)} {Quote(remotePath)}", 60000).ConfigureAwait(false);
+            var result = await RunAsync(udid, $"afc push {Quote(localPath)} {Quote(remotePath)}", 300000, cancellationToken: cancellationToken).ConfigureAwait(false);
             return result.Success;
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PushFileAsync failed"); return false; }
@@ -672,12 +688,45 @@ public class IosService : IIosService
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] GetAppContainerPathAsync failed"); return ""; }
     }
 
+    public async Task<bool> PullAppFileAsync(string udid, string bundleId, string remotePath, string localPath,
+        CancellationToken cancellationToken = default)
+    {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidPackageName(bundleId) ||
+            !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath)) return false;
+        var isDirectory = Directory.Exists(localPath);
+        var target = isDirectory ? localPath : localPath + ".logpro-part-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var result = await RunAsync(udid, $"apps pull {Quote(bundleId)} {Quote(remotePath)} {Quote(target)}",
+                300000, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!result.Success) return false;
+            if (isDirectory) return Directory.Exists(Path.Combine(localPath, Path.GetFileName(remotePath.TrimEnd('/'))));
+            if (!File.Exists(target)) return false;
+            File.Move(target, localPath, true);
+            return true;
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PullAppFileAsync failed"); return false; }
+        finally { if (!isDirectory && File.Exists(target)) File.Delete(target); }
+    }
+
+    public async Task<bool> PushAppFileAsync(string udid, string bundleId, string localPath, string remotePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidPackageName(bundleId) ||
+            !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath) || !File.Exists(localPath)) return false;
+        try
+        {
+            var result = await RunAsync(udid, $"apps push {Quote(bundleId)} {Quote(localPath)} {Quote(remotePath)}",
+                300000, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return result.Success;
+        }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PushAppFileAsync failed"); return false; }
+    }
+
     private static bool IsSafePath(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
-        if (path.Contains("..")) return false;
-
-        // Strict allowlist: only alphanumeric, spaces, and safe symbols
-        return System.Text.RegularExpressions.Regex.IsMatch(path, @"^[a-zA-Z0-9._\-/\s]+$");
+        if (!path.StartsWith('/') || path.Split('/').Any(segment => segment is "." or "..")) return false;
+        return !path.Any(char.IsControl);
     }
 }

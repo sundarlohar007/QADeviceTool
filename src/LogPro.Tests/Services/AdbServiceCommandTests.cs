@@ -74,6 +74,7 @@ public class AdbServiceCommandTests
     [InlineData("/system/bin", false)]
     [InlineData("/sdcard/../data/secret", false)]
     [InlineData("/sdcard/照片.png", true)]
+    [InlineData("/sdcard/Mom's photos (2026)/a+b.png", true)]
     [InlineData("/data/local/tmp/report.txt", true)]
     public void FileDeletion_IsLimitedToChildrenOfWritableAreas(string path, bool expected)
     {
