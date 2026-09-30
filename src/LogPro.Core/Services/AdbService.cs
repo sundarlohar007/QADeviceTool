@@ -60,13 +60,13 @@ public class AdbService : IAdbService
     // All adb calls go through these to prevent concurrent USB transport access.
 
     private async Task<ToolLauncherResult> RunAdbAsync(string arguments, int timeoutMs = DefaultTimeoutMs,
-        Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
+        Action<string>? outputCallback = null, CancellationToken cancellationToken = default, bool forwardErrorToCallback = false)
     {
-        return await RunAdbWithRetryAsync(arguments, timeoutMs, outputCallback, cancellationToken: cancellationToken);
+        return await RunAdbWithRetryAsync(arguments, timeoutMs, outputCallback, cancellationToken, forwardErrorToCallback);
     }
 
     private async Task<ToolLauncherResult> RunAdbWithRetryAsync(string arguments, int timeoutMs,
-        Action<string>? outputCallback, CancellationToken cancellationToken = default)
+        Action<string>? outputCallback, CancellationToken cancellationToken = default, bool forwardErrorToCallback = false)
     {
         try
         {
@@ -82,7 +82,7 @@ public class AdbService : IAdbService
                 RegexOptions.CultureInvariant);
             for (int retry = 0; retry < (readOnly ? MaxRetryAttempts : 1); retry++)
             {
-                result = await ToolLauncher.RunAsync(_adb, arguments, timeoutMs, outputCallback, cancellationToken).ConfigureAwait(false);
+                result = await ToolLauncher.RunAsync(_adb, arguments, timeoutMs, outputCallback, cancellationToken, forwardErrorToCallback).ConfigureAwait(false);
                 if (result.Success) return result;
 
                 var transient = result.Error.Contains("device offline", StringComparison.OrdinalIgnoreCase) ||
@@ -515,11 +515,17 @@ public class AdbService : IAdbService
         return null;
     }
 
-    public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? outputCallback = null)
+    public Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? outputCallback = null)
+        => InstallApkAsync(serial, apkPath, outputCallback, CancellationToken.None);
+
+    public Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? outputCallback, CancellationToken cancellationToken)
+        => InstallApkAsync(serial, apkPath, outputCallback, cancellationToken, false);
+
+    public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? outputCallback, CancellationToken cancellationToken, bool allowTestApk)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !PathHelper.IsSafeLocalPath(apkPath))
             return (false, "Invalid local path or device selector.");
-        var result = await RunAdbAsync($"-s {serial} install -r \"{apkPath}\"", 600000, outputCallback);
+        var result = await RunAdbAsync($"-s {serial} install -r {(allowTestApk ? "-t " : "")}{ToolLauncher.QuoteArgument(apkPath)}", 600000, outputCallback, cancellationToken, forwardErrorToCallback: true);
 
         if (result.Output.Contains("Failure", StringComparison.OrdinalIgnoreCase))
         {
@@ -532,7 +538,7 @@ public class AdbService : IAdbService
             return (true, "APK installed successfully.");
         }
 
-        return (false, result.Output.Trim());
+        return (false, !string.IsNullOrWhiteSpace(result.Output) ? result.Output.Trim() : result.Error?.Trim() ?? "Install failed.");
     }
 
     public async Task<(bool Success, string Message)> EnableWirelessAsync(string serial, int port = 5555)
@@ -775,6 +781,65 @@ public class AdbService : IAdbService
 
         return apps.OrderBy(a => a.Name).ToList();
     }
+
+    public async Task<AppInventoryResult> GetAppInventoryAsync(string serial)
+    {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial))
+            return AppInventoryResult.Failed("Invalid device selector.");
+
+        try
+        {
+            var user = await RunAdbAsync($"-s {serial} shell pm list packages -3 --show-versioncode", 15000).ConfigureAwait(false);
+            if (!user.Success)
+                user = await RunAdbAsync($"-s {serial} shell pm list packages -3", 15000).ConfigureAwait(false);
+            if (!user.Success) return AppInventoryResult.Failed(GetInventoryFailure(user));
+            var system = await RunAdbAsync($"-s {serial} shell pm list packages -s --show-versioncode", 15000).ConfigureAwait(false);
+            if (!system.Success)
+                system = await RunAdbAsync($"-s {serial} shell pm list packages -s", 15000).ConfigureAwait(false);
+            if (!system.Success) return AppInventoryResult.Failed(GetInventoryFailure(system));
+
+            var apps = ParsePackageList(user.Output, AppCategory.User)
+                .Concat(ParsePackageList(system.Output, AppCategory.System))
+                .GroupBy(a => a.PackageId, StringComparer.Ordinal)
+                .Select(g => g.First())
+                .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // One process-list command supplies running state for every package.
+            var processes = await RunAdbAsync($"-s {serial} shell ps -A -o NAME", 10000).ConfigureAwait(false);
+            if (processes.Success)
+            {
+                var names = processes.Output.Split('\n', '\r', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim()).ToHashSet(StringComparer.Ordinal);
+                foreach (var app in apps)
+                    app.IsRunning = names.Contains(app.PackageId) || names.Any(n => n.StartsWith(app.PackageId + ":", StringComparison.Ordinal));
+            }
+            return new AppInventoryResult(true, apps, RunningStateAvailable: processes.Success);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, $"[AdbService] GetAppInventoryAsync failed for {SecurityHelper.HashSerial(serial)}");
+            return AppInventoryResult.Failed(ex.Message);
+        }
+    }
+
+    internal static List<AppItem> ParsePackageList(string output, AppCategory category)
+        => output.Split('\n', '\r', StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.StartsWith("package:", StringComparison.Ordinal))
+            .Select(line => line["package:".Length..].Trim())
+            .Select(line => new { Text = line, VersionAt = line.IndexOf(" versionCode:", StringComparison.Ordinal) })
+            .Select(line => new {
+                Package = line.VersionAt < 0 ? line.Text : line.Text[..line.VersionAt],
+                Version = line.VersionAt < 0 ? "" : "code " + line.Text[(line.VersionAt + " versionCode:".Length)..].Trim()
+            })
+            .Where(line => SecurityHelper.IsValidPackageName(line.Package))
+            .Select(line => new AppItem { PackageId = line.Package, Name = line.Package, Version = line.Version,
+                Category = category, Platform = DevicePlatform.Android })
+            .ToList();
+
+    private static string GetInventoryFailure(ToolLauncherResult result)
+        => SecurityHelper.RedactSensitiveText(!string.IsNullOrWhiteSpace(result.Error) ? result.Error :
+            !string.IsNullOrWhiteSpace(result.Output) ? result.Output : $"ADB exited with code {result.ExitCode}.");
 
     public async Task<bool> UninstallAppAsync(string serial, string packageId)
     {

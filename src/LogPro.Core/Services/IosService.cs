@@ -80,14 +80,14 @@ public class IosService : IIosService
     private static string Quote(string s) => ToolLauncher.QuoteArgument(s);
 
     private async Task<ToolLauncherResult> RunAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs,
-        Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
+        Action<string>? outputCallback = null, CancellationToken cancellationToken = default, bool forwardErrorToCallback = false)
     {
         if (udid != null && !SecurityHelper.IsValidOfflineDeviceSelector(udid))
             return new ToolLauncherResult { Success = false, Error = "Blocked by LogPro offline security policy." };
         if (string.IsNullOrWhiteSpace(subcommand) || subcommand.Any(c => c is '\r' or '\n'))
             return new ToolLauncherResult { Success = false, Error = "Invalid iOS command." };
         var tool = await SelectedTool.Value.ConfigureAwait(false);
-        return await ToolLauncher.RunAsync(tool.Exe, BuildCommandArgs(tool.IsModuleInvocation, udid, subcommand), timeoutMs, outputCallback, cancellationToken).ConfigureAwait(false);
+        return await ToolLauncher.RunAsync(tool.Exe, BuildCommandArgs(tool.IsModuleInvocation, udid, subcommand), timeoutMs, outputCallback, cancellationToken, forwardErrorToCallback).ConfigureAwait(false);
     }
 
     private static string GetFailureMessage(ToolLauncherResult result)
@@ -284,14 +284,17 @@ public class IosService : IIosService
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] CaptureScreenshotAsync failed"); return (false, ex.Message); }
     }
 
-    public async Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath, Action<string>? outputCallback = null)
+    public Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath, Action<string>? outputCallback = null)
+        => InstallIpaAsync(udid, ipaPath, outputCallback, CancellationToken.None);
+
+    public async Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath, Action<string>? outputCallback, CancellationToken cancellationToken)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !PathHelper.IsSafeLocalPath(ipaPath))
             return (false, "Invalid local path or device selector.");
         try
         {
             outputCallback?.Invoke($"Installing: {ipaPath}");
-            var result = await RunAsync(udid, $"apps install {Quote(ipaPath)}", InstallTimeoutMs, outputCallback).ConfigureAwait(false);
+            var result = await RunAsync(udid, $"apps install {Quote(ipaPath)}", InstallTimeoutMs, outputCallback, cancellationToken, forwardErrorToCallback: true).ConfigureAwait(false);
             if (result.Success) return (true, "IPA installed successfully.");
             var error = result.Error ?? result.Output ?? $"Exit code: {result.ExitCode}";
             return (false, $"Install failed: {error.Trim()}");
@@ -312,10 +315,39 @@ public class IosService : IIosService
         return apps.OrderBy(a => a.Name).ToList();
     }
 
+    public async Task<AppInventoryResult> GetAppInventoryAsync(string udid)
+    {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid))
+            return AppInventoryResult.Failed("Invalid device selector.");
+        try
+        {
+            var apps = new List<AppItem>();
+            foreach (var (type, category) in new[] {
+                ("User", AppCategory.User), ("System", AppCategory.System), ("Hidden", AppCategory.Hidden) })
+            {
+                var result = await RunAsync(udid, $"apps list --type {type}", DefaultTimeoutMs).ConfigureAwait(false);
+                if (!result.Success)
+                    return AppInventoryResult.Failed(GetFailureMessage(result));
+                if (string.IsNullOrWhiteSpace(result.Output)) continue;
+                var parsed = ParseAppsList(result.Output, category);
+                if (parsed.Count == 0 && result.Output.Trim() is not "{}")
+                    return AppInventoryResult.Failed($"Could not parse {type.ToLowerInvariant()} application list.");
+                apps.AddRange(parsed);
+            }
+            return new AppInventoryResult(true, apps.GroupBy(a => a.PackageId, StringComparer.Ordinal)
+                .Select(g => g.First()).OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList());
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[IosService] GetAppInventoryAsync failed");
+            return AppInventoryResult.Failed(ex.Message);
+        }
+    }
+
     /// <summary>
     /// Parses `apps list` output. pymobiledevice3 emits a top-level dict keyed by bundle id.
     /// </summary>
-    internal static List<AppItem> ParseAppsList(string output)
+    internal static List<AppItem> ParseAppsList(string output, AppCategory category = AppCategory.Unknown)
     {
         var apps = new List<AppItem>();
         var trimmed = output.TrimStart();
@@ -331,12 +363,13 @@ public class IosService : IIosService
                     {
                         var pkg = prop.Name;
                         var info = prop.Value;
+                        if (info.ValueKind != JsonValueKind.Object) continue;
                         var name = info.TryGetProperty("CFBundleDisplayName", out var dn) ? dn.GetString() ?? pkg
                                  : info.TryGetProperty("CFBundleName", out var bn) ? bn.GetString() ?? pkg
                                  : pkg;
                         var ver = info.TryGetProperty("CFBundleShortVersionString", out var vs) ? vs.GetString() ?? ""
                                 : info.TryGetProperty("CFBundleVersion", out var bv) ? bv.GetString() ?? "" : "";
-                        apps.Add(new AppItem { PackageId = pkg, Name = name, Version = ver, Platform = DevicePlatform.iOS });
+                        apps.Add(new AppItem { PackageId = pkg, Name = name, Version = ver, Platform = DevicePlatform.iOS, Category = category });
                     }
                     return apps;
                 }
@@ -356,7 +389,7 @@ public class IosService : IIosService
             if (!char.IsWhiteSpace(line[0]) && line.Contains('.') && line.TrimEnd().EndsWith(":"))
             {
                 if (currentPkg != null)
-                    apps.Add(new AppItem { PackageId = currentPkg, Name = currentName ?? currentPkg, Version = currentVer ?? "", Platform = DevicePlatform.iOS });
+                    apps.Add(new AppItem { PackageId = currentPkg, Name = currentName ?? currentPkg, Version = currentVer ?? "", Platform = DevicePlatform.iOS, Category = category });
                 currentPkg = line.TrimEnd(':', ' ');
                 currentName = null;
                 currentVer = null;
@@ -370,7 +403,7 @@ public class IosService : IIosService
                 currentVer = ExtractValue(trimmedLine);
         }
         if (currentPkg != null)
-            apps.Add(new AppItem { PackageId = currentPkg, Name = currentName ?? currentPkg, Version = currentVer ?? "", Platform = DevicePlatform.iOS });
+            apps.Add(new AppItem { PackageId = currentPkg, Name = currentName ?? currentPkg, Version = currentVer ?? "", Platform = DevicePlatform.iOS, Category = category });
         return apps;
     }
 
@@ -383,7 +416,7 @@ public class IosService : IIosService
 
     public async Task<bool> UninstallAppAsync(string udid, string packageId)
     {
-        if (!SecurityHelper.IsValidPackageName(packageId)) return false;
+        if (!SecurityHelper.IsValidBundleId(packageId)) return false;
         try
         {
             var result = await RunAsync(udid, $"apps uninstall {Quote(packageId)}", DefaultTimeoutMs).ConfigureAwait(false);
@@ -669,7 +702,7 @@ public class IosService : IIosService
     /// </summary>
     public async Task<string> GetAppContainerPathAsync(string udid, string bundleId)
     {
-        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidPackageName(bundleId)) return "";
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidBundleId(bundleId)) return "";
         try
         {
             var result = await RunAsync(udid, $"apps query {Quote(bundleId)}", InfoTimeoutMs).ConfigureAwait(false);
@@ -691,7 +724,7 @@ public class IosService : IIosService
     public async Task<bool> PullAppFileAsync(string udid, string bundleId, string remotePath, string localPath,
         CancellationToken cancellationToken = default)
     {
-        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidPackageName(bundleId) ||
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidBundleId(bundleId) ||
             !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath)) return false;
         var isDirectory = Directory.Exists(localPath);
         var target = isDirectory ? localPath : localPath + ".logpro-part-" + Guid.NewGuid().ToString("N");
@@ -712,7 +745,7 @@ public class IosService : IIosService
     public async Task<bool> PushAppFileAsync(string udid, string bundleId, string localPath, string remotePath,
         CancellationToken cancellationToken = default)
     {
-        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidPackageName(bundleId) ||
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidBundleId(bundleId) ||
             !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath) || !File.Exists(localPath)) return false;
         try
         {

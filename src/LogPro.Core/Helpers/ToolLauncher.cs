@@ -158,7 +158,7 @@ public static class ToolLauncher
     }
 
     public static async Task<ToolLauncherResult> RunAsync(string exeName, string arguments, int timeoutMs = 15000,
-        Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
+        Action<string>? outputCallback = null, CancellationToken cancellationToken = default, bool forwardErrorToCallback = false)
     {
         var result = new ToolLauncherResult();
         var fullExePath = ResolveExecutablePath(exeName);
@@ -211,7 +211,7 @@ public static class ToolLauncher
             var fullError = new System.Text.StringBuilder();
 
             outputTask = DrainOutputAsync(process.StandardOutput, fullOutput, outputCallback);
-            errorTask = DrainOutputAsync(process.StandardError, fullError, null);
+            errorTask = DrainOutputAsync(process.StandardError, fullError, forwardErrorToCallback ? outputCallback : null);
 
             using var timeoutCts = new CancellationTokenSource(Math.Max(1, timeoutMs));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
