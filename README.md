@@ -32,6 +32,13 @@
 | Headless CLI + loopback control API (CI/Appium) | ✅ | ✅ |
 | Plugin system (log parsers) | ✅ | ✅ |
 
+The **Apps** tab lists user and system apps on both platforms. Android also offers a running-app
+filter, Force Stop, Clear Data, and optional test-APK installation (`-t`); iOS offers a hidden-app
+filter and IPA installation. Android-only actions are disabled for iOS. Use the device picker and
+search to narrow the list, drag APK/IPA files into the tab for a cancellable install queue, or save
+an inventory snapshot to compare after testing. Inventory can be exported as CSV. Package archives
+are checked before installation; Android displays a version code when the device supplies one.
+
 ## Download
 
 Every push to `main` builds and publishes a release automatically.

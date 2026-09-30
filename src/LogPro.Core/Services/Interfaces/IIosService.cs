@@ -11,8 +11,12 @@ public interface IIosService
     Task<bool> CaptureScreenshotAsync(string serial, string outputPath);
     Task<(bool Success, string Message)> CaptureScreenshotWithStatusAsync(string serial, string outputPath);
     Task<(bool Success, string Message)> InstallIpaAsync(string serial, string ipaPath, Action<string>? progressCallback = null);
+    Task<(bool Success, string Message)> InstallIpaAsync(string serial, string ipaPath, Action<string>? progressCallback, CancellationToken cancellationToken)
+        => InstallIpaAsync(serial, ipaPath, progressCallback);
     Task<bool> UninstallAppAsync(string serial, string bundleId);
     Task<List<AppItem>> ListInstalledAppsAsync(string serial);
+    async Task<AppInventoryResult> GetAppInventoryAsync(string serial)
+        => new(true, await ListInstalledAppsAsync(serial).ConfigureAwait(false));
     Task<Process?> StartLogCaptureAsync(string serial, string logFilePath);
     Task<bool> PullFileAsync(string serial, string remotePath, string localPath);
     Task<bool> PullFileAsync(string serial, string remotePath, string localPath, CancellationToken cancellationToken) => PullFileAsync(serial, remotePath, localPath);

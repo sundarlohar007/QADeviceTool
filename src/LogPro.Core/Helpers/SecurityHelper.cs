@@ -36,6 +36,10 @@ public static class SecurityHelper
         @"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    private static readonly Regex BundleIdPattern = new(
+        @"^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private static readonly Regex NetworkInterfacePattern = new(
         @"^[a-zA-Z0-9_.-]{1,32}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -64,6 +68,9 @@ public static class SecurityHelper
 
     public static bool IsValidPackageName(string? packageName)
         => !string.IsNullOrWhiteSpace(packageName) && packageName.Length <= 255 && PackageNamePattern.IsMatch(packageName);
+
+    public static bool IsValidBundleId(string? bundleId)
+        => !string.IsNullOrWhiteSpace(bundleId) && bundleId.Length <= 255 && BundleIdPattern.IsMatch(bundleId);
 
     /// <summary>
     /// Device selectors accepted by the offline transport. Network ADB selectors such as

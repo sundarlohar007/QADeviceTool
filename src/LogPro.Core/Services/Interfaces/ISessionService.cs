@@ -21,6 +21,7 @@ public interface ISessionService
     LogSession CreateSession(DeviceInfo device, string? customSessionName = null);
     Task<bool> StartCaptureAsync(LogSession session, LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime);
     void StopCapture(LogSession session);
+    Task WaitForCaptureStopAsync(LogSession session) => Task.CompletedTask;
     void StopAllCaptures();
     LogSession? StopCaptureForDevice(string deviceSerial, IEnumerable<LogSession> sessions);
     Task<string> ReadLogContentAsync(LogSession session, int maxLines = 200000);

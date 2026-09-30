@@ -97,7 +97,7 @@ public sealed class AvaloniaFileDialogService : IFileDialogService
         var owner = AvaloniaDialogService.Owner;
         if (owner == null) return null;
         var files = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        { Title = title, AllowMultiple = false });
+        { Title = title, AllowMultiple = false, FileTypeFilter = ParseFileTypes(filter) });
         return files.FirstOrDefault()?.TryGetLocalPath();
     }
 
@@ -106,7 +106,7 @@ public sealed class AvaloniaFileDialogService : IFileDialogService
         var owner = AvaloniaDialogService.Owner;
         if (owner == null) return null;
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        { Title = title, SuggestedFileName = defaultFileName });
+        { Title = title, SuggestedFileName = defaultFileName, FileTypeChoices = ParseFileTypes(filter) });
         return file?.TryGetLocalPath();
     }
 
@@ -117,6 +117,16 @@ public sealed class AvaloniaFileDialogService : IFileDialogService
         var folders = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         { Title = title, AllowMultiple = false });
         return folders.FirstOrDefault()?.TryGetLocalPath();
+    }
+
+    private static IReadOnlyList<FilePickerFileType> ParseFileTypes(string filter)
+    {
+        var parts = filter.Split('|');
+        var types = new List<FilePickerFileType>();
+        for (var i = 0; i + 1 < parts.Length; i += 2)
+            types.Add(new FilePickerFileType(parts[i])
+            { Patterns = parts[i + 1].Split(';', StringSplitOptions.RemoveEmptyEntries) });
+        return types;
     }
 }
 

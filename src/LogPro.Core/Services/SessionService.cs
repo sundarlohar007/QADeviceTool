@@ -486,6 +486,8 @@ public class SessionService : ISessionService
         }
     }
 
+    public Task WaitForCaptureStopAsync(LogSession session) => AwaitCaptureStopAsync(session.Id);
+
     private const string MetadataFileName = "session.json";
     private sealed record SessionMetadata(string Id, string Name, string DeviceId, string DeviceName,
         DevicePlatform Platform, string LogFileName, string AppLogFileName, DateTime StartTime, DateTime? EndTime);

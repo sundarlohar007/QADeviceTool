@@ -11,6 +11,10 @@ public interface IAdbService
     Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device);
     Task<bool> CaptureScreenshotAsync(string serial, string outputPath);
     Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? progressCallback = null);
+    Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? progressCallback, CancellationToken cancellationToken)
+        => InstallApkAsync(serial, apkPath, progressCallback);
+    Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? progressCallback, CancellationToken cancellationToken, bool allowTestApk)
+        => InstallApkAsync(serial, apkPath, progressCallback, cancellationToken);
     Task<bool> BroadcastIntentAsync(string serial, string uri);
     Task<string> ExecuteCommandAsync(string serial, string command, CancellationToken cancellationToken = default);
     Task<(bool Success, string Output, string Error)> ExecuteCommandWithResultAsync(string serial, string args, CancellationToken cancellationToken = default);
@@ -35,6 +39,8 @@ public interface IAdbService
     Task<(bool Success, string Message)> DisconnectAsync(string ipPort);
     Task<List<string>> DiscoverPairingPortsAsync();
     Task<List<AppItem>> ListInstalledAppsAsync(string serial);
+    async Task<AppInventoryResult> GetAppInventoryAsync(string serial)
+        => new(true, await ListInstalledAppsAsync(serial).ConfigureAwait(false));
     Task<bool> UninstallAppAsync(string serial, string packageId);
     Task<bool> ForceStopAppAsync(string serial, string packageId);
     Task<bool> ClearAppDataAsync(string serial, string packageId);

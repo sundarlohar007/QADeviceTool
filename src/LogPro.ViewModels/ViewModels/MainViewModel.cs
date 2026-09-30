@@ -85,7 +85,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         SessionVM = new SessionViewModel(_sessionService, _adbService, _iosService, _deviceMonitor, _dispatcher);
         DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor, _sessionService, _dispatcher);
         DeviceVM.PropertyChanged += OnDeviceViewModelPropertyChanged;
-        AppManagementVM = new AppManagementViewModel(_adbService, _iosService, _deviceMonitor, _sessionService, _dispatcher);
+        AppManagementVM = new AppManagementViewModel(_adbService, _iosService, _deviceMonitor, _sessionService, _dispatcher, _deviceStore);
         ShellVM = new ShellViewModel(_deviceMonitor, _iosService, _dispatcher);
         DeepLinkVM = new DeepLinkViewModel(_adbService, _iosService, _deviceMonitor, _dispatcher);
         VitalsVM = new VitalsViewModel(_adbService, _deviceMonitor, _dispatcher);
