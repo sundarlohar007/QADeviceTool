@@ -90,6 +90,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         DeepLinkVM = new DeepLinkViewModel(_adbService, _iosService, _deviceMonitor, _dispatcher);
         VitalsVM = new VitalsViewModel(_adbService, _deviceMonitor, _dispatcher);
         FileExplorerVM = new FileExplorerViewModel(_adbService, _iosService, _deviceMonitor, _dispatcher);
+        FileExplorerVM.PropertyChanged += OnFileExplorerPropertyChanged;
         MacroVM = new MacroViewModel(new MacroService(_adbService), _adbService, _deviceMonitor, _dispatcher);
         StressTestVM = new StressTestViewModel(_adbService, _deviceMonitor, _dispatcher);
         SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService, _adbService, _dispatcher);
@@ -152,6 +153,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _deviceStore.SelectedDevice = DeviceVM.SelectedDevice;
     }
 
+    private void OnFileExplorerPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(FileExplorerViewModel.SelectedDevice) && FileExplorerVM.SelectedDevice != null)
+            _deviceStore.SelectedDevice = FileExplorerVM.SelectedDevice;
+    }
+
     [RelayCommand]
     public void ToggleDeviceTools()
     {
@@ -209,6 +216,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceStore.Changed -= OnDevicesStoreChanged;
         DeviceVM.PropertyChanged -= OnDeviceViewModelPropertyChanged;
+        FileExplorerVM.PropertyChanged -= OnFileExplorerPropertyChanged;
 
         _sessionService.StopAllCaptures();
 

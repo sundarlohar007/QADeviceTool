@@ -146,5 +146,6 @@ public class IosServiceParserTests
         files.Should().HaveCount(2);
         files.Should().Contain(f => f.Name == "100APPLE" && f.Path == "/DCIM/100APPLE");
         files.Should().Contain(f => f.Name == "readme.txt" && f.Path == "/DCIM/readme.txt");
+        files.Should().OnlyContain(f => f.DisplaySize == "Unknown");
     }
 }

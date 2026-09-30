@@ -49,7 +49,7 @@ public class AdbService : IAdbService
         @"^(?<perm>[bcdlps-][rwx-]{9})\s+\d+\s+\S+\s+\S+\s+(?<size>\d+)\s+(?<date>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)\s+(?<name>.+)$",
         RegexOptions.Compiled);
     private static readonly Regex SafePathPattern = new(
-        @"^[\p{L}\p{N}._\-/ ]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        @"^[\p{L}\p{N}._\-/ '()+@,\[\]]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public AdbService()
     {
@@ -582,7 +582,8 @@ public class AdbService : IAdbService
             if (result.Success)
             {
                 var parsed = ParseAndroidLsListing(result.Output, path);
-                if (parsed.Count > 0)
+                if (parsed.Count > 0 || string.IsNullOrWhiteSpace(result.Output) ||
+                    result.Output.Trim().StartsWith("total 0", StringComparison.OrdinalIgnoreCase))
                     return parsed;
             }
 
@@ -645,7 +646,7 @@ public class AdbService : IAdbService
         var basePath = NormalizeDevicePath(parentPath);
         foreach (var raw in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
         {
-            var name = raw.Trim();
+            var name = raw.TrimEnd('\r');
             if (string.IsNullOrWhiteSpace(name) || name == "." || name == "..") continue;
 
             var isDir = name.EndsWith("/");
@@ -657,7 +658,7 @@ public class AdbService : IAdbService
                 Name = name,
                 Path = CombineDevicePath(basePath, name),
                 IsDirectory = isDir,
-                Size = 0,
+                Size = -1,
                 ModifiedDate = DateTime.MinValue
             });
         }
@@ -692,16 +693,32 @@ public class AdbService : IAdbService
     }
 
     public async Task<bool> PullFileAsync(string serial, string remotePath, string localDestination)
+        => await PullFileAsync(serial, remotePath, localDestination, CancellationToken.None);
+
+    public async Task<bool> PullFileAsync(string serial, string remotePath, string localDestination, CancellationToken cancellationToken)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localDestination)) return false;
-        var result = await RunAdbAsync($"-s {serial} pull \"{remotePath}\" \"{localDestination}\"");
-        return result.Success;
+        var isDirectory = Directory.Exists(localDestination);
+        var target = isDirectory ? localDestination : localDestination + ".logpro-part-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var result = await RunAdbAsync($"-s {serial} pull {ToolLauncher.QuoteArgument(remotePath)} {ToolLauncher.QuoteArgument(target)}", 300000, cancellationToken: cancellationToken);
+            if (!result.Success) return false;
+            if (isDirectory) return Directory.Exists(Path.Combine(localDestination, Path.GetFileName(remotePath.TrimEnd('/'))));
+            if (!File.Exists(target)) return false;
+            File.Move(target, localDestination, true);
+            return true;
+        }
+        finally { if (!isDirectory && File.Exists(target)) File.Delete(target); }
     }
 
     public async Task<bool> PushFileAsync(string serial, string localPath, string remoteDestination)
+        => await PushFileAsync(serial, localPath, remoteDestination, CancellationToken.None);
+
+    public async Task<bool> PushFileAsync(string serial, string localPath, string remoteDestination, CancellationToken cancellationToken)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !IsSafePath(remoteDestination) || !PathHelper.IsSafeLocalPath(localPath)) return false;
-        var result = await RunAdbAsync($"-s {serial} push \"{localPath}\" \"{remoteDestination}\"");
+        var result = await RunAdbAsync($"-s {serial} push {ToolLauncher.QuoteArgument(localPath)} {ToolLauncher.QuoteArgument(remoteDestination)}", 300000, cancellationToken: cancellationToken);
         return result.Success;
     }
 

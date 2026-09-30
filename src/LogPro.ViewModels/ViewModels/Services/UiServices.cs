@@ -6,6 +6,7 @@ namespace LogPro.ViewModels;
 public interface IDialogService
 {
     bool Confirm(string title, string message);
+    Task<bool> ConfirmAsync(string title, string message) => Task.FromResult(Confirm(title, message));
     void Info(string title, string message);
     void Error(string title, string message);
 }
@@ -16,6 +17,9 @@ public interface IFileDialogService
     string? OpenFile(string title, string filter);
     string? SaveFile(string title, string filter, string defaultFileName);
     string? OpenFolder(string title);
+    Task<string?> OpenFileAsync(string title, string filter) => Task.FromResult(OpenFile(title, filter));
+    Task<string?> SaveFileAsync(string title, string filter, string defaultFileName) => Task.FromResult(SaveFile(title, filter, defaultFileName));
+    Task<string?> OpenFolderAsync(string title) => Task.FromResult(OpenFolder(title));
 }
 
 /// <summary>Host-registered theme switching (WPF ThemeService today, Avalonia resource swap later).</summary>

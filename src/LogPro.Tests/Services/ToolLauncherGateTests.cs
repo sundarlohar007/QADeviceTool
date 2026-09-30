@@ -6,6 +6,13 @@ namespace LogPro.Tests.Services;
 public class ToolLauncherGateTests
 {
     [Fact]
+    public void QuoteArgument_EscapesTrailingSlashAndEmbeddedQuote()
+    {
+        ToolLauncher.QuoteArgument(@"C:\dir\").Should().Be("\"C:\\dir\\\\\"");
+        ToolLauncher.QuoteArgument("a\"b").Should().Be("\"a\\\"b\"");
+    }
+
+    [Fact]
     public async Task SameDevice_SecondCommandWaitsForFirst()
     {
         var first = await ToolLauncher.TestAcquireAsync("-s R12345678 cmd");

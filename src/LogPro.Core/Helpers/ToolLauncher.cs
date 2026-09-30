@@ -15,6 +15,27 @@ public class ToolLauncherResult
 
 public static class ToolLauncher
 {
+    /// <summary>Quote one process argument, including trailing backslashes and embedded quotes.</summary>
+    public static string QuoteArgument(string value)
+    {
+        var quoted = new System.Text.StringBuilder("\"");
+        var slashes = 0;
+        foreach (var ch in value)
+        {
+            if (ch == '\\') { slashes++; continue; }
+            if (ch == '"')
+            {
+                quoted.Append('\\', slashes * 2 + 1).Append('"');
+                slashes = 0;
+                continue;
+            }
+            quoted.Append('\\', slashes).Append(ch);
+            slashes = 0;
+        }
+        quoted.Append('\\', slashes * 2).Append('"');
+        return quoted.ToString();
+    }
+
     private static readonly string _toolsDir;
     private static readonly string _pymobileDeviceDir;
 

@@ -10,7 +10,7 @@ public class DeviceFile
     public string Name { get; set; } = string.Empty;
     public string Path { get; set; } = string.Empty;
     public bool IsDirectory { get; set; }
-    public long Size { get; set; }
+    public long Size { get; set; } = -1;
     public DateTime ModifiedDate { get; set; }
 
     /// <summary>
@@ -21,6 +21,7 @@ public class DeviceFile
         get
         {
             if (IsDirectory) return string.Empty;
+            if (Size < 0) return "Unknown";
             if (Size < 1024) return $"{Size} B";
             if (Size < 1024 * 1024) return $"{Size / 1024.0:F1} KB";
             if (Size < 1024 * 1024 * 1024) return $"{Size / (1024.0 * 1024.0):F2} MB";

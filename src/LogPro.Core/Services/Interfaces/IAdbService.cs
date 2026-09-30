@@ -21,7 +21,9 @@ public interface IAdbService
     bool IsScreenRecording { get; }
     Task<string?> GetPidFromPackageNameAsync(string serial, string packageName);
     Task<bool> PullFileAsync(string serial, string remotePath, string localPath);
+    Task<bool> PullFileAsync(string serial, string remotePath, string localPath, CancellationToken cancellationToken) => PullFileAsync(serial, remotePath, localPath);
     Task<bool> PushFileAsync(string serial, string localPath, string remotePath);
+    Task<bool> PushFileAsync(string serial, string localPath, string remotePath, CancellationToken cancellationToken) => PushFileAsync(serial, localPath, remotePath);
     Task<bool> DeleteFileAsync(string serial, string path);
     Task<List<DeviceFile>> ListDirectoryAsync(string serial, string path);
     Task<(bool Success, string Message)> EnableWirelessAsync(string serial, int port = 5555);
