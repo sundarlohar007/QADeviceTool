@@ -238,7 +238,15 @@ public static class ToolLauncher
             await AwaitReaderAsync(outputTask).ConfigureAwait(false);
             await AwaitReaderAsync(errorTask).ConfigureAwait(false);
 
-            if (cancelled) return result;
+            if (cancelled)
+            {
+                // Preserve diagnostics produced before a timeout or user cancellation.
+                result.Output = fullOutput.ToString().Trim();
+                var capturedError = fullError.ToString().Trim();
+                if (!string.IsNullOrWhiteSpace(capturedError))
+                    result.Error = $"{result.Error}\n{capturedError}";
+                return result;
+            }
 
             result.Output = fullOutput.ToString().Trim();
             result.Error = fullError.ToString().Trim();

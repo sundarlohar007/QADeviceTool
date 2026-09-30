@@ -1,231 +1,361 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Concurrent;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LogPro.Helpers;
 using LogPro.Models;
 using LogPro.Services;
-using LogPro.Helpers;
 
 namespace LogPro.ViewModels;
 
 public partial class ShellViewModel : ObservableObject, IDisposable
 {
+    private const int MaxOutputChars = 50_000;
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly IIosService _iosService;
     private readonly IUiDispatcher _dispatcher;
+    private readonly Dictionary<string, StringBuilder> _outputByDevice = new(StringComparer.Ordinal);
+    private CancellationTokenSource? _runningCts;
+    private string? _runningKey;
+    private bool _disposed;
 
-    [ObservableProperty]
-    private ObservableCollection<DeviceInfo> _devices = new();
+    [ObservableProperty] private ObservableCollection<DeviceInfo> _devices = new();
+    [ObservableProperty] private DeviceInfo? _selectedDevice;
+    [ObservableProperty] private string _commandInput = string.Empty;
+    [ObservableProperty] private string _shellOutput = string.Empty;
+    [ObservableProperty] private bool _isExecuting;
+    [ObservableProperty] private bool _isOutputPaused;
+    [ObservableProperty] private bool _followTail = true;
+    [ObservableProperty] private string _statusMessage = string.Empty;
+    [ObservableProperty] private string? _selectedHistoryCommand;
+    [ObservableProperty] private string? _selectedSuggestion;
 
-    [ObservableProperty]
-    private DeviceInfo? _selectedDevice;
+    public ObservableCollection<string> CommandHistory { get; } = new();
+    public ObservableCollection<string> SuggestedCommands { get; } = new();
 
-    [ObservableProperty]
-    private string _commandInput = string.Empty;
-
-    [ObservableProperty]
-    private string _shellOutput = string.Empty;
-
-    [ObservableProperty]
-    private bool _isExecuting;
-    private readonly System.Text.StringBuilder _outputBuilder = new();
-
-    public ShellViewModel(IDeviceMonitorService deviceMonitor, IIosService iosService, IUiDispatcher? dispatcher = null)
+    public ShellViewModel(IDeviceMonitorService monitor, IIosService iosService, IUiDispatcher? dispatcher = null)
     {
-        _deviceMonitor = deviceMonitor;
+        _deviceMonitor = monitor;
         _iosService = iosService;
         _dispatcher = dispatcher ?? UiServices.Dispatcher;
-
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
+        OnDevicesChanged(_deviceMonitor.CurrentDevices.ToList());
     }
+
+    private static string Key(DeviceInfo device) => $"{device.Platform}:{device.Serial}";
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
         _dispatcher.Post(() =>
         {
-            var currentSelected = SelectedDevice?.Serial;
-
-            Devices.Clear();
-            foreach (var d in devices)
+            if (_disposed) return;
+            var online = devices.Where(d => d.ConnectionState == DeviceConnectionState.Online &&
+                SecurityHelper.IsValidOfflineDeviceSelector(d.Serial)).ToList();
+            var keys = online.Select(Key).ToHashSet(StringComparer.Ordinal);
+            for (var i = Devices.Count - 1; i >= 0; i--)
+                if (!keys.Contains(Key(Devices[i]))) Devices.RemoveAt(i);
+            foreach (var device in online)
             {
-                if (d.ConnectionState == DeviceConnectionState.Online)
+                var existing = Devices.FirstOrDefault(d => Key(d) == Key(device));
+                if (existing == null) Devices.Add(device);
+                else
                 {
-                    Devices.Add(d);
+                    // Retain the picker object across metadata refreshes to preserve a draft.
+                    existing.Name = device.Name;
+                    existing.Model = device.Model;
+                    existing.ConnectionState = device.ConnectionState;
+                    existing.IsTemporarilyUnavailable = device.IsTemporarilyUnavailable;
                 }
             }
-
-            if (!string.IsNullOrEmpty(currentSelected))
-            {
-                SelectedDevice = Devices.FirstOrDefault(d => d.Serial == currentSelected);
-            }
-            if (SelectedDevice == null && Devices.Count > 0)
-            {
-                SelectedDevice = Devices.First();
-            }
+            if (SelectedDevice != null && !keys.Contains(Key(SelectedDevice))) SelectedDevice = null;
+            if (SelectedDevice == null && Devices.Count > 0) SelectedDevice = Devices[0];
+            ExecuteCommandCommand.NotifyCanExecuteChanged();
         });
     }
 
     public void OnDeviceSelected(DeviceInfo device)
     {
-        if (device.ConnectionState == DeviceConnectionState.Online)
+        if (_disposed || device.ConnectionState != DeviceConnectionState.Online) return;
+        _dispatcher.Post(() =>
         {
-            SelectedDevice = device;
-        }
+            if (_disposed) return;
+            var match = Devices.FirstOrDefault(d => Key(d) == Key(device));
+            if (match != null && (SelectedDevice == null || Key(SelectedDevice) != Key(match)))
+                SelectedDevice = match;
+        });
     }
 
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
-        if (value != null)
-        {
-            var help = value.Platform == DevicePlatform.iOS
-                ? "Type a pymobiledevice3 command (e.g. 'lockdown info', 'apps list', 'afc ls /', 'crash ls', 'diagnostics info'). iOS does not expose an interactive shell here."
-                : $"Type an adb command (e.g. 'shell ls' or 'logcat -d'). 'adb -s {value.Serial}' is automatically prepended.";
-
-            AppendOutput($"--- Selected Device: {value.DisplayName} ({value.Serial}) ---\n{help}\n");
-        }
-        else
+        ExecuteCommandCommand.NotifyCanExecuteChanged();
+        var key = value == null ? null : Key(value);
+        if (_runningKey != null && _runningKey != key) _runningCts?.Cancel();
+        if (value == null)
         {
             ShellOutput = string.Empty;
+            SuggestedCommands.Clear();
+            StatusMessage = "Select an online device.";
+            return;
         }
-        CommandInput = string.Empty;
+        SuggestedCommands.Clear();
+        foreach (var command in value.Platform == DevicePlatform.iOS
+            ? new[] { "lockdown info", "apps list", "afc ls /", "crash ls", "diagnostics info", "processes ps", "syslog live" }
+            : new[] { "shell getprop", "shell dumpsys battery", "shell dumpsys meminfo", "shell pm list packages", "logcat -d" })
+            SuggestedCommands.Add(command);
+        if (!_outputByDevice.TryGetValue(key!, out var buffer))
+        {
+            buffer = new StringBuilder();
+            _outputByDevice[key!] = buffer;
+            buffer.Append($"--- {value.DisplayName} ({value.MaskedSerial}) ---\n");
+            buffer.Append(value.Platform == DevicePlatform.iOS
+                ? "iOS diagnostic commands are available; an interactive device shell is unsupported.\n"
+                : "Enter a read-only ADB command without the adb prefix.\n");
+        }
+        ShellOutput = buffer.ToString();
+        StatusMessage = value.IsTemporarilyUnavailable ? "Device reconnecting." : "Ready";
     }
 
-    [RelayCommand]
+    partial void OnSelectedHistoryCommandChanged(string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) CommandInput = value;
+    }
+
+    partial void OnSelectedSuggestionChanged(string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) CommandInput = value;
+    }
+
+    partial void OnCommandInputChanged(string value) => ExecuteCommandCommand.NotifyCanExecuteChanged();
+    partial void OnIsExecutingChanged(bool value) => ExecuteCommandCommand.NotifyCanExecuteChanged();
+
+    private bool CanExecuteCommand() => !_disposed && !IsExecuting && SelectedDevice is
+    { ConnectionState: DeviceConnectionState.Online, IsTemporarilyUnavailable: false } &&
+        !string.IsNullOrWhiteSpace(CommandInput);
+
+    [RelayCommand(CanExecute = nameof(CanExecuteCommand))]
     private async Task ExecuteCommandAsync()
     {
-        if (SelectedDevice == null || string.IsNullOrWhiteSpace(CommandInput)) return;
-
-        if (SelectedDevice.ConnectionState != DeviceConnectionState.Online)
+        if (_disposed || IsExecuting || SelectedDevice == null || string.IsNullOrWhiteSpace(CommandInput)) return;
+        var target = SelectedDevice;
+        var key = Key(target);
+        if (target.ConnectionState != DeviceConnectionState.Online || target.IsTemporarilyUnavailable)
         {
-            AppendOutput($"[Error] Device is {SelectedDevice.ConnectionState}. Cannot execute shell commands.\n");
+            Append(key, "[Unavailable] Wait for the device to reconnect.");
             return;
         }
-
-        var cmd = CommandInput.Trim();
+        var command = CommandInput.Trim();
+        if (target.Platform == DevicePlatform.Android && !SecurityHelper.IsOfflineSafeReadOnlyCommand(command))
+        {
+            Append(key, "[Blocked] Only supported read-only Android commands are available here.");
+            return;
+        }
+        if (target.Platform == DevicePlatform.iOS && !IsSupportedIosCommand(command))
+        {
+            Append(key, "[Unsupported on iOS] Try a suggested diagnostic command. Use Apps or File Explorer for changes and transfers.");
+            return;
+        }
         CommandInput = string.Empty;
-
-        if (SelectedDevice.Platform == DevicePlatform.Android && !SecurityHelper.IsOfflineSafeReadOnlyCommand(cmd))
-        {
-            AppendOutput("[Blocked] This terminal only permits read-only Android commands (for example, 'shell getprop', 'shell dumpsys', 'shell ls', and 'logcat -d').\n" +
-                         "Commands that change device state or use the network are unavailable under the offline policy.");
-            return;
-        }
-
-        if (SelectedDevice.Platform == DevicePlatform.iOS && SecurityHelper.IsNetworkCapableCommand(cmd))
-        {
-            AppendOutput("[Blocked] Network-capable iOS commands are disabled by offline security policy.");
-            return;
-        }
-
-        AppendOutput($"\n> {cmd}");
+        SelectedHistoryCommand = null;
+        SelectedSuggestion = null;
+        CommandHistory.Remove(command);
+        CommandHistory.Insert(0, command);
+        while (CommandHistory.Count > 50) CommandHistory.RemoveAt(CommandHistory.Count - 1);
+        Append(key, $"\n> {command}");
+        using var cts = new CancellationTokenSource();
+        _runningCts = cts;
+        _runningKey = key;
         IsExecuting = true;
-
+        StatusMessage = "Running…";
+        var live = target.Platform == DevicePlatform.iOS && command.Equals("syslog live", StringComparison.OrdinalIgnoreCase);
+        var pendingLines = new ConcurrentQueue<string>();
+        var pendingCount = 0;
+        var droppedLines = 0;
+        void FlushLiveLines()
+        {
+            lock (pendingLines)
+            {
+                var batch = new StringBuilder();
+                var dropped = Interlocked.Exchange(ref droppedLines, 0);
+                if (dropped > 0) batch.AppendLine($"[{dropped} live lines omitted to keep the app responsive]");
+                while (batch.Length < 16_000 && pendingLines.TryDequeue(out var line))
+                {
+                    Interlocked.Decrement(ref pendingCount);
+                    batch.AppendLine(line);
+                }
+                if (batch.Length > 0) Append(key, batch.ToString());
+            }
+        }
+        using var liveTimer = live ? new Timer(_ => FlushLiveLines(), null, 100, 100) : null;
         try
         {
-            if (SelectedDevice.Platform == DevicePlatform.iOS)
+            ToolLauncherResult result;
+            if (target.Platform == DevicePlatform.iOS)
             {
-                // pymobiledevice3 has no non-interactive shell pipe (`developer shell` is an
-                // IPython REPL). Map a small set of useful subcommands to RunAsync so the user
-                // can still inspect lockdown/diagnostics/apps/crash without an interactive shell.
-                var passthrough = MapIosShellCommand(cmd);
-                if (passthrough == null)
-                {
-                    AppendOutput("[iOS] Interactive shell not supported by pymobiledevice3.\n" +
-                                 "Try: lockdown info | apps list | afc ls / | crash ls | diagnostics info | usbmux list");
-                }
-                else
-                {
-                    var udid = passthrough.StartsWith("usbmux", StringComparison.OrdinalIgnoreCase) || passthrough.StartsWith("version", StringComparison.OrdinalIgnoreCase)
-                        ? null
-                        : SelectedDevice.Serial;
-                    var result = await _iosService.ExecuteCommandAsync(udid, passthrough, 30000);
-                    AppendOutput(string.IsNullOrWhiteSpace(result.Output) ? result.Error ?? "(no output)" : result.Output);
-                }
+                var udid = command is "version" or "usbmux list" ? null : target.Serial;
+                result = await _iosService.ExecuteCommandAsync(udid, command, live ? 3_600_000 : 30_000,
+                    live ? line =>
+                    {
+                        pendingLines.Enqueue(line);
+                        Interlocked.Increment(ref pendingCount);
+                        while (Volatile.Read(ref pendingCount) > 2_000 && pendingLines.TryDequeue(out _))
+                        {
+                            Interlocked.Decrement(ref pendingCount);
+                            Interlocked.Increment(ref droppedLines);
+                        }
+                    }
+                : null, cts.Token);
             }
             else
             {
-                var adbPath = ToolResolver.Resolve("adb");
-                var result = await ToolLauncher.RunAsync(adbPath, $"-s {SelectedDevice.Serial} {cmd}", 60000);
-
-                if (!string.IsNullOrWhiteSpace(result.Output))
-                {
-                    AppendOutput(result.Output);
-                }
-                if (!string.IsNullOrWhiteSpace(result.Error))
-                {
-                    AppendOutput($"[Error]\n{result.Error}");
-                }
-
-                if (!result.Success && string.IsNullOrWhiteSpace(result.Error) && string.IsNullOrWhiteSpace(result.Output))
-                {
-                    AppendOutput($"[Command exited with code {result.ExitCode}]");
-                }
+                result = await ToolLauncher.RunAsync(ToolResolver.Resolve("adb"), $"-s {target.Serial} {command}",
+                    60_000, cancellationToken: cts.Token);
             }
+            if (live) FlushLiveLines();
+            if (!live && !string.IsNullOrWhiteSpace(result.Output)) Append(key, result.Output);
+            if (cts.IsCancellationRequested) Append(key, "[Stopped]");
+            else if (!string.IsNullOrWhiteSpace(result.Error)) Append(key, $"[Error] {result.Error}");
+            if (!result.Success && !cts.IsCancellationRequested && string.IsNullOrWhiteSpace(result.Error))
+                Append(key, $"[Command failed: exit code {result.ExitCode}]");
+            if (result.Success && !live && string.IsNullOrWhiteSpace(result.Output) && string.IsNullOrWhiteSpace(result.Error))
+                Append(key, "(no output)");
+            if (SelectedDevice != null && Key(SelectedDevice) == key)
+                StatusMessage = result.Success ? "Completed" : cts.IsCancellationRequested ? "Stopped" : "Command failed";
+        }
+        catch (OperationCanceledException)
+        {
+            if (live) FlushLiveLines();
+            Append(key, "[Stopped]");
+            if (SelectedDevice != null && Key(SelectedDevice) == key) StatusMessage = "Stopped";
         }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, "[Shell] ExecuteCommandAsync failed");
-            AppendOutput($"[Exception]\n{ex.Message}");
+            Append(key, $"[Error] {SecurityHelper.RedactSensitiveText(ex.Message)}");
+            if (SelectedDevice != null && Key(SelectedDevice) == key) StatusMessage = "Command failed";
         }
         finally
         {
-            IsExecuting = false;
+            if (ReferenceEquals(_runningCts, cts))
+            {
+                _runningCts = null;
+                _runningKey = null;
+                IsExecuting = false;
+            }
         }
     }
+
+    // Diagnostic-only commands. State-changing operations have dedicated workflows.
+    public static bool IsSupportedIosCommand(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command) || command.Length > 512 ||
+            command.Any(c => c is '\r' or '\n' or ';' or '|' or '&' or '`' or '$' or '<' or '>') ||
+            SecurityHelper.IsNetworkCapableCommand(command)) return false;
+        var parts = command.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 8) return false;
+        var group = parts[0].ToLowerInvariant();
+        var action = parts.Length > 1 ? parts[1].ToLowerInvariant() : "";
+        return group switch
+        {
+            "version" => parts.Length == 1,
+            "lockdown" => action == "info" && parts.Length == 2 || action == "get" &&
+                parts.Length is 3 or 4 && parts.Skip(2).All(IsSafeIosToken),
+            "apps" => action == "list" && parts.Length == 2 || action == "query" && parts.Length == 3 && SecurityHelper.IsValidBundleId(parts[2]),
+            "afc" => action == "ls" && parts.Length == 3 &&
+                Regex.IsMatch(parts[2], @"^/[A-Za-z0-9._/-]*$") && !parts[2].Contains("..", StringComparison.Ordinal),
+            "crash" => action == "ls" && parts.Length == 2,
+            "diagnostics" => action == "info" && parts.Length == 2 ||
+                action == "mg" && parts.Length == 3 && IsSafeIosToken(parts[2]),
+            "usbmux" => action == "list" && parts.Length == 2,
+            "processes" => action == "ps" && parts.Length == 2,
+            "syslog" => action == "live" && parts.Length == 2,
+            _ => false
+        };
+    }
+
+    private static bool IsSafeIosToken(string value) =>
+        Regex.IsMatch(value, @"^[A-Za-z0-9_][A-Za-z0-9._-]*$", RegexOptions.CultureInvariant);
+
+    [RelayCommand] private void StopCommand() => _runningCts?.Cancel();
 
     [RelayCommand]
     private void ClearOutput()
     {
-        _outputBuilder.Clear();
+        if (SelectedDevice == null) return;
+        var key = Key(SelectedDevice);
+        _outputByDevice.Remove(key);
         ShellOutput = string.Empty;
-        if (SelectedDevice != null)
-        {
-            AppendOutput($"--- Terminal Cleared ---\nTarget: {SelectedDevice.DisplayName} ({SelectedDevice.Serial})\n");
-        }
+        Append(key, $"--- Cleared: {SelectedDevice.DisplayName} ({SelectedDevice.MaskedSerial}) ---");
     }
 
-    private static string? MapIosShellCommand(string cmd)
+    [RelayCommand]
+    private void CopyOutput()
     {
-        var trimmed = cmd.Trim();
-        var allowedPrefixes = new[]
-        {
-            "lockdown info", "lockdown get",
-            "apps list", "apps query", "apps uninstall",
-            "afc ls", "afc pull", "afc push",
-            "crash ls", "crash pull",
-            "diagnostics info", "diagnostics mg",
-            "usbmux list", "usbmux forward",
-            "syslog live", "processes",
-            "version"
-        };
-        foreach (var p in allowedPrefixes)
-        {
-            if (trimmed.StartsWith(p, StringComparison.OrdinalIgnoreCase))
-            {
-                return trimmed;
-            }
-        }
-        return null;
+        if (string.IsNullOrEmpty(ShellOutput)) return;
+        UiServices.Clipboard.SetText(SecurityHelper.RedactSensitiveText(ShellOutput));
+        StatusMessage = "Redacted output copied.";
     }
 
-    private void AppendOutput(string text)
+    [RelayCommand]
+    private async Task ExportOutputAsync()
+    {
+        if (string.IsNullOrEmpty(ShellOutput)) return;
+        var path = await UiServices.Files.SaveFileAsync("Export Shell output", "Text files (*.txt)|*.txt", "shell-output.txt");
+        if (string.IsNullOrEmpty(path)) return;
+        try
+        {
+            await File.WriteAllTextAsync(path, SecurityHelper.RedactSensitiveText(ShellOutput));
+            StatusMessage = "Redacted output exported.";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[Shell] Export failed");
+            StatusMessage = $"Export failed: {SecurityHelper.RedactSensitiveText(ex.Message)}";
+        }
+    }
+
+    private void Append(string key, string text)
     {
         if (string.IsNullOrEmpty(text)) return;
         _dispatcher.Post(() =>
         {
-            _outputBuilder.Append(text.TrimEnd('\r', '\n')).Append('\n');
-            if (_outputBuilder.Length > 50000)
+            if (_disposed) return;
+            if (!_outputByDevice.TryGetValue(key, out var buffer))
+                _outputByDevice[key] = buffer = new StringBuilder();
+            var visible = text.Length > MaxOutputChars
+                ? "[Earlier output truncated]\n" + text[^25_000..]
+                : text;
+            buffer.Append(visible.TrimEnd('\r', '\n')).Append('\n');
+            if (buffer.Length > MaxOutputChars)
             {
-                _outputBuilder.Remove(0, _outputBuilder.Length - 25000);
+                var current = buffer.ToString();
+                var cut = current.IndexOf('\n', current.Length - MaxOutputChars / 2);
+                buffer.Clear().Append("[Earlier output truncated]\n")
+                    .Append(current[(cut < 0 ? current.Length - MaxOutputChars / 2 : cut + 1)..]);
             }
-            ShellOutput = _outputBuilder.ToString();
+            if (!IsOutputPaused && SelectedDevice != null && Key(SelectedDevice) == key)
+                ShellOutput = buffer.ToString();
         });
+    }
+
+    partial void OnIsOutputPausedChanged(bool value)
+    {
+        if (!value && SelectedDevice != null && _outputByDevice.TryGetValue(Key(SelectedDevice), out var buffer))
+            ShellOutput = buffer.ToString();
     }
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _runningCts?.Cancel();
         GC.SuppressFinalize(this);
     }
 }
-

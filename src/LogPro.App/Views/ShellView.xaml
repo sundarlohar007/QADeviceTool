@@ -105,11 +105,13 @@
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
                 <TextBlock Text="Shell" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
-                <TextBlock Text="ADB / iOS Shell commands" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
+                <TextBlock Text="Read-only ADB and iOS diagnostics" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="220" Margin="0,0,8,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ClearOutputCommand}" Content="Clear" />
+                <Button Style="{StaticResource GhostBtn}" Command="{Binding CopyOutputCommand}" Content="Copy" Margin="8,0,0,0" />
+                <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportOutputCommand}" Content="Export" Margin="8,0,0,0" />
             </StackPanel>
         </Grid>
         <Border Grid.Row="1" Style="{StaticResource Card}" Margin="24,0,24,16">
@@ -120,16 +122,31 @@
                         <TextBlock Text="OUTPUT" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
-                <TextBox Style="{StaticResource MonoBlock}" Text="{Binding ShellOutput, Mode=OneWay}" Background="{DynamicResource BrushVoid}" BorderThickness="0" Margin="0" TextChanged="OutputTextBox_TextChanged" />
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,8">
+                    <TextBox x:Name="SearchTextBox" Style="{StaticResource DarkInput}" Width="180" ToolTip="Search visible output" />
+                    <Button Style="{StaticResource GhostBtn}" Content="Find next" Click="FindNext_Click" Margin="8,0,0,0" />
+                    <CheckBox Content="Pause display" IsChecked="{Binding IsOutputPaused}" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" Margin="16,0,0,0" />
+                    <CheckBox Content="Follow output" IsChecked="{Binding FollowTail}" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" Margin="16,0,0,0" />
+                    <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="16,0,0,0" />
+                </StackPanel>
+                <TextBox x:Name="OutputTextBox" Style="{StaticResource MonoBlock}" Text="{Binding ShellOutput, Mode=OneWay}" Background="{DynamicResource BrushVoid}" BorderThickness="0" Margin="0" TextChanged="OutputTextBox_TextChanged" />
             </DockPanel>
         </Border>
-        <Grid Grid.Row="2" Margin="24,0,24,24">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBox Grid.Column="0" Style="{StaticResource DarkInput}" Text="{Binding CommandInput, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource FontMono}" Margin="0,0,8,0" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}" />
-            <Button Grid.Column="1" Style="{StaticResource PrimaryBtn}" Command="{Binding ExecuteCommandCommand}" IsEnabled="{Binding IsExecuting, Converter={x:Static conv:InverseBoolConverter.Instance}}" Content="Execute" />
-        </Grid>
+        <StackPanel Grid.Row="2" Margin="24,0,24,24">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <ComboBox ItemsSource="{Binding SuggestedCommands}" SelectedItem="{Binding SelectedSuggestion}" Width="230" ToolTip="Suggested commands" />
+                <ComboBox ItemsSource="{Binding CommandHistory}" SelectedItem="{Binding SelectedHistoryCommand}" Width="230" Margin="8,0,0,0" ToolTip="Recent commands (this session)" />
+            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Column="0" Style="{StaticResource DarkInput}" Text="{Binding CommandInput, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource FontMono}" Margin="0,0,8,0" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}" KeyDown="CommandInput_KeyDown" />
+                <Button Grid.Column="1" Style="{StaticResource PrimaryBtn}" Command="{Binding ExecuteCommandCommand}" Content="Execute" />
+                <Button Grid.Column="2" Style="{StaticResource DangerBtn}" Command="{Binding StopCommandCommand}" IsEnabled="{Binding IsExecuting}" Content="Stop" Margin="8,0,0,0" />
+            </Grid>
+        </StackPanel>
     </Grid>
 </UserControl>
