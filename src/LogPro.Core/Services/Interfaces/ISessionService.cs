@@ -14,6 +14,7 @@ public interface ISessionService
     event Action<LogSession>? CaptureStopped;
 
     IReadOnlyList<LogSession> ActiveSessions { get; }
+    CaptureStatistics GetCaptureStatistics(string sessionId);
 
     string SessionsRootDirectory { get; set; }
 
@@ -24,6 +25,7 @@ public interface ISessionService
     LogSession? StopCaptureForDevice(string deviceSerial, IEnumerable<LogSession> sessions);
     Task<string> ReadLogContentAsync(LogSession session, int maxLines = 200000);
     Task<string> SaveLogToFileAsync(LogSession session, string logContent);
+    Task<string> SaveLogCopyAsync(LogSession session);
     List<LogSession> GetSavedSessions();
     bool DeleteSession(LogSession session);
     LogSession? GetActiveSessionForDevice(string deviceSerial);

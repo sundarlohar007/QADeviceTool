@@ -18,6 +18,7 @@ public interface IAdbService
     Task<Process?> StartLogCaptureAsync(string serial, string logFilePath, LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime);
     Task<string?> StartScreenRecordAsync(string serial, string? outputDir = null, int maxDurationSec = 180, string bitRate = "8M");
     Task<string?> StopScreenRecordAsync(string serial, string? localOutputPath = null);
+    bool IsScreenRecording { get; }
     Task<string?> GetPidFromPackageNameAsync(string serial, string packageName);
     Task<bool> PullFileAsync(string serial, string remotePath, string localPath);
     Task<bool> PushFileAsync(string serial, string localPath, string remotePath);

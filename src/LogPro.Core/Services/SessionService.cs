@@ -2,11 +2,14 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using System.Threading;
 using LogPro.Helpers;
 using LogPro.Models;
 
 namespace LogPro.Services;
+
+public readonly record struct CaptureStatistics(int PendingLines, long DroppedLines);
 
 /// <summary>
 /// Manages log capture sessions — create, start, stop, save, and file I/O.
@@ -18,6 +21,8 @@ public class SessionService : ISessionService
     private readonly IIosService _iosService;
     private readonly ConcurrentDictionary<string, CaptureContext> _activeCaptures = new();
     private readonly ConcurrentDictionary<string, byte> _startingDevices = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<Task> _stopTasks = new();
+    private readonly ConcurrentDictionary<string, Task> _captureStopTasks = new();
     private System.Threading.Timer? _flushTimer;
     private readonly object _flushTimerLock = new();
     private readonly object _bufferLock = new();
@@ -32,6 +37,10 @@ public class SessionService : ISessionService
     public event Action<LogSession>? CaptureStopped;
 
     public IReadOnlyList<LogSession> ActiveSessions => _activeCaptures.Values.Select(ctx => ctx.Session).ToList();
+    public CaptureStatistics GetCaptureStatistics(string sessionId) =>
+        _activeCaptures.TryGetValue(sessionId, out var capture)
+            ? new CaptureStatistics(capture.Buffer.Count, Interlocked.Read(ref capture.DroppedLines))
+            : default;
 
     public string SessionsRootDirectory
     {
@@ -67,7 +76,7 @@ public class SessionService : ISessionService
         var logFilePath = Path.Combine(sessionDir, logFileName);
         var folderName = System.IO.Path.GetFileName(sessionDir);
 
-        return new LogSession
+        var session = new LogSession
         {
             Name = sessionName,
             DeviceId = deviceHash,
@@ -78,6 +87,8 @@ public class SessionService : ISessionService
             SessionDirectory = sessionDir,
             Status = SessionStatus.Idle
         };
+        SaveSessionMetadata(session);
+        return session;
     }
 
     /// <summary>
@@ -166,6 +177,7 @@ public class SessionService : ISessionService
 
         session.Status = SessionStatus.Capturing;
         session.StartTime = DateTime.Now;
+        SaveSessionMetadata(session);
 
         // Start batched flush timer (200ms interval) — prevents UI flooding
         EnsureFlushTimer();
@@ -242,6 +254,7 @@ public class SessionService : ISessionService
             }
             catch (Exception ex)
             {
+                Interlocked.Increment(ref ctx.DroppedLines);
                 AppLogger.Log.Error(ex, "Error processing log output line");
             }
         };
@@ -301,7 +314,14 @@ public class SessionService : ISessionService
 
             if (batch.Length > 0)
             {
-                LogBatchReceived?.Invoke(sessionId, batch.ToString());
+                var handlers = LogBatchReceived;
+                if (handlers == null) continue;
+                var batchText = batch.ToString();
+                foreach (Action<string, string> handler in handlers.GetInvocationList())
+                {
+                    try { handler(sessionId, batchText); }
+                    catch (Exception ex) { AppLogger.Log.Warn(ex, "[SessionService] Log observer failed"); }
+                }
             }
         }
     }
@@ -310,7 +330,7 @@ public class SessionService : ISessionService
     {
         if (!_activeCaptures.TryRemove(session.Id, out var ctx)) return;
 
-        _ = Task.Run(async () =>
+        var stopTask = Task.Run(async () =>
         {
             try
             {
@@ -344,9 +364,16 @@ public class SessionService : ISessionService
                 ctx.Cts.Dispose();
             }
         });
+        lock (_stopTasks)
+        {
+            _stopTasks.RemoveAll(t => t.IsCompleted);
+            _stopTasks.Add(stopTask);
+        }
+        _captureStopTasks[session.Id] = stopTask;
 
         session.Status = SessionStatus.Stopped;
         session.EndTime = DateTime.Now;
+        SaveSessionMetadata(session);
         PublishCaptureEvent(CaptureStopped, session);
 
         if (_activeCaptures.Count == 0)
@@ -374,6 +401,14 @@ public class SessionService : ISessionService
             _flushTimer?.Dispose();
             _flushTimer = null;
         }
+        Task[] pendingStops;
+        lock (_stopTasks) pendingStops = _stopTasks.ToArray();
+        try
+        {
+            if (!Task.WhenAll(pendingStops).Wait(TimeSpan.FromSeconds(5)))
+                AppLogger.Log.Warn("[SessionService] Capture shutdown timed out before every file closed");
+        }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "[SessionService] Capture shutdown incomplete"); }
     }
 
     /// <summary>
@@ -390,9 +425,7 @@ public class SessionService : ISessionService
             if (!PathHelper.TryGetSafeLocalDirectory(dir, out var safeDir))
                 return "Error: output directory must be local and non-reparse-point.";
 
-            var filePath = string.IsNullOrEmpty(session.LogFilePath)
-                ? Path.Combine(safeDir, $"manual_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt")
-                : session.LogFilePath;
+            var filePath = Path.Combine(safeDir, $"manual_log_{Guid.NewGuid():N}.txt");
             if (!PathHelper.IsSafeLocalPath(filePath))
                 return "Error: output file must be local and non-reparse-point.";
 
@@ -405,6 +438,79 @@ public class SessionService : ISessionService
         }
     }
 
+    public async Task<string> SaveLogCopyAsync(LogSession session)
+    {
+        string? destination = null;
+        try
+        {
+            await AwaitCaptureStopAsync(session.Id).ConfigureAwait(false);
+            if (!PathHelper.IsSafeLocalPath(session.LogFilePath) || !File.Exists(session.LogFilePath) ||
+                !PathHelper.TryGetSafeLocalDirectory(session.SessionDirectory, out var directory))
+                return "Error: log file or session directory is unavailable.";
+            if (_activeCaptures.TryGetValue(session.Id, out var capture))
+            {
+                lock (capture.WriterLock)
+                    if (!capture.WritersClosed) capture.Writer.Flush();
+            }
+            destination = Path.Combine(directory, $"saved_log_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.txt");
+            await using var source = new FileStream(session.LogFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
+                64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using var target = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                64 * 1024, FileOptions.Asynchronous);
+            var remaining = source.Length;
+            var buffer = new byte[64 * 1024];
+            while (remaining > 0)
+            {
+                var read = await source.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)))
+                    .ConfigureAwait(false);
+                if (read == 0) throw new EndOfStreamException("Capture file shrank during save.");
+                await target.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
+                remaining -= read;
+            }
+            return destination;
+        }
+        catch (Exception ex)
+        {
+            try { if (destination != null && File.Exists(destination)) File.Delete(destination); }
+            catch (Exception cleanupError) { AppLogger.Log.Debug(cleanupError, "[SessionService] Partial save cleanup failed"); }
+            return $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task AwaitCaptureStopAsync(string sessionId)
+    {
+        if (_captureStopTasks.TryGetValue(sessionId, out var task))
+        {
+            await task.ConfigureAwait(false);
+            _captureStopTasks.TryRemove(sessionId, out _);
+        }
+    }
+
+    private const string MetadataFileName = "session.json";
+    private sealed record SessionMetadata(string Id, string Name, string DeviceId, string DeviceName,
+        DevicePlatform Platform, string LogFileName, string AppLogFileName, DateTime StartTime, DateTime? EndTime);
+
+    private static void SaveSessionMetadata(LogSession session)
+    {
+        string? pendingPath = null;
+        try
+        {
+            if (!PathHelper.IsSafeLocalPath(session.SessionDirectory)) return;
+            var metadata = new SessionMetadata(session.Id, session.Name, session.DeviceId,
+                SecurityHelper.RedactSensitiveText(session.DeviceName), session.Platform,
+                Path.GetFileName(session.LogFilePath), Path.GetFileName(session.AppLogFilePath), session.StartTime, session.EndTime);
+            pendingPath = Path.Combine(session.SessionDirectory, $".session_{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(pendingPath, JsonSerializer.Serialize(metadata));
+            File.Move(pendingPath, Path.Combine(session.SessionDirectory, MetadataFileName), overwrite: true);
+        }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "[SessionService] Failed to persist session metadata"); }
+        finally
+        {
+            try { if (pendingPath != null && File.Exists(pendingPath)) File.Delete(pendingPath); }
+            catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Metadata temp cleanup failed"); }
+        }
+    }
+
     public List<LogSession> GetSavedSessions()
     {
         var sessions = new List<LogSession>();
@@ -412,25 +518,64 @@ public class SessionService : ISessionService
 
         foreach (var dir in Directory.GetDirectories(SessionsRootDirectory).OrderByDescending(d => d))
         {
-            var dirName = Path.GetFileName(dir);
-            var logFiles = Directory.GetFiles(dir, "*.txt").Concat(Directory.GetFiles(dir, "*.log")).ToArray();
-
-            var session = new LogSession
+            try
             {
-                Name = dirName,
-                SessionDirectory = dir,
-                Status = SessionStatus.Stopped,
-                StartTime = Directory.GetCreationTime(dir)
-            };
+                if (!PathHelper.IsSafeLocalPath(dir)) continue;
+                var dirName = Path.GetFileName(dir);
+                var logFiles = Directory.GetFiles(dir, "*_log.txt")
+                    .Where(f => !f.EndsWith("_app_log.txt", StringComparison.OrdinalIgnoreCase))
+                    .Concat(Directory.GetFiles(dir, "*.log"))
+                    .Concat(Directory.GetFiles(dir, "manual_log_*.txt"))
+                    .Concat(Directory.GetFiles(dir, "saved_log_*.txt"))
+                    .ToArray();
 
-            if (logFiles.Length > 0)
-            {
-                session.LogFilePath = logFiles[0];
-                var fi = new FileInfo(logFiles[0]);
-                session.EndTime = fi.LastWriteTime;
+                var session = new LogSession
+                {
+                    Name = dirName,
+                    SessionDirectory = dir,
+                    Status = SessionStatus.Stopped,
+                    StartTime = Directory.GetCreationTime(dir)
+                };
+
+                var metadataPath = Path.Combine(dir, MetadataFileName);
+                if (File.Exists(metadataPath))
+                {
+                    try
+                    {
+                        var metadata = JsonSerializer.Deserialize<SessionMetadata>(File.ReadAllText(metadataPath));
+                        if (metadata != null)
+                        {
+                            session.Id = metadata.Id;
+                            session.Name = metadata.Name;
+                            session.DeviceId = metadata.DeviceId;
+                            session.DeviceName = metadata.DeviceName;
+                            session.Platform = metadata.Platform;
+                            session.StartTime = metadata.StartTime;
+                            session.EndTime = metadata.EndTime;
+                            if (Path.GetFileName(metadata.LogFileName) == metadata.LogFileName)
+                            {
+                                var candidate = Path.Combine(dir, metadata.LogFileName);
+                                if (File.Exists(candidate) && PathHelper.IsSafeLocalPath(candidate)) session.LogFilePath = candidate;
+                            }
+                            if (Path.GetFileName(metadata.AppLogFileName) == metadata.AppLogFileName)
+                            {
+                                var appCandidate = Path.Combine(dir, metadata.AppLogFileName);
+                                if (File.Exists(appCandidate) && PathHelper.IsSafeLocalPath(appCandidate)) session.AppLogFilePath = appCandidate;
+                            }
+                        }
+                    }
+                    catch (Exception ex) { AppLogger.Log.Warn(ex, "[SessionService] Invalid session metadata"); }
+                }
+                if (string.IsNullOrEmpty(session.LogFilePath) && logFiles.Length > 0)
+                {
+                    session.LogFilePath = logFiles[0];
+                }
+                if (File.Exists(session.LogFilePath) && session.EndTime == null)
+                    session.EndTime = File.GetLastWriteTime(session.LogFilePath);
+
+                sessions.Add(session);
             }
-
-            sessions.Add(session);
+            catch (Exception ex) { AppLogger.Log.Warn(ex, "[SessionService] Could not load saved session"); }
         }
 
         return sessions;
@@ -438,7 +583,9 @@ public class SessionService : ISessionService
 
     public async Task<string> ReadLogContentAsync(LogSession session, int maxLines = 200000)
     {
-        if (string.IsNullOrEmpty(session.LogFilePath) || !File.Exists(session.LogFilePath))
+        await AwaitCaptureStopAsync(session.Id).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(session.LogFilePath) || !File.Exists(session.LogFilePath) ||
+            !PathHelper.IsSafeLocalPath(session.LogFilePath))
             return "No log file found.";
         if (maxLines <= 0) return string.Empty;
 
@@ -485,7 +632,18 @@ public class SessionService : ISessionService
     {
         try
         {
+            if (_captureStopTasks.TryGetValue(session.Id, out var stopTask))
+            {
+                if (!stopTask.Wait(TimeSpan.FromSeconds(5))) return false;
+                _captureStopTasks.TryRemove(session.Id, out _);
+            }
             if (!PathHelper.IsSafeLocalPath(session.SessionDirectory)) return false;
+            var root = Path.GetFullPath(SessionsRootDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var target = Path.GetFullPath(session.SessionDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!target.StartsWith(root, OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) return false;
             if (Directory.Exists(session.SessionDirectory))
             {
                 Directory.Delete(session.SessionDirectory, true);
@@ -558,6 +716,7 @@ public class SessionService : ISessionService
         public Task? PidTask { get; set; }
         public object WriterLock { get; } = new();
         public bool WritersClosed { get; set; }
+        public long DroppedLines;
     }
 
     /// <summary>
@@ -567,8 +726,10 @@ public class SessionService : ISessionService
     {
         try
         {
+            await AwaitCaptureStopAsync(session.Id).ConfigureAwait(false);
             if (!File.Exists(session.LogFilePath) || !PathHelper.IsSafeLocalPath(session.LogFilePath) ||
-                !PathHelper.IsSafeLocalPath(outputPath)) return false;
+                !PathHelper.IsSafeLocalPath(outputPath) ||
+                Path.GetFullPath(session.LogFilePath).Equals(Path.GetFullPath(outputPath), StringComparison.OrdinalIgnoreCase)) return false;
 
             using var reader = new StreamReader(session.LogFilePath);
             using var writer = new StreamWriter(outputPath, false);
@@ -610,8 +771,10 @@ public class SessionService : ISessionService
     {
         try
         {
+            await AwaitCaptureStopAsync(session.Id).ConfigureAwait(false);
             if (!File.Exists(session.LogFilePath) || !PathHelper.IsSafeLocalPath(session.LogFilePath) ||
-                !PathHelper.IsSafeLocalPath(outputPath)) return false;
+                !PathHelper.IsSafeLocalPath(outputPath) ||
+                Path.GetFullPath(session.LogFilePath).Equals(Path.GetFullPath(outputPath), StringComparison.OrdinalIgnoreCase)) return false;
 
             using var reader = new StreamReader(session.LogFilePath);
             await using var outStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -660,16 +823,15 @@ public class SessionService : ISessionService
         {
             // Format 1: Standard logcat -v threadtime
             // "MM-DD HH:MM:SS.mmm   PID  TID P/Tag: message"
-            if (line.Length > 30 && line[2] == '-' && line[5] == ' ' && line[19] == '.')
+            if (line.Length > 30 && line[2] == '-' && line[5] == ' ' && line[14] == '.')
             {
                 result["Timestamp"] = line.Substring(0, 18);
-                var rest = line.Substring(30).TrimStart();
-                // Extract level from P/Tag prefix
-                if (rest.Length >= 2 && rest[1] == '/')
+                var match = Regex.Match(line, @"^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+([VDIWEFA])\s+(.*)$");
+                if (match.Success)
                 {
-                    result["Level"] = rest[0] switch
+                    result["Level"] = match.Groups[1].Value[0] switch
                     {
-                        'F' => "Fatal",
+                        'F' or 'A' => "Fatal",
                         'E' => "Error",
                         'W' => "Warning",
                         'I' => "Info",
@@ -677,8 +839,8 @@ public class SessionService : ISessionService
                         'V' => "Verbose",
                         _ => "Unknown"
                     };
+                    result["Message"] = match.Groups[2].Value;
                 }
-                result["Message"] = rest;
             }
             // Format 2: Legacy bracket format "[HH:mm:ss.fff] E/Tag: message"
             else if (line.StartsWith("["))
@@ -715,6 +877,21 @@ public class SessionService : ISessionService
                         _ => "Unknown"
                     };
                 }
+            }
+            if (result["Level"] == "Unknown")
+            {
+                var iosLevel = Regex.Match(line, @"<(Fault|Error|Warning|Notice|Info|Default|Debug)>",
+                    RegexOptions.IgnoreCase);
+                if (iosLevel.Success)
+                    result["Level"] = iosLevel.Groups[1].Value.ToUpperInvariant() switch
+                    {
+                        "FAULT" => "Fatal",
+                        "ERROR" => "Error",
+                        "WARNING" => "Warning",
+                        "NOTICE" or "INFO" or "DEFAULT" => "Info",
+                        "DEBUG" => "Debug",
+                        _ => "Unknown"
+                    };
             }
         }
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] ParseLogLine failed"); }
