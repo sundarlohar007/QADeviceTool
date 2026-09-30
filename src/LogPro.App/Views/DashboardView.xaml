@@ -105,9 +105,18 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Dashboard"
-                       FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold"
-                       Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="Dashboard" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold"
+                           Foreground="{DynamicResource BrushTextPrimary}" />
+                <TextBlock Text="{Binding SelectedDevice.DisplayName, StringFormat=Selected device: {0}}"
+                           Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" />
+                <TextBlock Text="{Binding WelcomeMessage}" Foreground="{DynamicResource BrushTextSecondary}"
+                           FontSize="12" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding DiscoveryMessage}" Foreground="{DynamicResource BrushRed}"
+                           FontSize="12" TextWrapping="Wrap" Visibility="{Binding HasDiscoveryError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                <TextBlock Text="{Binding PlatformNotice}" Foreground="{DynamicResource BrushTextSecondary}"
+                           FontSize="12" TextWrapping="Wrap" Visibility="{Binding HasPlatformNotice, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <Button Width="40" Height="40" Margin="0,0,12,0"
                         Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextSecondary}"
@@ -124,7 +133,7 @@
                 <Button Background="{DynamicResource BrushCyan}" Foreground="{DynamicResource BrushVoid}"
                         FontFamily="{StaticResource FontHeader}" FontSize="13" FontWeight="Bold"
                         Padding="16,10" Cursor="Hand" BorderThickness="0"
-                        Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
+                        Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding CanUseSelectedDevice}">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border CornerRadius="8" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
@@ -158,7 +167,7 @@
                                 <Style TargetType="Ellipse">
                                     <Setter Property="Fill" Value="{DynamicResource BrushRed}" />
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Devices.Count, Converter={x:Static conv:IntToBoolConverter.Instance}}" Value="True">
+                                        <DataTrigger Binding="{Binding OnlineDeviceCount, Converter={x:Static conv:IntToBoolConverter.Instance}}" Value="True">
                                             <Setter Property="Fill" Value="#4ADE80" />
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -166,10 +175,10 @@
                             </Ellipse.Style>
                         </Ellipse>
                     </Grid>
-                    <TextBlock Text="{Binding Devices.Count, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="{DynamicResource BrushCyan}">
+                    <TextBlock Text="{Binding OnlineDeviceCount, FallbackValue=0}" Style="{StaticResource StatValue}" Foreground="{DynamicResource BrushCyan}">
                         <TextBlock.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.4" Color="{DynamicResource Cyan}" /></TextBlock.Effect>
                     </TextBlock>
-                    <TextBlock Text="iOS &amp; Android" Style="{StaticResource StatSubtitle}" />
+                    <TextBlock Text="{Binding DeviceCountSubtitle}" Style="{StaticResource StatSubtitle}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
             <Border Grid.Column="2" Style="{StaticResource StatCard}">
@@ -184,18 +193,18 @@
             <Border Grid.Column="4" Style="{StaticResource StatCard}">
                 <StackPanel>
                     <Grid>
-                        <TextBlock Text="Tests Run" Style="{StaticResource StatLabel}" />
+                        <TextBlock Text="Tool Health" Style="{StaticResource StatLabel}" />
                         <TextBlock Text="&#xE74A;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#4ADE80" HorizontalAlignment="Right" />
                     </Grid>
-                    <TextBlock Text="0" Style="{StaticResource StatValue}" Foreground="#4ADE80" />
-                    <TextBlock Text="Session data pending" Style="{StaticResource StatSubtitle}" />
+                    <TextBlock Text="{Binding ToolHealthSummary}" Style="{StaticResource StatValue}" FontSize="22" Foreground="#4ADE80" />
+                    <TextBlock Text="ADB, scrcpy, iOS &amp; drivers" Style="{StaticResource StatSubtitle}" />
                 </StackPanel>
             </Border>
             <Border Grid.Column="6" Style="{StaticResource StatCard}">
                 <StackPanel>
-                    <TextBlock Text="Uptime" Style="{StaticResource StatLabel}" />
-                    <TextBlock Text="--" Style="{StaticResource StatValue}" Foreground="#FBBF24" />
-                    <TextBlock Text="Since last restart" Style="{StaticResource StatSubtitle}" />
+                    <TextBlock Text="Needs Attention" Style="{StaticResource StatLabel}" />
+                    <TextBlock Text="{Binding DevicesNeedingAttentionCount}" Style="{StaticResource StatValue}" Foreground="#FBBF24" />
+                    <TextBlock Text="Offline or authorization needed" Style="{StaticResource StatSubtitle}" />
                 </StackPanel>
             </Border>
         </Grid>
@@ -211,7 +220,7 @@
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE839;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="CONNECTED DEVICES" Style="{StaticResource CardHeaderText}" VerticalAlignment="Center" />
+                            <TextBlock Text="DETECTED DEVICES" Style="{StaticResource CardHeaderText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
@@ -230,8 +239,9 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
-                            <ItemsControl ItemsSource="{Binding Devices}">
-                                <ItemsControl.ItemTemplate>
+                            <ListBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
+                                     Background="Transparent" BorderThickness="0" Padding="0">
+                                <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Border Style="{StaticResource DeviceRow}">
                                             <Grid>
@@ -250,7 +260,10 @@
                                                     </TextBlock>
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding OsVersion}" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,12,0" />
+                                                    <StackPanel Margin="0,0,12,0">
+                                                        <TextBlock Text="{Binding OsVersion}" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource BrushPrimaryLight}" />
+                                                        <TextBlock Text="{Binding StatusText}" FontSize="10" Foreground="{DynamicResource BrushTextMuted}" />
+                                                    </StackPanel>
                                                     <Ellipse Width="8" Height="8">
                                                         <Ellipse.Style>
                                                             <Style TargetType="Ellipse">
@@ -273,8 +286,8 @@
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
                         </StackPanel>
                     </ScrollViewer>
                 </DockPanel>
@@ -288,9 +301,36 @@
                         </StackPanel>
                     </Border>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
-                        <TextBlock Text="No activity yet. Start a session to see results here."
-                                   FontFamily="{StaticResource FontHeader}" FontSize="12" Foreground="{DynamicResource BrushTextMuted}"
-                                   HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,24,0,24" />
+                        <StackPanel>
+                            <TextBlock Text="No activity yet. Connect a device or start a session."
+                                       FontSize="12" Foreground="{DynamicResource BrushTextMuted}" TextWrapping="Wrap" Margin="0,8">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasRecentActivity}" Value="False">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ItemsControl ItemsSource="{Binding RecentActivity}" />
+                            <TextBlock Text="TOOL HEALTH" Style="{StaticResource CardHeaderText}" Margin="0,20,0,8" />
+                            <TextBlock Text="Checking tools…" Foreground="{DynamicResource BrushTextMuted}"
+                                       Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Text="{Binding ToolCheckError}" Foreground="{DynamicResource BrushRed}" TextWrapping="Wrap" />
+                            <ItemsControl ItemsSource="{Binding ToolStatuses}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,4">
+                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushTextPrimary}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" FontSize="11" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                     </ScrollViewer>
                 </DockPanel>
             </ContentControl>
@@ -298,21 +338,21 @@
 
         <ContentControl Grid.Row="3" Margin="24,0,24,24" Style="{DynamicResource FrostedGlass}">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="8">
-                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickMirrorCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickMirrorCommand}" IsEnabled="{Binding CanMirrorSelectedDevice}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
-                        <TextBlock Text="Mirror Screen" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding MirrorActionText}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
                 <Border Width="1" Height="24" Background="{DynamicResource BrushBorder}" Margin="8,0" VerticalAlignment="Center" />
-                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickSnapshotCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickSnapshotCommand}" IsEnabled="{Binding CanUseSelectedDevice}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Snapshot" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
                 <Border Width="1" Height="24" Background="{DynamicResource BrushBorder}" Margin="8,0" VerticalAlignment="Center" />
-                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:NullToBoolConverter.Instance}}">
+                <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding CanUseSelectedDevice}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7B5;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Start Session" VerticalAlignment="Center" />

@@ -20,16 +20,38 @@ public class DeviceInfo
     public string Notes { get; set; } = string.Empty;
     public string Tag { get; set; } = string.Empty;
     public DateTime? LastConnected { get; set; }
+    public bool IsTemporarilyUnavailable { get; set; }
 
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Model : Name;
+    public string MaskedSerial => Serial.Length <= 4 ? "••••" : $"••••{Serial[^4..]}";
     public string DisplayNotes => string.IsNullOrEmpty(Notes) ? "No notes" : Notes;
     public string PlatformIcon => Platform == DevicePlatform.Android ? "Android" : "iOS";
-    public string StatusText => ConnectionState switch
+    public string StatusText => IsTemporarilyUnavailable ? "Reconnecting (device missed recent checks)" : ConnectionState switch
     {
         DeviceConnectionState.Online => "Connected",
         DeviceConnectionState.Unauthorized => "Unauthorized (Accept RSA)",
         DeviceConnectionState.PendingTrust => "Trust Dialog Pending",
         _ => "Offline"
+    };
+
+    public DeviceInfo WithTemporaryUnavailable(bool unavailable) => new()
+    {
+        Id = Id,
+        Serial = Serial,
+        Name = Name,
+        Model = Model,
+        OsVersion = OsVersion,
+        Platform = Platform,
+        ConnectionState = ConnectionState,
+        BatteryLevel = BatteryLevel,
+        BatteryStatus = BatteryStatus,
+        Manufacturer = Manufacturer,
+        Product = Product,
+        UsbInfo = UsbInfo,
+        Notes = Notes,
+        Tag = Tag,
+        LastConnected = LastConnected,
+        IsTemporarilyUnavailable = unavailable
     };
 }
 

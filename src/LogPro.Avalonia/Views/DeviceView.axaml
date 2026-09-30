@@ -10,6 +10,7 @@
         <StackPanel>
           <TextBlock Text="Devices" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
           <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0" />
+          <TextBlock Text="{Binding DiscoveryMessage}" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0" />
         </StackPanel>
         <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshDevicesCommand}" Padding="14,6" />
       </DockPanel>
@@ -21,7 +22,7 @@
             <DataTemplate>
               <StackPanel Margin="0,4">
                 <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextPrimary}" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding Serial}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
+                <TextBlock Text="{Binding MaskedSerial}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
@@ -30,15 +31,23 @@
       <ScrollViewer Grid.Column="1" Padding="24">
         <StackPanel Spacing="12">
           <TextBlock Text="DEVICE DETAILS" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
-          <TextBox Text="{Binding DeviceDetails}" AcceptsReturn="True" MinHeight="200" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
+          <TextBlock Text="{Binding CapabilityNotice}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Serial:" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Text="{Binding SelectedSerialDisplay}" Foreground="{DynamicResource BrushTextPrimary}" />
+            <Button Content="{Binding SerialVisibilityActionText}" Command="{Binding ToggleSerialVisibilityCommand}" IsEnabled="{Binding HasSelectedDevice}" />
+          </StackPanel>
+          <TextBox Text="{Binding DeviceDetails}" IsReadOnly="True" AcceptsReturn="True" MinHeight="200" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
+          <TextBlock Text="TAG" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
+          <TextBox Text="{Binding DeviceTag}" IsEnabled="{Binding HasSelectedDevice}" PlaceholderText="Tag for this device" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />
           <TextBlock Text="NOTES" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
-          <TextBox Text="{Binding DeviceNotes}" PlaceholderText="Notes for this device" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />
+          <TextBox Text="{Binding DeviceNotes}" IsEnabled="{Binding HasSelectedDevice}" PlaceholderText="Notes for this device" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" />
           <WrapPanel>
-            <Button Margin="0,0,8,0" Content="Save Notes" Command="{Binding SaveDeviceNotesCommand}" Padding="14,6" />
-            <Button Margin="0,0,8,0" Content="Mirror" Command="{Binding StartMirrorCommand}" IsEnabled="{Binding IsMirroring, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="14,6" />
+            <Button Margin="0,0,8,0" Content="Save Notes" Command="{Binding SaveDeviceNotesCommand}" IsEnabled="{Binding HasSelectedDevice}" Padding="14,6" />
+            <Button Margin="0,0,8,0" Content="Mirror" Command="{Binding StartMirrorCommand}" IsEnabled="{Binding CanMirror}" Padding="14,6" />
             <Button Margin="0,0,8,0" Content="Stop Mirror" Command="{Binding StopMirrorCommand}" IsEnabled="{Binding IsMirroring}" Padding="14,6" />
-            <Button Margin="0,0,8,0" Content="Snapshot" Command="{Binding TakeSnapshotCommand}" Padding="14,6" />
-            <Button Margin="0,0,8,0" Content="Enable Wireless" Command="{Binding EnableWirelessCommand}" Padding="14,6" />
+            <Button Margin="0,0,8,0" Content="Snapshot" Command="{Binding TakeSnapshotCommand}" IsEnabled="{Binding CanTakeSnapshot}" Padding="14,6" />
+            <Button Margin="0,0,8,0" Content="Open Snapshot Folder" Command="{Binding OpenSnapshotFolderCommand}" IsEnabled="{Binding HasSnapshotDirectory}" Padding="14,6" />
           </WrapPanel>
         </StackPanel>
       </ScrollViewer>

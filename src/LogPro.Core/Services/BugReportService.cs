@@ -36,6 +36,7 @@ public class BugReportService
         IReadOnlyList<CrashDetector.CrashEvent> crashes,
         string? lastRecordingPath)
     {
+        var tempFiles = new List<string>();
         try
         {
             if (!PathHelper.TryGetSafeLocalDirectory(saveDir, out saveDir))
@@ -43,19 +44,21 @@ public class BugReportService
 
             var deviceHash = SecurityHelper.HashSerial(device.Serial);
             var timestamp = DateTime.Now;
-            var tempFiles = new List<string>();
+            var nonce = Guid.NewGuid().ToString("N");
+            var missingArtifacts = new List<string>();
 
             // ── 1. Screenshot ──
-            var snapshotName = $"snapshot_{timestamp:yyyyMMdd_HHmmss}.png";
+            var snapshotName = $"snapshot_{timestamp:yyyyMMdd_HHmmss}_{nonce}.png";
             var snapshotPath = Path.Combine(saveDir, snapshotName);
             if (device.Platform == DevicePlatform.Android)
                 await _adbService.CaptureScreenshotAsync(device.Serial, snapshotPath);
             else
                 await _iosService.CaptureScreenshotAsync(device.Serial, snapshotPath);
             if (File.Exists(snapshotPath)) tempFiles.Add(snapshotPath);
+            else missingArtifacts.Add("screenshot");
 
             // ── 2. Log Dump + crash snippets ──
-            var logDumpPath = Path.Combine(saveDir, $"log_dump_{timestamp:yyyyMMdd_HHmmss}.txt");
+            var logDumpPath = Path.Combine(saveDir, $"log_dump_{timestamp:yyyyMMdd_HHmmss}_{nonce}.txt");
             var logContent = string.Join(Environment.NewLine, logLines.Select(line => SecurityHelper.RedactSensitiveText(line)));
             if (crashes.Count > 0)
             {
@@ -71,7 +74,7 @@ public class BugReportService
             tempFiles.Add(logDumpPath);
 
             // ── 3. Device info / diagnostics ──
-            var infoPath = Path.Combine(saveDir, $"device_info_{timestamp:yyyyMMdd_HHmmss}.txt");
+            var infoPath = Path.Combine(saveDir, $"device_info_{timestamp:yyyyMMdd_HHmmss}_{nonce}.txt");
             var info = new StringBuilder();
             info.AppendLine("=== LogPro BUG REPORT ===");
             info.AppendLine($"Generated: {timestamp:yyyy-MM-dd HH:mm:ss}");
@@ -96,13 +99,13 @@ public class BugReportService
             // ── 4. Screen recording clip (if available) ──
             if (lastRecordingPath != null && File.Exists(lastRecordingPath) && PathHelper.IsSafeLocalPath(lastRecordingPath))
             {
-                var recCopyPath = Path.Combine(saveDir, $"screenrecording_{timestamp:yyyyMMdd_HHmmss}.mp4");
+                var recCopyPath = Path.Combine(saveDir, $"screenrecording_{timestamp:yyyyMMdd_HHmmss}_{nonce}.mp4");
                 File.Copy(lastRecordingPath, recCopyPath, overwrite: true);
                 tempFiles.Add(recCopyPath);
             }
 
             // ── 5. Zip + cleanup ──
-            var zipName = $"BugReport_{deviceHash}_{timestamp:yyyyMMdd_HHmmss}.zip";
+            var zipName = $"BugReport_{deviceHash}_{timestamp:yyyyMMdd_HHmmss}_{nonce}.zip";
             var zipPath = Path.Combine(saveDir, zipName);
             using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
             {
@@ -113,17 +116,21 @@ public class BugReportService
                 }
             }
 
-            foreach (var file in tempFiles)
-            {
-                try { if (File.Exists(file)) File.Delete(file); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[BugReport] Temp cleanup failed"); }
-            }
-
-            return (true, $"Bug Report: {zipName} ({tempFiles.Count} artifacts)");
+            return (true, $"Bug Report: {zipName} ({tempFiles.Count} artifacts)" +
+                (missingArtifacts.Count == 0 ? string.Empty : $". Missing: {string.Join(", ", missingArtifacts)}."));
         }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, "[BugReport] GenerateAsync failed");
             return (false, $"[!] Bug Report error: {ex.Message}");
+        }
+        finally
+        {
+            foreach (var file in tempFiles)
+            {
+                try { if (File.Exists(file)) File.Delete(file); }
+                catch (Exception ex) { AppLogger.Log.Debug(ex, "[BugReport] Temp cleanup failed"); }
+            }
         }
     }
 

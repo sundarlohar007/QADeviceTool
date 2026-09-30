@@ -134,17 +134,21 @@ public class IosService : IIosService
     }
 
     public async Task<List<DeviceInfo>> GetConnectedDevicesAsync()
+        => (await GetConnectedDevicesWithStatusAsync().ConfigureAwait(false)).Devices;
+
+    public async Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync()
     {
         var devices = new List<DeviceInfo>();
         try
         {
             var result = await RunAsync(null, "usbmux list", InfoTimeoutMs).ConfigureAwait(false);
-            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return devices;
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return (false, devices);
 
             var output = result.Output.TrimStart();
-            if (!output.StartsWith("[")) return devices;
+            if (!output.StartsWith("[", StringComparison.Ordinal)) return (false, devices);
 
             using var json = JsonDocument.Parse(output);
+            if (json.RootElement.ValueKind != JsonValueKind.Array) return (false, devices);
             foreach (var item in json.RootElement.EnumerateArray())
             {
                 var udid = item.TryGetProperty("UniqueDeviceID", out var u) ? u.GetString() ?? "" : "";
@@ -171,12 +175,14 @@ public class IosService : IIosService
         catch (JsonException ex)
         {
             AppLogger.Log.Warn(ex, "[IosService] Failed to parse usbmux JSON output");
+            return (false, devices);
         }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, "[IosService] GetConnectedDevicesAsync failed");
+            return (false, devices);
         }
-        return devices;
+        return (true, devices);
     }
 
     public async Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device)

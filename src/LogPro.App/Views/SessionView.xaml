@@ -145,10 +145,10 @@
                         <TextBlock VerticalAlignment="Center">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="Pause" />
+                                            <Setter Property="Text" Value="Pause display" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsPaused}" Value="True">
-                                            <Setter Property="Text" Value="Resume" />
+                                            <Setter Property="Text" Value="Resume display" />
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -177,9 +177,18 @@
                     <StackPanel DockPanel.Dock="Top" Margin="12">
                         <TextBlock Text="DEVICE" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
                         <ComboBox ItemsSource="{Binding AvailableDevices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Margin="0,0,0,12" />
+                        <CheckBox Content="Auto-capture on connect" IsChecked="{Binding AutoCapture}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,8" />
                         <TextBlock Text="SESSION NAME" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
                         <TextBox Style="{StaticResource DarkInput}" Text="{Binding NewSessionName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
+                        <TextBlock Text="ANDROID LOG OPTIONS" Foreground="{DynamicResource BrushTextMuted}" FontSize="10" Margin="0,0,0,4" />
+                        <ComboBox ItemsSource="{Binding LogcatBuffers}" SelectedItem="{Binding SelectedLogBuffer}" Margin="0,0,0,6" />
+                        <ComboBox ItemsSource="{Binding LogcatFormats}" SelectedItem="{Binding SelectedLogFormat}" Margin="0,0,0,8" />
                         <Button Style="{StaticResource GreenBtn}" Command="{Binding CreateSessionCommand}" Content="+ New Session" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="{Binding SelectedSessionDetails}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextMuted}" FontSize="10" Margin="0,8,0,0" />
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Style="{StaticResource GhostBtn}" Command="{Binding OpenSessionFolderCommand}" Content="Folder" Margin="0,0,6,0" />
+                            <Button Style="{StaticResource GhostBtn}" Command="{Binding DeleteSessionCommand}" Content="Delete" />
+                        </StackPanel>
                     </StackPanel>
                     <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}" Background="Transparent" BorderThickness="0" Padding="8">
                         <ListBox.ItemContainerStyle>
@@ -231,9 +240,25 @@
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding SaveLogCommand}" Content="Save" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportCsvCommand}" Content="CSV" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportJsonCommand}" Content="JSON" />
+                                <Button Style="{StaticResource GhostBtn}" Command="{Binding SearchEntireSessionCommand}" Content="Search all" Margin="8,0,0,0" />
+                                <Button Style="{StaticResource GhostBtn}" Command="{Binding ReturnToLiveTailCommand}" Content="Tail" Margin="8,0,0,0" />
                             </StackPanel>
                         </Grid>
                     </Border>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8,4">
+                        <TextBlock Text="{Binding CaptureHealthText}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,12,0" />
+                        <CheckBox Content="Raw" IsChecked="{Binding IsRawMode}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
+                        <CheckBox Content="Auto-scroll" IsChecked="{Binding IsAutoScrollEnabled}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
+                        <Button Style="{StaticResource GhostBtn}" Command="{Binding CopyToClipboardCommand}" Content="Copy visible" Margin="0,0,8,0" />
+                        <Button Style="{StaticResource GhostBtn}" Command="{Binding GenerateBugReportCommand}" Content="Bug report" />
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8,4">
+                        <ItemsControl ItemsSource="{Binding LogLevelFilters}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate><DataTemplate><CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,8,0" /></DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <CheckBox Content="Bookmarks only" IsChecked="{Binding ShowBookmarksOnly}" Foreground="{DynamicResource BrushTextPrimary}" />
+                    </StackPanel>
                     <ListBox x:Name="LogList" ItemsSource="{Binding LogEntriesView}" Background="{DynamicResource BrushVoid}" BorderThickness="0" Foreground="{DynamicResource BrushTextPrimary}" FontFamily="{StaticResource FontMono}" FontSize="11" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AlternationCount="2147483647" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
@@ -249,6 +274,7 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="52" />
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="32" />
                                     </Grid.ColumnDefinitions>
                                     <Border Grid.Column="0" Background="#0A1218" Padding="6,0">
                                         <TextBlock Text="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource AncestorType=ListBoxItem}, StringFormat={}{0:D5}}"
@@ -256,7 +282,13 @@
                                                    Foreground="{DynamicResource BrushTextMuted}"
                                                    HorizontalAlignment="Right" VerticalAlignment="Center" />
                                     </Border>
-                                    <TextBlock Grid.Column="1" Text="{Binding RawLine}" TextWrapping="NoWrap" Padding="8,0" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Message}" TextWrapping="NoWrap" Padding="8,0" />
+                                    <Button Grid.Column="2" Content="★" Padding="2,0" Command="{Binding DataContext.ToggleBookmarkCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" ToolTip="Toggle bookmark">
+                                        <Button.Style><Style TargetType="Button">
+                                            <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
+                                            <Style.Triggers><DataTrigger Binding="{Binding IsBookmarked}" Value="True"><Setter Property="Foreground" Value="{DynamicResource BrushAccent}" /></DataTrigger></Style.Triggers>
+                                        </Style></Button.Style>
+                                    </Button>
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>

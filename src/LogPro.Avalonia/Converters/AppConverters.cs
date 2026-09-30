@@ -9,6 +9,7 @@ public static class AppConverters
     public static readonly IValueConverter NullToBool = new NullToBoolConverter();
     public static readonly IValueConverter InverseBool = new InverseBoolConverter();
     public static readonly IValueConverter InstalledToBrush = new InstalledToBrushConverter();
+    public static readonly IValueConverter ConnectionToBrush = new ConnectionToBrushConverter();
     public static readonly IValueConverter RecordingLabel = new RecordingLabelConverter();
     public static readonly IValueConverter PollLabel = new PollLabelConverter();
     public static readonly IValueConverter Sparkline = new SparklineConverter();
@@ -78,6 +79,20 @@ public sealed class InstalledToBrushConverter : IValueConverter
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         => value is true ? Ok : Bad;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => null;
+}
+
+public sealed class ConnectionToBrushConverter : IValueConverter
+{
+    private static readonly global::Avalonia.Media.IBrush Ok = new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromRgb(0x4A, 0xDE, 0x80));
+    private static readonly global::Avalonia.Media.IBrush Warning = new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromRgb(0xF5, 0x9E, 0x0B));
+    private static readonly global::Avalonia.Media.IBrush Offline = new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromRgb(0xEF, 0x44, 0x44));
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is LogPro.Models.DeviceConnectionState.Online ? Ok
+            : value is LogPro.Models.DeviceConnectionState.Unauthorized or LogPro.Models.DeviceConnectionState.PendingTrust ? Warning
+            : Offline;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => null;
 }

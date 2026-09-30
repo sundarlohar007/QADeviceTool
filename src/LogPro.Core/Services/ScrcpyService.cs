@@ -10,6 +10,7 @@ namespace LogPro.Services;
 /// </summary>
 public class ScrcpyService : IScrcpyService
 {
+    public event Action? StateChanged;
     private readonly string _scrcpy;
     private readonly object _lifecycleLock = new();
     private System.Diagnostics.Process? _mirrorProcess;
@@ -47,7 +48,17 @@ public class ScrcpyService : IScrcpyService
         return status;
     }
 
-    public bool IsRunning => _mirrorProcess != null && !_mirrorProcess.HasExited;
+    public bool IsRunning
+    {
+        get
+        {
+            lock (_lifecycleLock)
+            {
+                try { return _mirrorProcess != null && !_mirrorProcess.HasExited; }
+                catch (InvalidOperationException) { return false; }
+            }
+        }
+    }
 
     public string? MirroredDeviceSerial { get; private set; }
 
@@ -62,16 +73,10 @@ public class ScrcpyService : IScrcpyService
         }
 
         long generation;
-        System.Diagnostics.Process? previous;
         lock (_lifecycleLock)
         {
             generation = ++_mirrorGeneration;
-            previous = _mirrorProcess;
-            _mirrorProcess = null;
-            MirroredDeviceSerial = null;
         }
-        KillProcess(previous);
-
         var check = await CheckAvailabilityAsync();
         if (!check.IsInstalled) { LastError = "scrcpy not installed or not found."; return false; }
 
@@ -80,54 +85,50 @@ public class ScrcpyService : IScrcpyService
 
         if (process == null) { LastError = "Failed to start scrcpy process."; return false; }
 
+        // Keep a working mirror until the replacement has survived startup.
+        await Task.Delay(500).ConfigureAwait(false);
+        if (process.HasExited)
+        {
+            LastError = "scrcpy process exited immediately.";
+            process.Dispose();
+            return false;
+        }
+
         System.Diagnostics.Process? replaced = null;
+        var superseded = false;
         lock (_lifecycleLock)
         {
             if (generation != _mirrorGeneration)
             {
-                replaced = process;
+                superseded = true;
             }
             else
             {
                 replaced = _mirrorProcess;
                 _mirrorProcess = process;
                 MirroredDeviceSerial = serial;
+                process.EnableRaisingEvents = true;
+                process.Exited += (_, _) => OnProcessExited(process);
             }
         }
-        KillProcess(replaced);
-        if (generation != Volatile.Read(ref _mirrorGeneration))
+        if (superseded)
         {
+            KillProcess(process);
             LastError = "scrcpy start superseded.";
             return false;
         }
-
-        // Wait briefly to see if process starts and stays running
-        await Task.Delay(500).ConfigureAwait(false);
-
-        LastError = "scrcpy process exited immediately.";
-        lock (_lifecycleLock)
+        KillProcess(replaced);
+        bool stillCurrent;
+        lock (_lifecycleLock) stillCurrent = ReferenceEquals(_mirrorProcess, process) && !process.HasExited;
+        if (!stillCurrent)
         {
-            if (!ReferenceEquals(_mirrorProcess, process))
-            {
-                KillProcess(process);
-                return false;
-            }
-
-            if (process.HasExited)
-            {
-                _mirrorProcess = null;
-                MirroredDeviceSerial = null;
-                process.Dispose();
-                return false;
-            }
+            LastError = "scrcpy process exited immediately.";
+            NotifyStateChanged();
+            return false;
         }
-
         LastError = null;
-
-
+        NotifyStateChanged();
         return true;
-
-
     }
 
     private string BuildScrcpyArguments(string serial, ScrcpyOptions? options)
@@ -167,7 +168,7 @@ public class ScrcpyService : IScrcpyService
             }
         }
 
-        args += $" --window-title \"QA Mirror - {serial}\"";
+        args += $" --window-title \"QA Mirror - {SecurityHelper.HashSerial(serial)}\"";
 
         return args;
     }
@@ -183,6 +184,25 @@ public class ScrcpyService : IScrcpyService
             MirroredDeviceSerial = null;
         }
         KillProcess(process);
+        NotifyStateChanged();
+    }
+
+    private void OnProcessExited(System.Diagnostics.Process process)
+    {
+        lock (_lifecycleLock)
+        {
+            if (!ReferenceEquals(_mirrorProcess, process)) return;
+            _mirrorProcess = null;
+            MirroredDeviceSerial = null;
+        }
+        process.Dispose();
+        NotifyStateChanged();
+    }
+
+    private void NotifyStateChanged()
+    {
+        try { StateChanged?.Invoke(); }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "[ScrcpyService] Mirror state observer failed"); }
     }
 
     private static void KillProcess(System.Diagnostics.Process? process)

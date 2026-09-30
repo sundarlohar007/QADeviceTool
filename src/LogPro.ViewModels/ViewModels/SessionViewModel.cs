@@ -40,6 +40,26 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private LogLevel _selectedLogLevel = LogLevel.Verbose;
 
     public Array LogLevels => Enum.GetValues(typeof(LogLevel));
+    public Array LogcatBuffers => Enum.GetValues(typeof(LogcatBuffer));
+    public Array LogcatFormats => Enum.GetValues(typeof(LogcatFormat));
+    public string PauseDisplayLabel => IsPaused ? "Resume display" : "Pause display";
+    public string CaptureHealthText
+    {
+        get
+        {
+            if (SelectedSession == null) return "No session selected";
+            var stats = _sessionService.GetCaptureStatistics(SelectedSession.Id);
+            return $"Captured {SelectedSession.LogLineCount:N0} | showing {LogEntriesView.Count:N0}" +
+                (SelectedSession.Status == SessionStatus.Capturing
+                    ? $" | pending {stats.PendingLines:N0} | dropped {stats.DroppedLines:N0}" : string.Empty) +
+                (IsPaused ? " | display paused" : string.Empty);
+        }
+    }
+    public string SelectedSessionDetails => SelectedSession == null ? "Select a session to see its details." :
+        $"{SelectedSession.Platform} | device {(string.IsNullOrEmpty(SelectedSession.DeviceId) ? "unknown" : SelectedSession.DeviceId)} | {SelectedSession.Status}\n" +
+        $"Started {SelectedSession.StartTime:g}" +
+        (SelectedSession.EndTime is { } end ? $" | ended {end:g}" : string.Empty) +
+        $"\n{SelectedSession.LogFilePath}";
 
     [ObservableProperty]
     private ObservableCollection<LogLevelFilterItem> _logLevelFilters = new();
@@ -72,7 +92,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private int _disposed;
     private readonly HashSet<string> _autoCaptureInProgress = new();
     private readonly object _autoCaptureLock = new();
-    private bool _isLoadingSession;
+    private int _loadGeneration;
+    private string? _lastRecordingSessionId;
+    private string? _lastRecordingSerial;
+    private CancellationTokenSource? _fullSearchCts;
+    [ObservableProperty]
+    private bool _isShowingFullFileSearch;
     private readonly CrashDetector _crashDetector = new();
 
     [ObservableProperty]
@@ -93,6 +118,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     private string? _screenRecordRemotePath;
     private string? _screenRecordSerial;
+    private string? _screenRecordSessionId;
 
     [ObservableProperty]
     private bool _autoCapture;
@@ -105,6 +131,9 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isRawMode = true;
+
+    [ObservableProperty]
+    private bool _showBookmarksOnly;
 
     [ObservableProperty]
     private bool _isAutoScrollEnabled = true;
@@ -129,6 +158,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
         _deviceMonitor.DeviceConnected += OnDeviceConnected;
         _deviceMonitor.DeviceDisconnected += OnDeviceDisconnected;
+        _sessionService.CaptureStarted += OnCaptureStarted;
+        _sessionService.CaptureStopped += OnCaptureStopped;
 
         // Populate device list from current state (devices may already be connected)
         var currentDevices = _deviceMonitor.CurrentDevices;
@@ -184,17 +215,15 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         _dispatcher.Post(() =>
         {
+            var selectedSerial = SelectedDevice?.Serial;
+            var selectedPlatform = SelectedDevice?.Platform;
             AvailableDevices.Clear();
             foreach (var d in devices)
                 AvailableDevices.Add(d);
 
-            // If the previously selected device was unplugged, clear it
-            if (SelectedDevice != null && !devices.Any(d => d.Serial == SelectedDevice.Serial))
-                SelectedDevice = null;
-
-            // Auto-select the first available device
-            if (SelectedDevice == null && devices.Count > 0)
-                SelectedDevice = devices[0];
+            SelectedDevice = devices.FirstOrDefault(d =>
+                d.Serial == selectedSerial && d.Platform == selectedPlatform)
+                ?? devices.FirstOrDefault();
         });
     }
 
@@ -208,7 +237,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// </summary>
     private void OnDeviceConnected(DeviceInfo device)
     {
-        if (!AutoCapture) return;
+        if (!AutoCapture || device.ConnectionState != DeviceConnectionState.Online) return;
 
         _dispatcher.Post(async () =>
         {
@@ -233,18 +262,24 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 var started = await _sessionService.StartCaptureAsync(session, SelectedLogBuffer, SelectedLogFormat);
                 if (started)
                 {
-                    IsCapturing = true;
-                    LogEntries.Clear();
-                    _crashDetector.Clear();
-                    CrashCount = 0;
-                    HasCrashAlert = false;
-                    StatusMessage = $"[REC] Auto-capturing - {device.DisplayName} ({device.Serial})";
+                    if (SelectedSession?.Id == session.Id)
+                    {
+                        IsCapturing = true;
+                        LogEntries.Clear();
+                        LogEntriesView.Clear();
+                        _crashDetector.Clear();
+                        CrashCount = 0;
+                        HasCrashAlert = false;
+                        StatusMessage = $"[REC] Auto-capturing - {device.DisplayName} ({device.Serial})";
+                    }
                     if (!_isSubscribedToLogBatch)
                     {
                         _sessionService.LogBatchReceived += OnLogBatchReceived;
                         _isSubscribedToLogBatch = true;
                     }
                 }
+                else if (SelectedSession?.Id == session.Id)
+                    StatusMessage = $"[!] Auto-capture could not start for {device.DisplayName}. Check the device and platform tools.";
             }
             catch (Exception ex)
             {
@@ -267,15 +302,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         {
             try
             {
-                var stoppedSession = _sessionService.StopCaptureForDevice(device.Serial, Sessions);
+                var stoppedSession = _sessionService.GetActiveSessionForDevice(device.Serial);
                 if (stoppedSession != null)
                 {
-                    if (_isSubscribedToLogBatch)
-                    {
-                        _sessionService.LogBatchReceived -= OnLogBatchReceived;
-                        _isSubscribedToLogBatch = false;
-                    }
-                    IsCapturing = false;
+                    _sessionService.StopCapture(stoppedSession);
+                    if (SelectedSession?.Id == stoppedSession.Id)
+                        IsCapturing = false;
                     StatusMessage = $"[STOP] Device disconnected. {stoppedSession.LogLineCount} lines captured > {System.IO.Path.GetFileName(stoppedSession.LogFilePath)}";
                     OnPropertyChanged(nameof(SelectedSession));
                 }
@@ -288,12 +320,58 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         try
         {
+            var active = _sessionService.ActiveSessions;
             var saved = _sessionService.GetSavedSessions();
             Sessions.Clear();
+            foreach (var session in active)
+                Sessions.Add(session);
             foreach (var s in saved)
-                Sessions.Add(s);
+                if (!active.Any(a => string.Equals(a.SessionDirectory, s.SessionDirectory, StringComparison.OrdinalIgnoreCase)))
+                    Sessions.Add(s);
+            if (active.Count > 0)
+            {
+                SelectedSession = active[0];
+                IsCapturing = true;
+                if (!_isSubscribedToLogBatch)
+                {
+                    _sessionService.LogBatchReceived += OnLogBatchReceived;
+                    _isSubscribedToLogBatch = true;
+                }
+            }
         }
         catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Operation failed"); }
+    }
+
+    private void OnCaptureStarted(LogSession session)
+    {
+        _dispatcher.Post(() =>
+        {
+            if (Volatile.Read(ref _disposed) != 0) return;
+            if (Sessions.All(s => s.Id != session.Id))
+            {
+                Sessions.Insert(0, session);
+                SelectedSession = session;
+            }
+            if (SelectedSession?.Id == session.Id)
+                IsCapturing = true;
+            if (!_isSubscribedToLogBatch)
+            {
+                _sessionService.LogBatchReceived += OnLogBatchReceived;
+                _isSubscribedToLogBatch = true;
+            }
+        });
+    }
+
+    private void OnCaptureStopped(LogSession session)
+    {
+        _dispatcher.Post(() =>
+        {
+            if (Volatile.Read(ref _disposed) != 0) return;
+            if (SelectedSession?.Id == session.Id)
+                IsCapturing = false;
+            OnPropertyChanged(nameof(CaptureHealthText));
+            OnPropertyChanged(nameof(SelectedSessionDetails));
+        });
     }
 
     [RelayCommand]
@@ -315,8 +393,14 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                     return;
                 }
             }
+            if (device.ConnectionState != DeviceConnectionState.Online)
+            {
+                StatusMessage = $"[!] {device.DisplayName} is {device.StatusText}. Connect and authorize it before capture.";
+                return;
+            }
 
-            if (SelectedSession == null || SelectedSession.Status != SessionStatus.Idle)
+            if (SelectedSession == null || SelectedSession.Status != SessionStatus.Idle ||
+                !string.Equals(SelectedSession.DeviceSerial, device.Serial, StringComparison.OrdinalIgnoreCase))
             {
                 var session = _sessionService.CreateSession(device, NewSessionName);
                 Sessions.Insert(0, session);
@@ -324,15 +408,20 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 NewSessionName = string.Empty;
             }
 
-            var started = await _sessionService.StartCaptureAsync(SelectedSession!, SelectedLogBuffer, SelectedLogFormat);
+            var captureSession = SelectedSession!;
+            var started = await _sessionService.StartCaptureAsync(captureSession, SelectedLogBuffer, SelectedLogFormat);
             if (started)
             {
-                IsCapturing = true;
-                LogEntries.Clear();
-                _crashDetector.Clear();
-                CrashCount = 0;
-                HasCrashAlert = false;
-                StatusMessage = $"[REC] Capturing - {device.DisplayName} ({device.Serial})";
+                if (SelectedSession?.Id == captureSession.Id)
+                {
+                    IsCapturing = true;
+                    LogEntries.Clear();
+                    LogEntriesView.Clear();
+                    _crashDetector.Clear();
+                    CrashCount = 0;
+                    HasCrashAlert = false;
+                    StatusMessage = $"[REC] Capturing - {device.DisplayName} ({device.Serial})";
+                }
 
                 if (!_isSubscribedToLogBatch)
                 {
@@ -356,7 +445,18 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private void AnalyzeWithAI() { }
 
     [RelayCommand]
-    private void TogglePause() => IsPaused = !IsPaused;
+    private void TogglePause()
+    {
+        IsPaused = !IsPaused;
+        if (!IsPaused) RebuildFilteredView();
+        StatusMessage = IsPaused ? "Live display paused; capture continues to disk." : "Live display resumed.";
+    }
+
+    partial void OnIsPausedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PauseDisplayLabel));
+        OnPropertyChanged(nameof(CaptureHealthText));
+    }
 
     private void OnLogBatchReceived(string sessionId, string batch)
     {
@@ -365,7 +465,6 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         {
             if (Volatile.Read(ref _disposed) != 0) return;
             if (SelectedSession == null || SelectedSession.Id != sessionId) return;
-            if (IsPaused) return;
 
             var platform = SelectedSession.Platform;
             var lines = batch.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -382,29 +481,34 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             LogEntries.AddRange(entries);
 
             // Incremental filtering: append only entries matching the active filter
-            foreach (var entry in entries)
-            {
-                if (FilterLogEntry(entry))
-                    LogEntriesView.Add(entry);
-            }
+            if (!IsPaused)
+                LogEntriesView.AddRange(entries.Where(FilterLogEntry).ToList());
 
             if (LogEntries.Count > 200000)
                 TrimLogEntries(150000);
 
-            ScrollToEndRequested?.Invoke();
+            if (!IsPaused) ScrollToEndRequested?.Invoke();
+            OnPropertyChanged(nameof(CaptureHealthText));
         });
     }
 
-    private LogEntry ParseLogLine(string rawLine)
+    private LogEntry ParseLogLine(string rawLine, bool? rawMode = null)
     {
         var entry = new LogEntry { RawLine = rawLine, Message = rawLine, Level = LogLevel.Unknown };
         entry.Level = DetectLogLevel(rawLine);
 
-        if (!IsRawMode)
+        if (!(rawMode ?? IsRawMode))
         {
             try
             {
-                if (rawLine.StartsWith("["))
+                var android = _logcatStructuredRx.Match(rawLine);
+                if (android.Success)
+                {
+                    entry.Timestamp = android.Groups["timestamp"].Value;
+                    entry.Tag = android.Groups["tag"].Value.Trim();
+                    entry.Message = android.Groups["message"].Value;
+                }
+                else if (rawLine.StartsWith("["))
                 {
                     int closeBracket = rawLine.IndexOf(']');
                     if (closeBracket > 1)
@@ -419,47 +523,9 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         return entry;
     }
 
-    private void AddLogEntry(string message, LogLevel level)
-    {
-        _dispatcher.Post(() =>
-        {
-            LogEntries.Add(new LogEntry
-            {
-                Timestamp = DateTime.Now.ToString("HH:mm:ss.fff"),
-                Level = level,
-                Message = message,
-                RawLine = message
-            });
-            ScrollToEndRequested?.Invoke();
-        });
-    }
-
-    private void ParseAndAddLogEntry(string rawLine)
-    {
-        var entry = new LogEntry { RawLine = rawLine, Message = rawLine, Level = LogLevel.Unknown };
-
-        // Always detect log level from raw line for color coding
-        entry.Level = DetectLogLevel(rawLine);
-
-        if (!IsRawMode)
-        {
-            try
-            {
-                if (rawLine.StartsWith("["))
-                {
-                    int closeBracket = rawLine.IndexOf(']');
-                    if (closeBracket > 1)
-                    {
-                        entry.Timestamp = rawLine.Substring(1, closeBracket - 1);
-                        entry.Message = rawLine.Substring(closeBracket + 1).TrimStart();
-                    }
-                }
-            }
-            catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Parse failed, keeping raw message"); }
-        }
-
-        LogEntries.Add(entry);
-    }
+    private static readonly Regex _logcatStructuredRx = new(
+        @"^(?<timestamp>\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+\d+\s+\d+\s+[VDIWEFA]\s+(?<tag>[^:]+):\s*(?<message>.*)$",
+        RegexOptions.Compiled);
 
     // Android threadtime format: "MM-DD HH:MM:SS.mmm  PID  TID L Tag: msg"
     //   level letter sits between TID and Tag, separated by single spaces.
@@ -570,15 +636,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         {
             if (SelectedSession == null) return;
 
-            if (_isSubscribedToLogBatch)
-            {
-                _sessionService.LogBatchReceived -= OnLogBatchReceived;
-                _isSubscribedToLogBatch = false;
-            }
             _sessionService.StopCapture(SelectedSession);
             IsCapturing = false;
             StatusMessage = $"[STOP] Stopped. {SelectedSession.LogLineCount} lines captured > {Path.GetFileName(SelectedSession.LogFilePath)}";
             OnPropertyChanged(nameof(SelectedSession));
+            OnPropertyChanged(nameof(CaptureHealthText));
+            OnPropertyChanged(nameof(SelectedSessionDetails));
         }
         catch (Exception ex)
         {
@@ -592,19 +655,20 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         try
         {
-            if (SelectedSession == null)
+            var session = SelectedSession;
+            if (session == null)
             {
                 StatusMessage = "[!] No active session to save.";
                 return;
             }
-            if (!File.Exists(SelectedSession.LogFilePath))
+            if (!File.Exists(session.LogFilePath))
             {
                 StatusMessage = "[!] Log file not found on disk.";
                 return;
             }
-            var rawContent = await File.ReadAllTextAsync(SelectedSession.LogFilePath);
-            var path = await _sessionService.SaveLogToFileAsync(SelectedSession, rawContent);
-            StatusMessage = $"Log saved: {System.IO.Path.GetFileName(path)}";
+            var path = await _sessionService.SaveLogCopyAsync(session);
+            StatusMessage = path.StartsWith("Error:", StringComparison.Ordinal)
+                ? $"[!] {path}" : $"Log saved: {System.IO.Path.GetFileName(path)}";
         }
         catch (Exception ex)
         {
@@ -674,10 +738,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var device = SelectedDevice ?? (AvailableDevices.Count > 0 ? AvailableDevices[0] : null);
+            var device = ResolveArtifactDevice();
             if (device == null)
             {
-                StatusMessage = "[!] No device connected for snapshot.";
+                StatusMessage = SelectedSession == null
+                    ? "[!] Select a connected device for snapshot."
+                    : "[!] The selected session's device is not connected for snapshot.";
                 return;
             }
 
@@ -689,11 +755,11 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
             else
             {
-                saveDir = Helpers.PathHelper.GetDefaultSessionsDirectory();
+                saveDir = _sessionService.SessionsRootDirectory;
             }
 
             var deviceHash = Helpers.SecurityHelper.HashSerial(device.Serial);
-            var fileName = $"snapshot_{deviceHash}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+            var fileName = $"snapshot_{deviceHash}_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.png";
             var outputPath = Path.Combine(saveDir, fileName);
 
             StatusMessage = "Capturing snapshot...";
@@ -726,22 +792,37 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var device = SelectedDevice ?? (AvailableDevices.Count > 0 ? AvailableDevices[0] : null);
+            var session = SelectedSession;
+            var device = ResolveArtifactDevice();
             if (device == null)
             {
-                StatusMessage = "[!] No device connected for bug report.";
+                StatusMessage = session == null
+                    ? "[!] Select a connected device for bug report."
+                    : "[!] The selected session's device is not connected for bug report.";
                 return;
             }
 
-            var saveDir = SelectedSession != null && !string.IsNullOrEmpty(SelectedSession.SessionDirectory)
-                ? SelectedSession.SessionDirectory
-                : Helpers.PathHelper.GetDefaultSessionsDirectory();
+            var saveDir = session != null && !string.IsNullOrEmpty(session.SessionDirectory)
+                ? session.SessionDirectory
+                : _sessionService.SessionsRootDirectory;
+
+            var recording = _lastRecordingSerial == device.Serial &&
+                _lastRecordingSessionId == session?.Id ? _lastRecordingPath : null;
+            var crashes = _crashDetector.DetectedCrashes;
+            if (!UiServices.Dialogs.Confirm("Bug Report Preview",
+                $"Device: {device.DisplayName}\nSession: {session?.Name ?? "None"}\n" +
+                $"Includes screenshot, recent logs, crash alerts, device diagnostics" +
+                (recording == null ? "." : ", and a screen recording.") +
+                "\nScreenshots and recordings can show on-screen personal information.")) return;
 
             StatusMessage = "Generating Bug Report...";
-            var logLines = LogEntries.TakeLast(20000).Select(e => e.RawLine).ToList();
+            var logLines = session != null && File.Exists(session.LogFilePath)
+                ? (await _sessionService.ReadLogContentAsync(session, 20000))
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList()
+                : LogEntries.TakeLast(20000).Select(e => e.RawLine).ToList();
             var (success, message) = await _bugReportService.GenerateAsync(
-                device, saveDir, SelectedSession?.Name ?? "N/A",
-                logLines, _crashDetector.DetectedCrashes, _lastRecordingPath);
+                device, saveDir, session?.Name ?? "N/A",
+                logLines, crashes, recording);
             StatusMessage = message;
         }
         catch (Exception ex)
@@ -749,6 +830,23 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             AppLogger.Log.Error(ex, "[Session] GenerateBugReportAsync failed");
             StatusMessage = $"[!] Bug Report error: {ex.Message}";
         }
+    }
+
+    private DeviceInfo? ResolveArtifactDevice()
+    {
+        if (SelectedSession == null)
+            return SelectedDevice == null
+                ? AvailableDevices.FirstOrDefault(d => d.ConnectionState == DeviceConnectionState.Online)
+                : SelectedDevice.ConnectionState == DeviceConnectionState.Online ? SelectedDevice : null;
+        var match = AvailableDevices.FirstOrDefault(d =>
+            d.ConnectionState == DeviceConnectionState.Online &&
+            ((!string.IsNullOrEmpty(SelectedSession.DeviceSerial) &&
+             string.Equals(d.Serial, SelectedSession.DeviceSerial, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrEmpty(SelectedSession.DeviceId) &&
+             Helpers.SecurityHelper.HashSerial(d.Serial) == SelectedSession.DeviceId)));
+        if (match == null)
+            StatusMessage = "[!] The selected session's device is not connected.";
+        return match;
     }
 
     [RelayCommand]
@@ -763,7 +861,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var session = _sessionService.CreateSession(device);
+            var session = _sessionService.CreateSession(device, NewSessionName);
             Sessions.Insert(0, session);
             SelectedSession = session;
             NewSessionName = string.Empty;
@@ -791,13 +889,11 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 "Delete Session",
                 $"Delete session '{SelectedSession.Name}'? This cannot be undone.");
             if (!confirm) return;
-            if (_isSubscribedToLogBatch)
+            if (!_sessionService.DeleteSession(SelectedSession))
             {
-                _sessionService.LogBatchReceived -= OnLogBatchReceived;
-                _isSubscribedToLogBatch = false;
+                StatusMessage = "[!] Could not delete the session folder.";
+                return;
             }
-            _sessionService.StopCapture(SelectedSession);
-            _sessionService.DeleteSession(SelectedSession);
             Sessions.Remove(SelectedSession);
             SelectedSession = null;
             IsCapturing = false;
@@ -842,7 +938,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 StatusMessage = "[!] Session folder path is empty.";
             }
 
-            var rootDir = Helpers.PathHelper.GetDefaultSessionsDirectory();
+            var rootDir = _sessionService.SessionsRootDirectory;
             if (Directory.Exists(rootDir))
             {
                 System.Diagnostics.Process.Start("explorer.exe", rootDir);
@@ -864,9 +960,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private void ClearLog()
     {
         LogEntries.Clear();
+        LogEntriesView.Clear();
         _crashDetector.Clear();
         CrashCount = 0;
         HasCrashAlert = false;
+        OnPropertyChanged(nameof(CaptureHealthText));
+        StatusMessage = "Viewer cleared; captured log file was retained.";
     }
 
     [RelayCommand]
@@ -887,10 +986,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var device = SelectedDevice;
+            var session = SelectedSession;
+            var device = ResolveArtifactDevice();
             if (device == null)
             {
-                StatusMessage = "[!] No device selected for screen recording.";
+                StatusMessage = session == null
+                    ? "[!] Select a connected device for screen recording."
+                    : "[!] The selected session's device is not connected for recording.";
                 return;
             }
 
@@ -913,8 +1015,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var saveDir = SelectedSession?.SessionDirectory
-                ?? Helpers.PathHelper.GetDefaultSessionsDirectory();
+            var saveDir = session?.SessionDirectory
+                ?? _sessionService.SessionsRootDirectory;
             if (!Directory.Exists(saveDir)) Directory.CreateDirectory(saveDir);
 
             _screenRecordRemotePath = await _adbService.StartScreenRecordAsync(
@@ -923,9 +1025,11 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             if (_screenRecordRemotePath != null)
             {
                 _screenRecordSerial = device.Serial;
+                _screenRecordSessionId = session?.Id;
                 IsScreenRecording = true;
                 ScreenRecordStatus = "[REC] Recording screen (no audio; 3-minute maximum)...";
                 StatusMessage = ScreenRecordStatus;
+                _ = MonitorScreenRecordingAsync(device.Serial);
             }
             else
             {
@@ -939,12 +1043,30 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
     }
 
+    private async Task MonitorScreenRecordingAsync(string serial)
+    {
+        try
+        {
+            while (IsScreenRecording && _screenRecordSerial == serial && Volatile.Read(ref _disposed) == 0)
+            {
+                await Task.Delay(2000);
+                if (IsScreenRecording && _screenRecordSerial == serial && !_adbService.IsScreenRecording)
+                {
+                    await StopScreenRecordAsync();
+                    return;
+                }
+            }
+        }
+        catch (Exception ex) { AppLogger.Log.Debug(ex, "[Session] Recording monitor failed"); }
+    }
+
     private async Task StopScreenRecordAsync()
     {
         try
         {
             var serial = _screenRecordSerial;
             if (serial == null) return;
+            var recordingSessionId = _screenRecordSessionId;
 
             IsScreenRecording = false;
             ScreenRecordStatus = "Saving recording...";
@@ -952,12 +1074,15 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
             var localPath = await _adbService.StopScreenRecordAsync(serial);
             _screenRecordSerial = null;
+            _screenRecordSessionId = null;
 
             if (localPath != null && File.Exists(localPath))
             {
                 ScreenRecordStatus = string.Empty;
                 StatusMessage = $"Screen recording saved: {Path.GetFileName(localPath)}";
                 _lastRecordingPath = localPath;
+                _lastRecordingSerial = serial;
+                _lastRecordingSessionId = recordingSessionId;
             }
             else
             {
@@ -997,7 +1122,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 ? string.Join(Environment.NewLine, entries.Select(e => e.RawLine))
                 : string.Join(Environment.NewLine, entries.Select(e => $"[{e.Timestamp}] [{e.Level}] {e.Message}"));
 
-            UiServices.Clipboard.SetText(text);
+            UiServices.Clipboard.SetText(Helpers.SecurityHelper.RedactSensitiveText(text));
         }
         catch (Exception ex)
         {
@@ -1026,12 +1151,11 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private int _currentBookmarkIndex = -1;
 
     [RelayCommand]
-    private void ToggleBookmark(int logEntryIndex)
+    private void ToggleBookmark(LogEntry entry)
     {
-        if (logEntryIndex < 0 || logEntryIndex >= LogEntries.Count) return;
-        var entry = LogEntries[logEntryIndex];
+        if (!LogEntries.Contains(entry)) return;
         entry.IsBookmarked = !entry.IsBookmarked;
-        // OnPropertyChanged(nameof(LogEntriesView)); // Not needed with INotifyPropertyChanged on LogEntry
+        if (ShowBookmarksOnly) RebuildFilteredView();
     }
 
     public int? NextBookmark()
@@ -1073,6 +1197,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private bool FilterLogEntry(object obj)
     {
         if (obj is not LogEntry entry) return false;
+        if (ShowBookmarksOnly && !entry.IsBookmarked) return false;
 
         var selectedLevels = SelectedLevels;
 
@@ -1085,9 +1210,30 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             {
                 try
                 {
-                    return Regex.IsMatch(entry.RawLine, SearchText, RegexOptions.IgnoreCase);
+                    if (_cachedSearchPattern != SearchText)
+                    {
+                        _cachedSearchPattern = SearchText;
+                        _searchRegexTimedOut = false;
+                        _searchRegexInvalid = false;
+                        _cachedSearchRegex = null;
+                        _cachedSearchRegex = new Regex(SearchText,
+                            RegexOptions.IgnoreCase | RegexOptions.Compiled,
+                            TimeSpan.FromMilliseconds(25));
+                    }
+                    return !_searchRegexTimedOut && !_searchRegexInvalid &&
+                        _cachedSearchRegex?.IsMatch(entry.RawLine) == true;
                 }
-                catch (ArgumentException) { return false; } // invalid pattern → no matches
+                catch (RegexMatchTimeoutException)
+                {
+                    _searchRegexTimedOut = true;
+                    StatusMessage = "[!] Regex search timed out. Use a simpler expression.";
+                    return false;
+                }
+                catch (ArgumentException)
+                {
+                    _searchRegexInvalid = true;
+                    return false;
+                }
             }
 
             return entry.Message.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
@@ -1100,13 +1246,34 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     partial void OnIsRegexSearchChanged(bool value)
     {
+        _cachedSearchPattern = null;
         RebuildFilteredView();
     }
 
+    partial void OnShowBookmarksOnlyChanged(bool value) => RebuildFilteredView();
+
+    partial void OnIsRawModeChanged(bool value)
+    {
+        foreach (var entry in LogEntries)
+        {
+            var parsed = ParseLogLine(entry.RawLine);
+            entry.Timestamp = parsed.Timestamp;
+            entry.Level = parsed.Level;
+            entry.Tag = parsed.Tag;
+            entry.Message = parsed.Message;
+        }
+        RebuildFilteredView();
+    }
+
+    private Regex? _cachedSearchRegex;
+    private string? _cachedSearchPattern;
+    private bool _searchRegexTimedOut;
+    private bool _searchRegexInvalid;
     private CancellationTokenSource? _searchDebounceCts;
 
     partial void OnSearchTextChanged(string value)
     {
+        _cachedSearchPattern = null;
         // FEAT-03: debounce 300ms — avoid re-filtering 100k+ entries on every keystroke
         var oldCts = _searchDebounceCts;
         _searchDebounceCts = new CancellationTokenSource();
@@ -1134,30 +1301,41 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedSessionChanged(LogSession? value)
     {
+        _fullSearchCts?.Cancel();
+        IsShowingFullFileSearch = false;
+        Interlocked.Increment(ref _loadGeneration);
+        IsCapturing = value?.Status == SessionStatus.Capturing;
+        OnPropertyChanged(nameof(SelectedSessionDetails));
+        OnPropertyChanged(nameof(CaptureHealthText));
+        IsPaused = false;
+        _crashDetector.Clear();
+        CrashCount = 0;
+        HasCrashAlert = false;
         if (value != null)
         {
-            _ = LoadSessionLogSafeAsync(value);
+            _ = LoadSessionLogSafeAsync(value, Volatile.Read(ref _loadGeneration));
         }
         else
         {
             LogEntries.Clear();
+            LogEntriesView.Clear();
             StatusMessage = "Connect a device and click 'Start Capture' to begin.";
         }
     }
 
-    private async Task LoadSessionLogSafeAsync(LogSession session)
+    private async Task LoadSessionLogSafeAsync(LogSession session, int generation)
     {
-        if (_isLoadingSession) return;
-        _isLoadingSession = true;
-
         try
         {
             if (string.IsNullOrEmpty(session.LogFilePath) || !File.Exists(session.LogFilePath))
             {
                 if (!string.IsNullOrEmpty(session.SessionDirectory) && Directory.Exists(session.SessionDirectory))
                 {
-                    var logFiles = Directory.GetFiles(session.SessionDirectory, "*.txt")
+                    var logFiles = Directory.GetFiles(session.SessionDirectory, "*_log.txt")
+                        .Where(f => !f.EndsWith("_app_log.txt", StringComparison.OrdinalIgnoreCase))
                         .Concat(Directory.GetFiles(session.SessionDirectory, "*.log"))
+                        .Concat(Directory.GetFiles(session.SessionDirectory, "manual_log_*.txt"))
+                        .Concat(Directory.GetFiles(session.SessionDirectory, "saved_log_*.txt"))
                         .ToArray();
 
                     if (logFiles.Length > 0)
@@ -1168,7 +1346,9 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                     {
                         await _dispatcher.InvokeAsync(() =>
                         {
+                            if (generation != Volatile.Read(ref _loadGeneration)) return;
                             LogEntries.Clear();
+                            LogEntriesView.Clear();
                             StatusMessage = session.Status == SessionStatus.Idle
                                 ? "Ready to capture. Click 'Start' to begin."
                                 : "No log file found.";
@@ -1180,7 +1360,9 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 {
                     await _dispatcher.InvokeAsync(() =>
                     {
+                        if (generation != Volatile.Read(ref _loadGeneration)) return;
                         LogEntries.Clear();
+                        LogEntriesView.Clear();
                         StatusMessage = session.Status == SessionStatus.Idle
                             ? "Ready to capture. Click 'Start' to begin."
                             : "No log file found.";
@@ -1189,16 +1371,21 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 }
             }
 
-            await _dispatcher.InvokeAsync(() => StatusMessage = "Loading log...");
+            await _dispatcher.InvokeAsync(() =>
+            {
+                if (generation == Volatile.Read(ref _loadGeneration)) StatusMessage = "Loading log...";
+            });
             if (Volatile.Read(ref _disposed) != 0) return;
             var content = await _sessionService.ReadLogContentAsync(session, maxLines: 200000);
 
-            if (Volatile.Read(ref _disposed) != 0) return;
+            if (Volatile.Read(ref _disposed) != 0 || generation != Volatile.Read(ref _loadGeneration)) return;
             var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var rawMode = IsRawMode;
+            var parsed = await Task.Run(() => lines.Select(line => ParseLogLine(line, rawMode)).ToList());
 
             await _dispatcher.InvokeAsync(() =>
             {
-                var parsed = lines.Select(ParseLogLine).ToList();
+                if (generation != Volatile.Read(ref _loadGeneration) || SelectedSession?.Id != session.Id) return;
                 LogEntries.Clear();
                 LogEntries.AddRange(parsed);
                 RebuildFilteredView();
@@ -1213,11 +1400,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         {
             AppLogger.Log.Error(ex, "[Session] LoadSessionLogSafeAsync failed");
             await _dispatcher.InvokeAsync(() =>
-                StatusMessage = $"Could not load log file: {ex.Message}");
-        }
-        finally
-        {
-            _isLoadingSession = false;
+            {
+                if (generation == Volatile.Read(ref _loadGeneration))
+                    StatusMessage = $"Could not load log file: {ex.Message}";
+            });
         }
 
     }
@@ -1242,6 +1428,71 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         LogEntriesView.Clear();
         LogEntriesView.AddRange(filtered);
+        OnPropertyChanged(nameof(CaptureHealthText));
+    }
+
+    [RelayCommand]
+    private async Task SearchEntireSessionAsync()
+    {
+        var session = SelectedSession;
+        var query = SearchText;
+        if (session == null || session.Status == SessionStatus.Capturing ||
+            string.IsNullOrWhiteSpace(query) || !File.Exists(session.LogFilePath))
+        {
+            StatusMessage = "[!] Select a stopped session and enter a search term.";
+            return;
+        }
+        _fullSearchCts?.Cancel();
+        _fullSearchCts = new CancellationTokenSource();
+        var generation = Interlocked.Increment(ref _loadGeneration);
+        var token = _fullSearchCts.Token;
+        Regex? regex = null;
+        try
+        {
+            if (IsRegexSearch)
+                regex = new Regex(query, RegexOptions.Compiled | RegexOptions.IgnoreCase,
+                    TimeSpan.FromMilliseconds(25));
+            StatusMessage = "Searching complete session file...";
+            var matches = await Task.Run(async () =>
+            {
+                var results = new List<string>();
+                await using var stream = new FileStream(session.LogFilePath, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                using var reader = new StreamReader(stream);
+                while (await reader.ReadLineAsync(token) is { } line)
+                {
+                    if (regex?.IsMatch(line) ?? line.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        results.Add(line);
+                        if (results.Count == 5000) break;
+                    }
+                }
+                return results;
+            }, token);
+            if (SelectedSession?.Id != session.Id || token.IsCancellationRequested ||
+                generation != Volatile.Read(ref _loadGeneration)) return;
+            IsShowingFullFileSearch = true;
+            LogEntries.Clear();
+            LogEntries.AddRange(matches.Select(line => ParseLogLine(line)).ToList());
+            RebuildFilteredView();
+            StatusMessage = matches.Count == 5000
+                ? "Showing first 5,000 file matches. Narrow the search to see more."
+                : $"Found {matches.Count:N0} matches in the complete session file.";
+        }
+        catch (OperationCanceledException) { }
+        catch (RegexMatchTimeoutException) { StatusMessage = "[!] Regex search timed out. Use a simpler expression."; }
+        catch (ArgumentException ex) { StatusMessage = $"[!] Invalid search: {ex.Message}"; }
+        catch (Exception ex) { StatusMessage = $"[!] Search failed: {ex.Message}"; }
+    }
+
+    [RelayCommand]
+    private void ReturnToLiveTail()
+    {
+        if (SelectedSession == null) return;
+        _fullSearchCts?.Cancel();
+        IsShowingFullFileSearch = false;
+        var generation = Interlocked.Increment(ref _loadGeneration);
+        _ = LoadSessionLogSafeAsync(SelectedSession, generation);
     }
 
     public void Dispose()
@@ -1250,6 +1501,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceMonitor.DeviceConnected -= OnDeviceConnected;
         _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
+        _sessionService.CaptureStarted -= OnCaptureStarted;
+        _sessionService.CaptureStopped -= OnCaptureStopped;
         _crashDetector.CrashDetected -= OnCrashDetected;
         if (_isSubscribedToLogBatch)
         {
@@ -1258,6 +1511,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
         try { _searchDebounceCts?.Cancel(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Session] Dispose: cancel debounce CTS"); }
         try { _searchDebounceCts?.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Session] Dispose: dispose debounce CTS"); }
+        _fullSearchCts?.Cancel();
+        _fullSearchCts?.Dispose();
         if (IsScreenRecording)
             _ = StopScreenRecordAsync();
         GC.SuppressFinalize(this);

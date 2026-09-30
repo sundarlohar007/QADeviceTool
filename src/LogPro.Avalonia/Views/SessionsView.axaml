@@ -3,7 +3,13 @@
              xmlns:vm="using:LogPro.ViewModels"
              xmlns:conv="using:LogPro.Avalonia.Converters"
              x:Class="LogPro.Avalonia.Views.SessionsView"
+             x:Name="SessionRoot"
              x:DataType="vm:SessionViewModel">
+  <UserControl.Styles>
+    <Style Selector="Button.bookmarked">
+      <Setter Property="Foreground" Value="{DynamicResource BrushAccent}" />
+    </Style>
+  </UserControl.Styles>
   <DockPanel>
     <!-- Header -->
     <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
@@ -17,9 +23,11 @@
                   IsEnabled="{Binding IsCapturing, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="16,8" />
           <Button Content="Stop" Command="{Binding StopCaptureCommand}"
                   IsEnabled="{Binding IsCapturing}" Padding="16,8" />
-          <Button Content="Pause" Command="{Binding TogglePauseCommand}"
+          <Button Content="{Binding PauseDisplayLabel}" Command="{Binding TogglePauseCommand}"
                   IsEnabled="{Binding IsCapturing}" Padding="16,8" />
           <Button Content="Snapshot" Command="{Binding TakeSnapshotCommand}" Padding="16,8" />
+          <Button Content="Rec Screen" Command="{Binding ToggleScreenRecordCommand}" Padding="16,8" />
+          <Button Content="Bug report" Command="{Binding GenerateBugReportCommand}" Padding="16,8" />
           <Button Content="New Session" Command="{Binding CreateSessionCommand}" Padding="16,8" />
         </StackPanel>
       </DockPanel>
@@ -29,7 +37,24 @@
       <!-- Sessions list -->
       <Border Grid.Column="0" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0" Padding="12">
         <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="SESSIONS" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" Margin="4,0,0,8" />
+          <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="4,0,4,8">
+            <TextBlock Text="SESSIONS" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
+            <ComboBox ItemsSource="{Binding AvailableDevices}" SelectedItem="{Binding SelectedDevice}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate><TextBlock Text="{Binding DisplayName}" /></DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <CheckBox Content="Auto-capture on connect" IsChecked="{Binding AutoCapture}" />
+            <TextBox PlaceholderText="Session name" Text="{Binding NewSessionName}" />
+            <TextBlock Text="Android log options (ignored for iOS)" FontSize="10" />
+            <ComboBox ItemsSource="{Binding LogcatBuffers}" SelectedItem="{Binding SelectedLogBuffer}" />
+            <ComboBox ItemsSource="{Binding LogcatFormats}" SelectedItem="{Binding SelectedLogFormat}" />
+            <TextBlock Text="{Binding SelectedSessionDetails}" TextWrapping="Wrap" FontSize="10" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Button Content="Folder" Command="{Binding OpenSessionFolderCommand}" />
+              <Button Content="Delete" Command="{Binding DeleteSessionCommand}" />
+            </StackPanel>
+          </StackPanel>
           <ScrollViewer>
             <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}" Background="Transparent">
               <ListBox.ItemTemplate>
@@ -57,22 +82,39 @@
               <Button Content="Save" Command="{Binding SaveLogCommand}" Padding="10,6" />
               <Button Content="CSV" Command="{Binding ExportCsvCommand}" Padding="10,6" />
               <Button Content="JSON" Command="{Binding ExportJsonCommand}" Padding="10,6" />
+              <Button Content="Search all" Command="{Binding SearchEntireSessionCommand}" Padding="10,6" />
+              <Button Content="Tail" Command="{Binding ReturnToLiveTailCommand}" Padding="10,6" />
             </StackPanel>
           </DockPanel>
         </Border>
 
-        <ListBox ItemsSource="{Binding LogEntriesView}" Background="{DynamicResource BrushVoid}" FontFamily="Consolas, Menlo, monospace" FontSize="12">
+        <ListBox x:Name="LogList" ItemsSource="{Binding LogEntriesView}" Background="{DynamicResource BrushVoid}" FontFamily="Consolas, Menlo, monospace" FontSize="12">
           <ListBox.ItemTemplate>
             <DataTemplate>
-              <TextBlock Text="{Binding Message}" Foreground="{DynamicResource BrushLogText}" TextWrapping="NoWrap" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Content="★" Classes.bookmarked="{Binding IsBookmarked}" Command="{Binding #SessionRoot.DataContext.ToggleBookmarkCommand}" CommandParameter="{Binding}" ToolTip.Tip="Toggle bookmark" />
+                <TextBlock Text="{Binding Message}" Foreground="{DynamicResource BrushLogText}" TextWrapping="NoWrap" />
+              </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
 
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="12,4">
+          <ItemsControl ItemsSource="{Binding LogLevelFilters}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate><DataTemplate><CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected}" /></DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <CheckBox Content="Bookmarks only" IsChecked="{Binding ShowBookmarksOnly}" />
+        </StackPanel>
         <Border DockPanel.Dock="Bottom" Padding="12,8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0">
           <DockPanel>
             <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushAccent}" FontSize="11" VerticalAlignment="Center" />
-            <TextBlock DockPanel.Dock="Right" Text="{Binding LogEntriesView.Count, StringFormat='{}{0} lines'}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="{Binding CaptureHealthText}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
+              <CheckBox Content="Raw" IsChecked="{Binding IsRawMode}" />
+              <CheckBox Content="Auto-scroll" IsChecked="{Binding IsAutoScrollEnabled}" />
+              <Button Content="Copy visible" Command="{Binding CopyToClipboardCommand}" />
+            </StackPanel>
           </DockPanel>
         </Border>
       </DockPanel>

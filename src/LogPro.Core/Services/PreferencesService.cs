@@ -33,6 +33,7 @@ public interface IPreferencesStore
     void Save();
     DevicePreference GetDevicePreference(string serial);
     void SaveDevicePreference(string serial, DevicePreference pref);
+    bool TrySaveDevicePreference(string serial, DevicePreference pref);
     void ClearAllData();
     void CleanupOldLogs();
     void CleanupOldSessions();
@@ -116,17 +117,24 @@ public sealed class PreferencesStore : IPreferencesStore
 
     public void Save()
     {
+        TrySave();
+    }
+
+    private bool TrySave()
+    {
         try
         {
-            if (!PathHelper.IsSafeLocalPath(SettingsFilePath)) return;
+            if (!PathHelper.IsSafeLocalPath(SettingsFilePath)) return false;
             var json = JsonSerializer.Serialize(Current, LogProJsonContext.Default.AppPreferences);
             var tmpPath = SettingsFilePath + ".tmp";
             File.WriteAllText(tmpPath, json);
             File.Move(tmpPath, SettingsFilePath, overwrite: true);
+            return true;
         }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, "Failed to save preferences.");
+            return false;
         }
     }
 
@@ -145,6 +153,17 @@ public sealed class PreferencesStore : IPreferencesStore
     {
         Current.DevicePreferences[SecurityHelper.HashSerial(serial)] = pref;
         Save();
+    }
+
+    public bool TrySaveDevicePreference(string serial, DevicePreference pref)
+    {
+        var key = SecurityHelper.HashSerial(serial);
+        Current.DevicePreferences.TryGetValue(key, out var previous);
+        Current.DevicePreferences[key] = pref;
+        if (TrySave()) return true;
+        if (previous == null) Current.DevicePreferences.Remove(key);
+        else Current.DevicePreferences[key] = previous;
+        return false;
     }
 
     public void ClearAllData()
@@ -281,6 +300,7 @@ public static class PreferencesService
     public static void Save() => Instance.Save();
     public static DevicePreference GetDevicePreference(string serial) => Instance.GetDevicePreference(serial);
     public static void SaveDevicePreference(string serial, DevicePreference pref) => Instance.SaveDevicePreference(serial, pref);
+    public static bool TrySaveDevicePreference(string serial, DevicePreference pref) => Instance.TrySaveDevicePreference(serial, pref);
     public static void ClearAllData() => Instance.ClearAllData();
     public static void CleanupOldLogs() => Instance.CleanupOldLogs();
     public static void CleanupOldSessions() => Instance.CleanupOldSessions();

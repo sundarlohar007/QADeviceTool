@@ -1,5 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LogPro.Helpers;
@@ -19,6 +21,12 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly ISessionService _sessionService;
     private readonly IUiDispatcher _dispatcher;
+    private readonly IPreferencesStore _preferences;
+    private readonly Dictionary<(DevicePlatform Platform, string Serial), (string Notes, string Tag)> _drafts = new();
+    private int _detailsGeneration;
+    private string? _lastSnapshotDirectory;
+    private bool _disposed;
+    private bool _loadingPreferences;
 
     [ObservableProperty]
     private ObservableCollection<DeviceInfo> _devices = new();
@@ -29,8 +37,30 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _deviceDetails = "Select a device to view details.";
 
-    [ObservableProperty]
-    private bool _isMirroring;
+    public bool IsMirroring => SelectedDevice?.Platform == DevicePlatform.Android && _scrcpyService.IsRunning &&
+        _scrcpyService.MirroredDeviceSerial == SelectedDevice.Serial;
+    public bool HasSelectedDevice => SelectedDevice != null;
+    public bool CanMirror => SelectedDevice?.Platform == DevicePlatform.Android &&
+        SelectedDevice.ConnectionState == DeviceConnectionState.Online && !SelectedDevice.IsTemporarilyUnavailable && !IsMirroring;
+    public bool CanTakeSnapshot => SelectedDevice?.ConnectionState == DeviceConnectionState.Online &&
+        !SelectedDevice.IsTemporarilyUnavailable;
+    public bool HasSnapshotDirectory => _lastSnapshotDirectory != null;
+    public bool MaskSerials { get; private set; } = true;
+    public string SerialVisibilityActionText => MaskSerials ? "Reveal selected serial" : "Mask selected serial";
+    public string SelectedSerialDisplay => SelectedDevice == null ? string.Empty :
+        MaskSerials ? SelectedDevice.MaskedSerial : SelectedDevice.Serial;
+    public string CapabilityNotice => SelectedDevice switch
+    {
+        null => "Select a device to see available actions.",
+        { ConnectionState: DeviceConnectionState.Unauthorized } => "Authorize this Android device and reconnect before using device actions.",
+        { ConnectionState: DeviceConnectionState.PendingTrust } => "Trust this computer on the iOS device before using device actions.",
+        { ConnectionState: not DeviceConnectionState.Online } => "Device is unavailable. Reconnect it before using device actions.",
+        { IsTemporarilyUnavailable: true } => "Device missed a recent check. Waiting for it to reconnect before enabling actions.",
+        { Platform: DevicePlatform.iOS } => "iOS: screenshots are available when Developer Mode permits them. scrcpy mirroring and ADB wireless are Android-only.",
+        _ => SecurityHelper.OfflineOnly
+            ? "Android: screenshots and scrcpy mirroring are available. Wireless ADB is disabled in this offline build."
+            : "Android: screenshots, scrcpy mirroring, and wireless ADB are available."
+    };
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -41,12 +71,15 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _deviceTag = string.Empty;
 
+    [ObservableProperty]
+    private string _discoveryMessage = string.Empty;
+
     public DeviceViewModel(
         IAdbService adbService,
         IIosService iosService,
         IScrcpyService scrcpyService,
         IDeviceMonitorService deviceMonitor,
-        ISessionService sessionService, IUiDispatcher? dispatcher = null)
+        ISessionService sessionService, IUiDispatcher? dispatcher = null, IPreferencesStore? preferences = null)
     {
         _adbService = adbService;
         _iosService = iosService;
@@ -54,34 +87,104 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         _deviceMonitor = deviceMonitor;
         _sessionService = sessionService;
         _dispatcher = dispatcher ?? UiServices.Dispatcher;
+        _preferences = preferences ?? PreferencesService.Instance;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
+        _deviceMonitor.DiscoveryStatusChanged += OnDiscoveryStatusChanged;
+        _scrcpyService.StateChanged += OnMirrorStateChanged;
+        DiscoveryMessage = _deviceMonitor.LastDiscoveryError ?? string.Empty;
+        OnDevicesChanged(_deviceMonitor.CurrentDevices.ToList());
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
         _dispatcher.Post(() =>
         {
-            Devices.Clear();
-            foreach (var d in devices)
-                Devices.Add(d);
+            if (_disposed) return;
+            var selected = SelectedDevice;
+            for (var i = 0; i < devices.Count; i++)
+            {
+                if (i == Devices.Count) Devices.Add(devices[i]);
+                else if (!SameDeviceData(Devices[i], devices[i])) Devices[i] = devices[i];
+            }
+            while (Devices.Count > devices.Count) Devices.RemoveAt(Devices.Count - 1);
+            var replacement = devices.FirstOrDefault(d => selected != null && d.Serial == selected.Serial && d.Platform == selected.Platform);
+            if (replacement == null && selected != null) SelectedDevice = null;
+            else if (replacement != null && !ReferenceEquals(SelectedDevice, replacement)) SelectedDevice = replacement;
+            NotifyDeviceState();
         });
+    }
+
+    private static bool SameDeviceData(DeviceInfo a, DeviceInfo b) =>
+        a.Serial == b.Serial && a.Platform == b.Platform && a.ConnectionState == b.ConnectionState &&
+        a.IsTemporarilyUnavailable == b.IsTemporarilyUnavailable &&
+        a.Name == b.Name && a.Model == b.Model && a.OsVersion == b.OsVersion &&
+        a.BatteryLevel == b.BatteryLevel && a.BatteryStatus == b.BatteryStatus &&
+        a.Manufacturer == b.Manufacturer && a.Product == b.Product && a.UsbInfo == b.UsbInfo;
+
+    private void OnDiscoveryStatusChanged(string? error) =>
+        _dispatcher.Post(() => { if (!_disposed) DiscoveryMessage = error ?? string.Empty; });
+
+    private void OnMirrorStateChanged() => _dispatcher.Post(() =>
+    {
+        if (_disposed) return;
+        NotifyDeviceState();
+        if (!_scrcpyService.IsRunning && StatusMessage.StartsWith("Screen mirroring active", StringComparison.Ordinal))
+            StatusMessage = "Screen mirror closed.";
+    });
+
+    private void NotifyDeviceState()
+    {
+        OnPropertyChanged(nameof(IsMirroring));
+        OnPropertyChanged(nameof(HasSelectedDevice));
+        OnPropertyChanged(nameof(CanMirror));
+        OnPropertyChanged(nameof(CanTakeSnapshot));
+        OnPropertyChanged(nameof(CapabilityNotice));
+        OnPropertyChanged(nameof(SelectedSerialDisplay));
     }
 
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
+        var generation = ++_detailsGeneration;
+        NotifyDeviceState();
         if (value != null)
         {
-            _ = LoadDeviceDetailsAsync(value);
-            LoadDevicePreferences(value.Serial);
+            _ = LoadDeviceDetailsAsync(value, generation);
+            LoadDevicePreferences(value.Platform, value.Serial);
+        }
+        else
+        {
+            DeviceDetails = "Select a device to view details.";
+            DeviceNotes = string.Empty;
+            DeviceTag = string.Empty;
         }
     }
 
-    private void LoadDevicePreferences(string serial)
+    private void LoadDevicePreferences(DevicePlatform platform, string serial)
     {
-        var pref = PreferencesService.GetDevicePreference(serial);
-        DeviceNotes = pref.Notes;
-        DeviceTag = pref.Tag;
+        _loadingPreferences = true;
+        try
+        {
+            if (_drafts.TryGetValue((platform, serial), out var draft))
+            {
+                DeviceNotes = draft.Notes;
+                DeviceTag = draft.Tag;
+                return;
+            }
+            var pref = _preferences.GetDevicePreference(serial);
+            DeviceNotes = pref.Notes;
+            DeviceTag = pref.Tag;
+        }
+        finally { _loadingPreferences = false; }
+    }
+
+    partial void OnDeviceNotesChanged(string value) => CacheDraft();
+    partial void OnDeviceTagChanged(string value) => CacheDraft();
+
+    private void CacheDraft()
+    {
+        if (!_loadingPreferences && SelectedDevice != null)
+            _drafts[(SelectedDevice.Platform, SelectedDevice.Serial)] = (DeviceNotes, DeviceTag);
     }
 
     [RelayCommand]
@@ -89,98 +192,181 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     {
         if (SelectedDevice == null) return;
 
-        var pref = PreferencesService.GetDevicePreference(SelectedDevice.Serial);
-        pref.Notes = DeviceNotes;
-        pref.Tag = DeviceTag;
-        PreferencesService.SaveDevicePreference(SelectedDevice.Serial, pref);
-        StatusMessage = "Device notes saved.";
+        var existing = _preferences.GetDevicePreference(SelectedDevice.Serial);
+        var pref = new DevicePreference
+        {
+            Notes = DeviceNotes,
+            Tag = DeviceTag,
+            LastConnected = existing.LastConnected
+        };
+        StatusMessage = _preferences.TrySaveDevicePreference(SelectedDevice.Serial, pref)
+            ? "Device notes and tag saved."
+            : "Could not save device notes and tag. Check the application data directory.";
+        if (StatusMessage.StartsWith("Device notes", StringComparison.Ordinal))
+            _drafts.Remove((SelectedDevice.Platform, SelectedDevice.Serial));
     }
 
-    private async Task LoadDeviceDetailsAsync(DeviceInfo device)
+    private async Task LoadDeviceDetailsAsync(DeviceInfo device, int generation)
     {
         DeviceDetails = "Loading device details...";
 
         try
         {
+            // Detail services enrich their input object; keep the live device list immutable.
+            var lookup = device.WithTemporaryUnavailable(device.IsTemporarilyUnavailable);
             DeviceInfo detailed;
             if (device.Platform == DevicePlatform.Android)
-                detailed = await _adbService.GetDeviceDetailsAsync(device);
+                detailed = await _adbService.GetDeviceDetailsAsync(lookup);
             else
-                detailed = await _iosService.GetDeviceDetailsAsync(device);
+                detailed = await _iosService.GetDeviceDetailsAsync(lookup);
 
+            if (_disposed || generation != _detailsGeneration) return;
             DeviceDetails = $"""
                 {detailed.DisplayName}
                 
                 Model: {detailed.Model}
-                Serial: {detailed.Serial}
                 OS Version: {detailed.OsVersion}
                 Battery: {detailed.BatteryLevel}
                 Status: {detailed.StatusText}
                 Platform: {detailed.Platform}
                 """;
         }
-        catch
+        catch (Exception ex)
         {
-            DeviceDetails = "Failed to load device details.";
+            AppLogger.Log.Warn(ex, "[Device] Could not load details");
+            if (!_disposed && generation == _detailsGeneration)
+                DeviceDetails = "Failed to load device details.";
         }
     }
 
     [RelayCommand]
     private async Task RefreshDevicesAsync()
     {
-        await _deviceMonitor.PollDevicesAsync();
+        StatusMessage = "Refreshing devices...";
+        try
+        {
+            await _deviceMonitor.PollDevicesAsync();
+            DiscoveryMessage = _deviceMonitor.LastDiscoveryError ?? string.Empty;
+            StatusMessage = string.IsNullOrWhiteSpace(DiscoveryMessage)
+                ? $"Refresh complete. {_deviceMonitor.CurrentDevices.Count} device(s) detected."
+                : "Refresh completed with a discovery warning.";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Warn(ex, "[Device] Refresh failed");
+            StatusMessage = "Device refresh failed. Check the connected tools and cables.";
+        }
     }
 
     [RelayCommand]
     private async Task StartMirrorAsync()
     {
-        if (SelectedDevice == null) return;
-
-        if (SelectedDevice.Platform != DevicePlatform.Android)
+        var device = SelectedDevice;
+        if (device == null) return;
+        if (device.Platform != DevicePlatform.Android)
         {
             StatusMessage = "Screen mirroring is only available for Android devices.";
             return;
         }
+        if (device.ConnectionState != DeviceConnectionState.Online || device.IsTemporarilyUnavailable)
+        {
+            StatusMessage = "Connect and authorize the Android device before mirroring.";
+            return;
+        }
 
         StatusMessage = "Starting screen mirror...";
-        var success = await _scrcpyService.StartMirroringAsync(SelectedDevice.Serial);
-        IsMirroring = success;
-        StatusMessage = success
-            ? "Screen mirroring active"
-            : $"Failed to start mirroring: {_scrcpyService.LastError ?? "Unknown error"}";
+        try
+        {
+            var success = await _scrcpyService.StartMirroringAsync(device.Serial);
+            NotifyDeviceState();
+            StatusMessage = success
+                ? $"Screen mirroring active for {device.DisplayName}."
+                : $"Failed to start mirroring: {_scrcpyService.LastError ?? "Unknown error"}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Warn(ex, "[Device] Mirror failed");
+            StatusMessage = "Failed to start screen mirroring.";
+        }
     }
 
     [RelayCommand]
     private void StopMirror()
     {
+        if (!IsMirroring)
+        {
+            StatusMessage = "The selected device is not being mirrored.";
+            return;
+        }
         _scrcpyService.StopMirroring();
-        IsMirroring = false;
+        NotifyDeviceState();
         StatusMessage = "Mirror stopped.";
     }
 
     [RelayCommand]
     private async Task TakeSnapshotAsync()
     {
-        if (SelectedDevice == null) return;
-
-        var outputDir = PreferencesService.Current.SessionsRootDirectory;
-        if (!System.IO.Directory.Exists(outputDir)) System.IO.Directory.CreateDirectory(outputDir);
-
-        var fileName = $"snapshot_{SecurityHelper.HashSerial(SelectedDevice.Serial)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-        var outputPath = System.IO.Path.Combine(outputDir, fileName);
+        var device = SelectedDevice;
+        if (device == null) return;
+        if (device.ConnectionState != DeviceConnectionState.Online || device.IsTemporarilyUnavailable)
+        {
+            StatusMessage = "Connect and authorize the device before taking a snapshot.";
+            return;
+        }
 
         StatusMessage = "Capturing screenshot...";
+        try
+        {
+            var outputDir = _sessionService.SessionsRootDirectory;
+            if (!PathHelper.TryGetSafeLocalDirectory(outputDir, out var safeDirectory))
+            {
+                StatusMessage = "The snapshot folder is not a safe local directory.";
+                return;
+            }
+            var fileName = $"snapshot_{SecurityHelper.HashSerial(device.Serial)}_{DateTime.Now:yyyyMMdd_HHmmss_fff}_{Guid.NewGuid():N}.png";
+            var outputPath = Path.Combine(safeDirectory, fileName);
+            var iosResult = device.Platform == DevicePlatform.iOS
+                ? await _iosService.CaptureScreenshotWithStatusAsync(device.Serial, outputPath)
+                : default;
+            var success = device.Platform == DevicePlatform.Android
+                ? await _adbService.CaptureScreenshotAsync(device.Serial, outputPath)
+                : iosResult.Success;
+            success &= File.Exists(outputPath) && new FileInfo(outputPath).Length > 0;
+            if (success)
+            {
+                _lastSnapshotDirectory = safeDirectory;
+                OnPropertyChanged(nameof(HasSnapshotDirectory));
+            }
+            StatusMessage = success
+                ? $"Snapshot saved: {fileName}"
+                : device.Platform == DevicePlatform.iOS ? iosResult.Message : "Failed to capture a valid snapshot.";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Warn(ex, "[Device] Snapshot failed");
+            StatusMessage = "Snapshot failed. Check the device and snapshot folder.";
+        }
+    }
 
-        var iosResult = SelectedDevice.Platform == DevicePlatform.iOS
-            ? await _iosService.CaptureScreenshotWithStatusAsync(SelectedDevice.Serial, outputPath)
-            : default;
-        bool success = SelectedDevice.Platform == DevicePlatform.Android
-            ? await _adbService.CaptureScreenshotAsync(SelectedDevice.Serial, outputPath)
-            : iosResult.Success;
+    [RelayCommand]
+    private void OpenSnapshotFolder()
+    {
+        if (_lastSnapshotDirectory == null || !Directory.Exists(_lastSnapshotDirectory)) return;
+        try { Process.Start(new ProcessStartInfo(_lastSnapshotDirectory) { UseShellExecute = true }); }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Warn(ex, "[Device] Could not open snapshot folder");
+            StatusMessage = "Could not open the snapshot folder.";
+        }
+    }
 
-        StatusMessage = success
-            ? $"Snapshot saved: {fileName}"
-            : SelectedDevice.Platform == DevicePlatform.iOS ? iosResult.Message : "Failed to capture snapshot.";
+    [RelayCommand]
+    private void ToggleSerialVisibility()
+    {
+        MaskSerials = !MaskSerials;
+        OnPropertyChanged(nameof(MaskSerials));
+        OnPropertyChanged(nameof(SelectedSerialDisplay));
+        OnPropertyChanged(nameof(SerialVisibilityActionText));
     }
 
 
@@ -191,6 +377,11 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task EnableWirelessAsync()
     {
+        if (SecurityHelper.OfflineOnly)
+        {
+            StatusMessage = "Wireless ADB is unavailable in this offline build. Use USB.";
+            return;
+        }
         if (SelectedDevice == null)
         {
             StatusMessage = "[!] No device selected.";
@@ -245,6 +436,11 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ConnectWirelessAsync()
     {
+        if (SecurityHelper.OfflineOnly)
+        {
+            StatusMessage = "Wireless ADB is unavailable in this offline build. Use USB.";
+            return;
+        }
         if (string.IsNullOrWhiteSpace(WirelessIpAddress))
         {
             StatusMessage = "[!] Enter the device IP address first.";
@@ -268,6 +464,11 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task DisconnectWirelessAsync()
     {
+        if (SecurityHelper.OfflineOnly)
+        {
+            StatusMessage = "Wireless ADB is unavailable in this offline build. Use USB.";
+            return;
+        }
         if (string.IsNullOrWhiteSpace(WirelessIpAddress))
         {
             StatusMessage = "[!] Enter the device IP address first.";
@@ -288,7 +489,10 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
+        _deviceMonitor.DiscoveryStatusChanged -= OnDiscoveryStatusChanged;
+        _scrcpyService.StateChanged -= OnMirrorStateChanged;
         GC.SuppressFinalize(this);
     }
 }
