@@ -8,6 +8,7 @@ namespace LogPro.Services;
 /// </summary>
 public interface IScrcpyService
 {
+    event Action? StateChanged;
     Task<bool> StartMirroringAsync(string serial, ScrcpyOptions? options = null);
     void StopMirroring();
     Task<ToolStatus> CheckAvailabilityAsync();

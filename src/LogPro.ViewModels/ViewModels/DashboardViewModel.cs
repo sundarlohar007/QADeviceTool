@@ -63,7 +63,8 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
     public bool HasRecentActivity => RecentActivity.Count > 0;
     public bool HasDiscoveryError => !string.IsNullOrWhiteSpace(DiscoveryMessage);
     public string DeviceCountSubtitle => HasDiscoveryError ? "Last known state; discovery failed" : "Online iOS & Android";
-    public bool CanUseSelectedDevice => SelectedDevice?.ConnectionState == DeviceConnectionState.Online;
+    public bool CanUseSelectedDevice => SelectedDevice?.ConnectionState == DeviceConnectionState.Online &&
+        !SelectedDevice.IsTemporarilyUnavailable;
     public bool CanMirrorSelectedDevice => CanUseSelectedDevice && SelectedDevice?.Platform == DevicePlatform.Android;
     public bool HasPlatformNotice => SelectedDevice?.Platform == DevicePlatform.iOS;
     public string PlatformNotice => HasPlatformNotice
@@ -122,6 +123,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         _deviceMonitor.DeviceConnected += OnDeviceConnected;
         _deviceMonitor.DeviceDisconnected += OnDeviceDisconnected;
         _deviceMonitor.DiscoveryStatusChanged += OnDiscoveryStatusChanged;
+        _scrcpyService.StateChanged += OnMirrorStateChanged;
         _sessionService.CaptureStarted += OnCaptureStarted;
         _sessionService.CaptureStopped += OnCaptureStopped;
         ActiveSessionCount = _sessionService.ActiveSessions.Count;
@@ -209,6 +211,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
 
     private static bool SameDeviceData(DeviceInfo a, DeviceInfo b) =>
         a.Serial == b.Serial && a.Platform == b.Platform && a.ConnectionState == b.ConnectionState &&
+        a.IsTemporarilyUnavailable == b.IsTemporarilyUnavailable &&
         a.Name == b.Name && a.Model == b.Model && a.OsVersion == b.OsVersion &&
         a.BatteryLevel == b.BatteryLevel && a.BatteryStatus == b.BatteryStatus &&
         a.Manufacturer == b.Manufacturer && a.Product == b.Product && a.UsbInfo == b.UsbInfo &&
@@ -220,6 +223,9 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
     }
 
     public void RefreshMirrorState() => OnPropertyChanged(nameof(MirrorActionText));
+
+    private void OnMirrorStateChanged() =>
+        _dispatcher.Post(() => { if (Volatile.Read(ref _disposed) == 0) RefreshMirrorState(); });
 
     private void OnDeviceConnected(DeviceInfo device) => AddActivity($"{device.DisplayName} connected");
     private void OnDeviceDisconnected(DeviceInfo device) => AddActivity($"{device.DisplayName} disconnected");
@@ -549,6 +555,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         _deviceMonitor.DeviceConnected -= OnDeviceConnected;
         _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
         _deviceMonitor.DiscoveryStatusChanged -= OnDiscoveryStatusChanged;
+        _scrcpyService.StateChanged -= OnMirrorStateChanged;
         _sessionService.CaptureStarted -= OnCaptureStarted;
         _sessionService.CaptureStopped -= OnCaptureStopped;
         GC.SuppressFinalize(this);

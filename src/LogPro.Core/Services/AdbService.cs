@@ -346,7 +346,7 @@ public class AdbService : IAdbService
                 if (!capResult.Success) return false;
 
                 var pullResult = await RunAdbAsync($"-s {serial} pull {remotePath} \"{outputPath}\"", DefaultTimeoutMs);
-                return pullResult.Success;
+                return pullResult.Success && File.Exists(outputPath) && new FileInfo(outputPath).Length > 0;
             }
             finally
             {

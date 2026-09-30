@@ -33,7 +33,7 @@ public sealed class DeviceStore : IDeviceStore
             bool changed;
             lock (_lock)
             {
-                changed = !ReferenceEquals(_selected, value) && (_selected?.Serial != value?.Serial || _selected?.Platform != value?.Platform);
+                changed = !ReferenceEquals(_selected, value);
                 if (changed) _selected = value;
             }
             if (changed) RaiseChanged();
@@ -62,6 +62,7 @@ public sealed class DeviceStore : IDeviceStore
     private static bool SameDeviceAndMetadata(DeviceInfo a, DeviceInfo b) =>
         a.Serial == b.Serial && a.Platform == b.Platform && a.Name == b.Name &&
         a.Model == b.Model && a.Product == b.Product && a.ConnectionState == b.ConnectionState &&
+        a.IsTemporarilyUnavailable == b.IsTemporarilyUnavailable &&
         a.BatteryLevel == b.BatteryLevel && a.BatteryStatus == b.BatteryStatus &&
         a.OsVersion == b.OsVersion && a.Manufacturer == b.Manufacturer && a.UsbInfo == b.UsbInfo &&
         a.Notes == b.Notes && a.Tag == b.Tag;

@@ -7,6 +7,54 @@ namespace LogPro.Tests.Services;
 public class DeviceMonitorFailureTests
 {
     [Fact]
+    public async Task ConcurrentRefresh_WaitsForTheActivePoll()
+    {
+        var pending = new TaskCompletionSource<(bool Success, List<DeviceInfo> Devices)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var adb = new Mock<IAdbService>();
+        adb.Setup(x => x.GetConnectedDevicesWithStatusAsync()).Returns(pending.Task);
+        var ios = new Mock<IIosService>();
+        ios.Setup(x => x.GetConnectedDevicesWithStatusAsync()).ReturnsAsync((true, new List<DeviceInfo>()));
+        using var monitor = new DeviceMonitorService(adb.Object, ios.Object);
+
+        var first = monitor.PollDevicesAsync();
+        var second = monitor.PollDevicesAsync();
+        second.Should().BeSameAs(first);
+        pending.SetResult((true, new List<DeviceInfo> { new() { Serial = "A", Platform = DevicePlatform.Android } }));
+        await Task.WhenAll(first, second);
+        adb.Verify(x => x.GetConnectedDevicesWithStatusAsync(), Times.Once);
+        monitor.CurrentDevices.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task MissedPoll_MarksDeviceReconnectingUntilItReturns()
+    {
+        var device = new DeviceInfo
+        {
+            Serial = "A",
+            Platform = DevicePlatform.Android,
+            ConnectionState = DeviceConnectionState.Online
+        };
+        var adb = new Mock<IAdbService>();
+        adb.SetupSequence(x => x.GetConnectedDevicesWithStatusAsync())
+            .ReturnsAsync((true, new List<DeviceInfo> { device }))
+            .ReturnsAsync((true, new List<DeviceInfo>()))
+            .ReturnsAsync((true, new List<DeviceInfo> { device }));
+        var ios = new Mock<IIosService>();
+        ios.Setup(x => x.GetConnectedDevicesWithStatusAsync()).ReturnsAsync((true, new List<DeviceInfo>()));
+        using var monitor = new DeviceMonitorService(adb.Object, ios.Object);
+        var updates = 0;
+        monitor.DevicesChanged += _ => updates++;
+
+        await monitor.PollDevicesAsync();
+        await monitor.PollDevicesAsync();
+        monitor.CurrentDevices.Single().IsTemporarilyUnavailable.Should().BeTrue();
+        monitor.CurrentDevices.Single().StatusText.Should().Contain("Reconnecting");
+        await monitor.PollDevicesAsync();
+        monitor.CurrentDevices.Single().IsTemporarilyUnavailable.Should().BeFalse();
+        updates.Should().Be(3);
+    }
+
+    [Fact]
     public async Task FailedAdbPoll_DoesNotDisconnectPreviouslySeenDevice()
     {
         var device = new DeviceInfo
