@@ -21,6 +21,7 @@ namespace LogPro.Services;
 [JsonSerializable(typeof(Models.UpdateInfo))]
 [JsonSerializable(typeof(Models.UpdatePreferences))]
 [JsonSerializable(typeof(List<Models.UpdateInfo>))]
+[JsonSerializable(typeof(StressRunSummary))]
 public partial class LogProJsonContext : JsonSerializerContext
 {
 }

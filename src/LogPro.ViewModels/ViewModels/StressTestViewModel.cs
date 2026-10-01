@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Globalization;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -11,6 +14,7 @@ using CommunityToolkit.Mvvm.Input;
 using LogPro.Helpers;
 using LogPro.Models;
 using LogPro.Services;
+using LogPro.Services.Profiling;
 
 namespace LogPro.ViewModels;
 
@@ -20,10 +24,10 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly List<MetricSnapshot> _metricSnapshots = new();
     private readonly IUiDispatcher _dispatcher;
+    private readonly IMonkeyProcessRunner _runner;
 
     private CancellationTokenSource? _runCts;
-    private System.Threading.Timer? _metricsTimer;
-    private Process? _adbProcess;
+    private AndroidPerformanceProfiler? _profiler;
     private string? _runningOnSerial;
     private int _runActive;
     private int _disposed;
@@ -31,6 +35,21 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     private int _anrCountBacking;
     private DateTime _runStartedAt;
     private List<AppItem> _allApps = new();
+    private readonly ConcurrentQueue<string> _pendingOutput = new();
+    private int _pendingOutputCount;
+    private int _appRequestVersion;
+    private bool _replacingDevices;
+    private int _monkeyFinishedFlag;
+    private int _runOffset;
+    private int _eventsAttemptedBacking;
+    private int _activeEventBudget;
+    private string _activeRunMode = "Events";
+    private int _activeDurationSeconds;
+    private readonly object _outputLock = new();
+    private StressRunSummary? _lastSummary;
+    private string _lastRawOutput = string.Empty;
+    private string? _lastRunSerial;
+    private int _genericAbortFlag;
 
     [ObservableProperty] private ObservableCollection<DeviceInfo> _devices = new();
     [ObservableProperty] private DeviceInfo? _selectedDevice;
@@ -39,6 +58,8 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     [ObservableProperty] private AppItem? _selectedApp;
     [ObservableProperty] private string _appSearchQuery = string.Empty;
     [ObservableProperty] private bool _isLoadingApps;
+    [ObservableProperty] private bool _isCheckingReadiness;
+    [ObservableProperty] private string _readinessMessage = "Select an online Android device and target package.";
 
     [ObservableProperty] private string _targetPackage = string.Empty;
     [ObservableProperty] private int _eventCount = 1000;
@@ -50,6 +71,24 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _pctNav = 10;
     [ObservableProperty] private int _pctSyskeys = 5;
     [ObservableProperty] private int _pctAppswitch = 10;
+    [ObservableProperty] private bool _safeMode;
+    [ObservableProperty] private bool _autoSaveRuns;
+    [ObservableProperty] private bool _captureFailureScreenshot;
+    [ObservableProperty] private string _runMode = "Events";
+    [ObservableProperty] private int _durationSeconds = 600;
+    public string[] RunModes { get; } = ["Events", "Duration"];
+    public string[] Presets { get; } = ["Balanced", "Touch", "Navigation", "Safe"];
+    public string EventGoalDisplay => RunMode == "Duration" ? "soak" : EventCount.ToString(CultureInfo.CurrentCulture);
+    public string EstimatedDuration
+    {
+        get
+        {
+            if (RunMode == "Duration") return $"About {Math.Max(0, DurationSeconds) / 60}m {Math.Max(0, DurationSeconds) % 60}s";
+            var milliseconds = (long)Math.Clamp(EventCount, 0, 1_000_000) * Math.Clamp(ThrottleMs, 0, 60_000);
+            var estimate = TimeSpan.FromMilliseconds(milliseconds);
+            return $"At least {(int)estimate.TotalHours:D2}:{estimate.Minutes:D2}:{estimate.Seconds:D2} plus injection time";
+        }
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRun))]
@@ -57,27 +96,37 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 
     public bool CanRun => IsPlatformSupported && !IsRunning;
     private readonly System.Text.StringBuilder _outputBuffer = new();
-    public string Output { get; set; } = string.Empty;
+    [ObservableProperty] private string _output = string.Empty;
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _crashCount;
     [ObservableProperty] private int _anrCount;
     [ObservableProperty] private int _eventsInjected;
     [ObservableProperty] private double _progressPercent;
     [ObservableProperty] private string _platformBadge = string.Empty;
+    [ObservableProperty] private double? _latestFps;
+    [ObservableProperty] private double? _latestCpuPercent;
+    [ObservableProperty] private int? _latestPssKb;
+    [ObservableProperty] private int? _latestThermalStatus;
+    [ObservableProperty] private StressRunHistoryItem? _selectedBaselineRun;
+    [ObservableProperty] private string _comparisonSummary = "Choose a prior run to compare results.";
+    public ObservableCollection<StressRunHistoryItem> RunHistory { get; } = new();
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRun))]
     private bool _isPlatformSupported;
 
-    public StressTestViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null)
+    public StressTestViewModel(IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null,
+        IMonkeyProcessRunner? runner = null)
     {
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
         _dispatcher = dispatcher ?? UiServices.Dispatcher;
+        _runner = runner ?? new MonkeyProcessRunner(adbService);
 
         TargetPackage = PreferencesService.Current.TargetPackageName;
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
         _deviceMonitor.DeviceDisconnected += OnDeviceDisconnected;
+        OnDevicesChanged(_deviceMonitor.CurrentDevices.ToList());
     }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
@@ -86,9 +135,29 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         _dispatcher.Post(() =>
         {
             if (Volatile.Read(ref _disposed) != 0) return;
+            var previous = SelectedDevice;
+            _replacingDevices = true;
             Devices.Clear();
             foreach (var d in devices) Devices.Add(d);
-            SelectedDevice ??= Devices.FirstOrDefault(d => d.Platform == DevicePlatform.Android) ?? Devices.FirstOrDefault();
+            SelectedDevice = previous == null
+                ? Devices.FirstOrDefault(d => d.Platform == DevicePlatform.Android && d.ConnectionState == DeviceConnectionState.Online) ?? Devices.FirstOrDefault()
+                : Devices.FirstOrDefault(d => d.Serial == previous.Serial && d.Platform == previous.Platform);
+            _replacingDevices = false;
+            if (previous?.Serial != SelectedDevice?.Serial)
+            {
+                _allApps.Clear();
+                FilteredApps.Clear();
+                SelectedApp = null;
+                Interlocked.Increment(ref _appRequestVersion);
+            }
+            UpdateDeviceSupport();
+            if (IsRunning && _runningOnSerial != null &&
+                !Devices.Any(d => d.Serial == _runningOnSerial && d.Platform == DevicePlatform.Android &&
+                    d.ConnectionState == DeviceConnectionState.Online && !d.IsTemporarilyUnavailable))
+            {
+                StatusMessage = "Device disconnected or unavailable; stopping stress test.";
+                StopMonkey();
+            }
         });
     }
 
@@ -108,7 +177,69 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 
     public void OnDeviceSelected(DeviceInfo device)
     {
-        if (Devices.Any(d => d.Serial == device.Serial)) SelectedDevice = device;
+        var match = Devices.FirstOrDefault(d => d.Serial == device.Serial && d.Platform == device.Platform);
+        if (match != null) SelectedDevice = match;
+    }
+
+    partial void OnSelectedDeviceChanged(DeviceInfo? value)
+    {
+        if (_replacingDevices) return;
+        UpdateDeviceSupport();
+        _allApps.Clear();
+        FilteredApps.Clear();
+        SelectedApp = null;
+        Interlocked.Increment(ref _appRequestVersion);
+        if (IsRunning && value?.Serial != _runningOnSerial) StopMonkey();
+    }
+
+    private void UpdateDeviceSupport()
+    {
+        var device = SelectedDevice;
+        IsPlatformSupported = device?.Platform == DevicePlatform.Android &&
+            device.ConnectionState == DeviceConnectionState.Online && !device.IsTemporarilyUnavailable;
+        PlatformBadge = device?.Platform == DevicePlatform.iOS
+            ? "iOS stress input is unsupported by pymobiledevice3."
+            : device == null ? "Select an Android device."
+            : !IsPlatformSupported ? "Android device is offline or reconnecting."
+            : "Android Monkey is available for this device.";
+        ReadinessMessage = PlatformBadge;
+    }
+
+    partial void OnSelectedAppChanged(AppItem? value)
+    {
+        if (value != null) TargetPackage = value.PackageId;
+    }
+
+    partial void OnTargetPackageChanged(string value) => ReadinessMessage = "Check the selected device and package before running.";
+
+    partial void OnAppSearchQueryChanged(string value) => ApplyAppFilter();
+    partial void OnEventCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(EstimatedDuration));
+        OnPropertyChanged(nameof(EventGoalDisplay));
+    }
+    partial void OnThrottleMsChanged(int value) => OnPropertyChanged(nameof(EstimatedDuration));
+    partial void OnRunModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(EstimatedDuration));
+        OnPropertyChanged(nameof(EventGoalDisplay));
+    }
+    partial void OnDurationSecondsChanged(int value) => OnPropertyChanged(nameof(EstimatedDuration));
+    partial void OnSafeModeChanged(bool value)
+    {
+        if (value) ApplyPreset("Safe");
+    }
+
+    [RelayCommand]
+    private void ApplyPreset(string? preset)
+    {
+        switch (preset)
+        {
+            case "Balanced": (PctTouch, PctMotion, PctTrackball, PctNav, PctSyskeys, PctAppswitch) = (50, 20, 5, 10, 5, 10); SafeMode = false; break;
+            case "Touch": (PctTouch, PctMotion, PctTrackball, PctNav, PctSyskeys, PctAppswitch) = (70, 25, 0, 5, 0, 0); SafeMode = false; break;
+            case "Navigation": (PctTouch, PctMotion, PctTrackball, PctNav, PctSyskeys, PctAppswitch) = (20, 10, 0, 60, 0, 10); SafeMode = false; break;
+            case "Safe": (PctTouch, PctMotion, PctTrackball, PctNav, PctSyskeys, PctAppswitch) = (70, 25, 0, 5, 0, 0); SafeMode = true; break;
+        }
     }
 
 
@@ -116,18 +247,26 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     [RelayCommand]
     public async Task RefreshAppsAsync()
     {
-        if (SelectedDevice == null || SelectedDevice.Platform != DevicePlatform.Android) return;
+        if (!IsPlatformSupported || SelectedDevice == null) return;
+        var serial = SelectedDevice.Serial;
+        var version = Interlocked.Increment(ref _appRequestVersion);
         IsLoadingApps = true;
         StatusMessage = "Loading installed apps...";
         try
         {
-            var apps = await _adbService.ListInstalledAppsAsync(SelectedDevice.Serial);
-            _allApps = apps;
+            var inventory = await _adbService.GetAppInventoryAsync(serial);
+            if (version != _appRequestVersion || SelectedDevice?.Serial != serial || Volatile.Read(ref _disposed) != 0) return;
+            if (!inventory.Success) throw new InvalidOperationException("Installed-app inventory could not be loaded.");
+            _allApps = inventory.Apps.ToList();
             ApplyAppFilter();
             StatusMessage = $"Loaded {_allApps.Count} apps. Type to search.";
         }
-        catch (Exception ex) { AppLogger.Log.Error(ex, "[StressTest] RefreshAppsAsync failed"); StatusMessage = $"[!] Load apps failed: {ex.Message}"; }
-        finally { IsLoadingApps = false; }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[StressTest] RefreshAppsAsync failed");
+            if (version == _appRequestVersion) StatusMessage = $"[!] Load apps failed: {ex.Message}";
+        }
+        finally { if (version == _appRequestVersion) IsLoadingApps = false; }
     }
 
     private void ApplyAppFilter()
@@ -145,285 +284,364 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private async Task CheckReadinessAsync()
+    {
+        if (IsCheckingReadiness) return;
+        IsCheckingReadiness = true;
+        try
+        {
+            var device = SelectedDevice;
+            var package = TargetPackage?.Trim() ?? string.Empty;
+            var problem = await CheckPreflightAsync(device, package);
+            if (problem == null)
+            {
+                try
+                {
+                    if (RunMode is not ("Events" or "Duration") ||
+                        (RunMode == "Duration" && DurationSeconds is < 30 or > 7200))
+                        throw new ArgumentException("Choose a valid run mode and duration (30–7200 seconds).");
+                    if (SafeMode && (PctSyskeys != 0 || PctAppswitch != 0))
+                        throw new ArgumentException("Safe mode requires zero system-key and app-switch events.");
+                    MonkeyProcessRunner.Validate(new MonkeyRunOptions(device!.Serial, package, EventCount, Seed,
+                        ThrottleMs, PctTouch, PctMotion, PctTrackball, PctNav, PctSyskeys, PctAppswitch));
+                }
+                catch (ArgumentException ex) { problem = ex.Message; }
+            }
+            if (device?.Serial != SelectedDevice?.Serial || package != (TargetPackage?.Trim() ?? string.Empty))
+                problem = "Inputs changed during preflight. Check readiness again.";
+            ReadinessMessage = problem ?? $"Ready to exercise {package} on {device!.DisplayName}.";
+            StatusMessage = problem == null ? "Stress test preflight passed." : "[!] " + problem;
+        }
+        catch (Exception ex) { ReadinessMessage = $"Preflight failed: {ex.Message}"; }
+        finally { IsCheckingReadiness = false; }
+    }
+
+    private async Task<string?> CheckPreflightAsync(DeviceInfo? device, string package)
+    {
+        if (device == null) return "Select an Android device.";
+        if (device.Platform != DevicePlatform.Android)
+            return "iOS stress input is unsupported by pymobiledevice3.";
+        if (device.ConnectionState != DeviceConnectionState.Online || device.IsTemporarilyUnavailable)
+            return "Android device is offline or reconnecting.";
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(device.Serial))
+            return "Device selector is not permitted by the offline policy.";
+        if (!SecurityHelper.IsValidPackageName(package))
+            return "Enter a valid Android package ID.";
+        var result = await _adbService.ExecuteCommandWithResultAsync(device.Serial, $"shell pm path {package}");
+        if (!result.Success || !result.Output.Contains("package:", StringComparison.Ordinal))
+            return $"Package {package} is not installed or cannot be queried on this device.";
+        var existing = await _adbService.ExecuteCommandWithResultAsync(device.Serial, "shell pidof com.android.commands.monkey");
+        if (!existing.Success && !string.IsNullOrWhiteSpace(existing.Error))
+            return "Could not verify whether another Monkey process is running on this device.";
+        if (existing.Success && existing.Output.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Any(value => int.TryParse(value, out var pid) && pid > 0))
+            return "Another Monkey process is already running on this device.";
+        return null;
+    }
+
+    [RelayCommand]
     private async Task RunMonkeyAsync()
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
-        if (Interlocked.Exchange(ref _runActive, 1) != 0) return;
-        if (SelectedDevice == null)
+        if (Volatile.Read(ref _disposed) != 0 || Interlocked.Exchange(ref _runActive, 1) != 0) return;
+        CancellationTokenSource? userCts = null;
+        CancellationTokenSource? durationCts = null;
+        CancellationTokenSource? linkedCts = null;
+        AndroidPerformanceProfiler? profiler = null;
+        try
         {
-            Interlocked.Exchange(ref _runActive, 0);
-            StatusMessage = "[!] No device selected.";
-            return;
-        }
-        if (SelectedDevice.Platform != DevicePlatform.Android)
-        {
-            Interlocked.Exchange(ref _runActive, 0);
-            StatusMessage = "[!] Monkey is Android-only — pymobiledevice3 has no equivalent on iOS.";
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(TargetPackage))
-        {
-            Interlocked.Exchange(ref _runActive, 0);
-            StatusMessage = "[!] Search and pick an app, or type a package name.";
-            return;
-        }
-        if (!System.Text.RegularExpressions.Regex.IsMatch(TargetPackage, @"^[a-zA-Z0-9._]+$"))
-        {
-            Interlocked.Exchange(ref _runActive, 0);
-            StatusMessage = "[!] Invalid package name. Letters, numbers, dots, underscores only.";
-            return;
-        }
-        if (EventCount <= 0)
-        {
-            Interlocked.Exchange(ref _runActive, 0);
-            StatusMessage = "[!] Event count must be > 0.";
-            return;
-        }
-        if (EventCount > 1_000_000)
-        {
-            StatusMessage = "[!] Event count capped at 1,000,000.";
-            EventCount = 1_000_000;
-        }
-        else if (EventCount > 100_000)
-        {
-            AppendOutput($"[i] Large run: {EventCount:N0} events may take a long time.");
-        }
-        // Validate monkey event percentages sum to 100
-        var totalPct = PctTouch + PctMotion + PctTrackball + PctNav + PctSyskeys + PctAppswitch;
-        if (totalPct != 100)
-        {
-            Interlocked.Exchange(ref _runActive, 0);
-            StatusMessage = $"[!] Event percentages must sum to 100%. Current total: {totalPct}%.";
-            return;
-        }
+            var device = SelectedDevice;
+            var package = TargetPackage?.Trim() ?? string.Empty;
+            var mode = RunMode;
+            var durationSeconds = DurationSeconds;
+            var eventBudget = EventCount;
+            var throttle = ThrottleMs;
+            var seed = Seed;
+            var mix = (PctTouch, PctMotion, PctTrackball, PctNav, PctSyskeys, PctAppswitch);
+            if (device == null) throw new InvalidOperationException("No device selected. Select an Android device.");
+            if (device.Platform != DevicePlatform.Android)
+                throw new InvalidOperationException("Android-only stress input; iOS is unsupported by pymobiledevice3.");
+            if (!SecurityHelper.IsValidPackageName(package))
+                throw new InvalidOperationException("Invalid package name. Enter an Android package ID.");
+            if (mode is not ("Events" or "Duration")) throw new InvalidOperationException("Unknown run mode.");
+            if (eventBudget is < 1 or > 1_000_000)
+                throw new InvalidOperationException("Event count must be between 1 and 1,000,000.");
+            if (mode == "Duration" && durationSeconds is < 30 or > 7200)
+                throw new InvalidOperationException("Duration must be between 30 seconds and 2 hours.");
+            if (SafeMode && (mix.PctSyskeys != 0 || mix.PctAppswitch != 0))
+                throw new InvalidOperationException("Safe mode requires system-key and app-switch percentages to be zero.");
+            var options = new MonkeyRunOptions(device?.Serial ?? "", package,
+                mode == "Events" ? eventBudget : Math.Clamp(eventBudget, 100, 100_000),
+                seed, throttle, mix.PctTouch, mix.PctMotion, mix.PctTrackball,
+                mix.PctNav, mix.PctSyskeys, mix.PctAppswitch);
+            MonkeyProcessRunner.Validate(options);
+            var problem = await CheckPreflightAsync(device, package);
+            if (problem != null) throw new InvalidOperationException(problem);
+            if (SelectedDevice?.Serial != device!.Serial)
+                throw new InvalidOperationException("The selected device changed during preflight.");
 
-        // Verify package actually exists on device — auto-resolve case-insensitive partial name.
-        if (_allApps.Count > 0 && !_allApps.Any(a => a.PackageId == TargetPackage))
-        {
-            var match = _allApps.FirstOrDefault(a => a.PackageId.Equals(TargetPackage, StringComparison.OrdinalIgnoreCase))
-                     ?? _allApps.FirstOrDefault(a => a.PackageId.Contains(TargetPackage, StringComparison.OrdinalIgnoreCase));
-            if (match != null)
+            userCts = new CancellationTokenSource();
+            _runCts = userCts;
+            if (mode == "Duration") durationCts = new CancellationTokenSource(TimeSpan.FromSeconds(durationSeconds));
+            linkedCts = durationCts == null ? null :
+                CancellationTokenSource.CreateLinkedTokenSource(userCts.Token, durationCts.Token);
+            var runToken = linkedCts?.Token ?? userCts.Token;
+            var startedUtc = DateTime.UtcNow;
+            var deviceName = SecurityHelper.RedactSensitiveText(device.DisplayName)
+                .Replace(device.Serial, "[DEVICE]", StringComparison.Ordinal);
+            var serialHash = SecurityHelper.HashSerial(device.Serial);
+            _runningOnSerial = device.Serial;
+            _runStartedAt = startedUtc;
+            ResetRunState();
+            _activeEventBudget = eventBudget;
+            _activeRunMode = mode;
+            _activeDurationSeconds = durationSeconds;
+            IsRunning = true;
+            StatusMessage = $"Running Monkey on {package} ({mode.ToLowerInvariant()} mode)…";
+            AppendOutput($"[RUN] Device {serialHash}; package {package}; seed {seed}; mode {mode}.");
+
+            profiler = new AndroidPerformanceProfiler(_adbService, device.Serial, package, intervalMs: 2000);
+            _profiler = profiler;
+            profiler.SnapshotSampled += OnProfilerSample;
+            profiler.Start();
+
+            var execution = new MonkeyExecutionResult(-1, false, false);
+            var cycle = 0;
+            var cyclesExecuted = 0;
+            while (true)
             {
-                AppendOutput($"[i] Resolved '{TargetPackage}' → '{match.PackageId}'");
-                TargetPackage = match.PackageId;
+                if (durationCts?.IsCancellationRequested == true && cycle > 0) break;
+                runToken.ThrowIfCancellationRequested();
+                _runOffset = Volatile.Read(ref _eventsAttemptedBacking);
+                Interlocked.Exchange(ref _monkeyFinishedFlag, 0);
+                var cycleOptions = options with { Seed = unchecked(seed + cycle) };
+                AppendOutput($"[CYCLE {cycle + 1}] seed {cycleOptions.Seed}; event budget {cycleOptions.EventCount}.");
+                execution = await _runner.RunAsync(cycleOptions, HandleOutputLine, runToken);
+                cyclesExecuted++;
+                if (execution.Cancelled || execution.ExitCode != 0 ||
+                    Volatile.Read(ref _monkeyFinishedFlag) == 0 || mode == "Events") break;
+                cycle++;
+                if (durationCts?.IsCancellationRequested == true) break;
             }
-            else
+
+            await profiler.StopAsync();
+            profiler.SnapshotSampled -= OnProfilerSample;
+            _profiler = null;
+            StressPerformanceMetrics metrics;
+            try { metrics = await CollectPerformanceMetricsAsync(device.Serial, package); }
+            catch (Exception ex)
             {
-                Interlocked.Exchange(ref _runActive, 0);
-                StatusMessage = $"[!] Package '{TargetPackage}' not installed on device.";
-                return;
+                AppLogger.Log.Debug(ex, "[StressTest] Final metrics unavailable");
+                metrics = new StressPerformanceMetrics();
+            }
+            List<MetricSnapshot> snapshots;
+            lock (_metricSnapshots) snapshots = _metricSnapshots.ToList();
+            var attempted = Volatile.Read(ref _eventsAttemptedBacking);
+            var durationExpired = durationCts?.IsCancellationRequested == true && !userCts.IsCancellationRequested;
+            var outcome = execution.Cancelled
+                ? durationExpired && execution.RemoteStopConfirmed ? "DurationComplete" : "Cancelled"
+                : execution.ExitCode != 0 || Volatile.Read(ref _monkeyFinishedFlag) == 0 ||
+                    Volatile.Read(ref _genericAbortFlag) != 0 ? "Error" : "Completed";
+            if (durationExpired && execution.Cancelled && !execution.RemoteStopConfirmed) outcome = "Error";
+            var reason = outcome == "Error"
+                ? execution.Cancelled ? "Remote process stop could not be verified."
+                    : execution.ExitCode != 0 ? $"ADB exited with code {execution.ExitCode}."
+                    : Volatile.Read(ref _genericAbortFlag) != 0 ? "Monkey reported an abort."
+                    : "Monkey did not print its completion marker."
+                : null;
+            var summary = new StressRunSummary
+            {
+                PackageName = package,
+                DeviceName = deviceName,
+                DeviceSerialHash = serialHash,
+                StartedUtc = startedUtc,
+                RunMode = mode,
+                EventCount = mode == "Events" ? eventBudget : attempted,
+                RequestedEventCount = options.EventCount,
+                CycleCount = cyclesExecuted,
+                EventsInjected = attempted,
+                CrashCount = Volatile.Read(ref _crashCountBacking),
+                AnrCount = Volatile.Read(ref _anrCountBacking),
+                Duration = DateTime.UtcNow - startedUtc,
+                Seed = seed,
+                ThrottleMs = throttle,
+                PctTouch = mix.PctTouch,
+                PctMotion = mix.PctMotion,
+                PctTrackball = mix.PctTrackball,
+                PctNav = mix.PctNav,
+                PctSyskeys = mix.PctSyskeys,
+                PctAppswitch = mix.PctAppswitch,
+                Outcome = outcome,
+                ExitCode = execution.ExitCode,
+                FailureReason = reason,
+                Metrics = metrics,
+                MetricSnapshots = snapshots
+            };
+            _lastSummary = summary;
+            _lastRunSerial = device.Serial;
+            AppendOutput(StressReportBuilder.BuildReport(summary).TrimEnd());
+            await FlushOutputAsync();
+            await _dispatcher.InvokeAsync(() =>
+            {
+                CrashCount = summary.CrashCount;
+                AnrCount = summary.AnrCount;
+                EventsInjected = summary.EventsInjected;
+                ProgressPercent = summary.Result == "PASSED" ? 100 : ProgressPercent;
+                StatusMessage = $"{summary.Result}: {summary.EventsInjected:N0} events; {summary.CrashCount} crashes; {summary.AnrCount} ANRs.";
+                RunHistory.Insert(0, new StressRunHistoryItem(summary));
+                while (RunHistory.Count > 20) RunHistory.RemoveAt(RunHistory.Count - 1);
+                UpdateComparison();
+            });
+            _lastRawOutput = Output;
+            var failed = summary.Result is "FAILED" or "ERROR" or "INCOMPLETE";
+            if (AutoSaveRuns || (CaptureFailureScreenshot && failed))
+            {
+                try { await SaveArtifactsAsync(summary, CaptureFailureScreenshot && failed, device.Serial); }
+                catch (Exception ex)
+                {
+                    AppLogger.Log.Error(ex, "[StressTest] Artifact save failed");
+                    StatusMessage = $"{summary.Result}; artifacts could not be saved: {ex.Message}";
+                }
             }
         }
-
-        var serial = SelectedDevice.Serial;
-        var package = TargetPackage;
-        var runCts = new CancellationTokenSource();
-        _runCts = runCts;
-        IsRunning = true;
-        _metricSnapshots.Clear();
-        _runningOnSerial = serial;
-        _metricsTimer?.Dispose();
-        _metricsTimer = new System.Threading.Timer(async _ =>
+        catch (OperationCanceledException)
         {
-            try
+            await _dispatcher.InvokeAsync(() => StatusMessage = "Stress test cancelled.");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[StressTest] Run failed");
+            await _dispatcher.InvokeAsync(() =>
             {
-                if (runCts.IsCancellationRequested) return;
-                var memResult = await _adbService.ExecuteCommandAsync(serial, "shell dumpsys meminfo " + package);
-                var snapshot = new Services.MetricSnapshot { Timestamp = DateTime.Now, EventsInjected = EventsInjected };
-                var pssMatch = System.Text.RegularExpressions.Regex.Match(memResult, @"TOTAL\s+(\d+)");
-                if (pssMatch.Success && int.TryParse(pssMatch.Groups[1].Value, out var pss))
-                    snapshot.TotalPssKb = pss;
-                lock (_metricSnapshots) { _metricSnapshots.Add(snapshot); }
+                StatusMessage = $"[!] Stress test error: {ex.Message}";
+                AppendOutput($"[ERROR] {SecurityHelper.RedactSensitiveText(ex.Message)}");
+            });
+        }
+        finally
+        {
+            if (profiler != null)
+            {
+                try { profiler.SnapshotSampled -= OnProfilerSample; await profiler.StopAsync(); profiler.Dispose(); }
+                catch (Exception ex) { AppLogger.Log.Debug(ex, "[StressTest] Profiler cleanup failed"); }
             }
-            catch { /* metrics best-effort */ }
-        }, null, 5000, 5000);
+            _profiler = null;
+            linkedCts?.Dispose();
+            durationCts?.Dispose();
+            if (ReferenceEquals(_runCts, userCts)) _runCts = null;
+            userCts?.Dispose();
+            _runningOnSerial = null;
+            await _dispatcher.InvokeAsync(() => IsRunning = false);
+            Interlocked.Exchange(ref _runActive, 0);
+        }
+    }
+
+    private void ResetRunState()
+    {
+        lock (_outputLock) _outputBuffer.Clear();
+        while (_pendingOutput.TryDequeue(out _)) { }
+        Interlocked.Exchange(ref _pendingOutputCount, 0);
+        Output = string.Empty;
+        lock (_metricSnapshots) _metricSnapshots.Clear();
+        Interlocked.Exchange(ref _crashCountBacking, 0);
+        Interlocked.Exchange(ref _anrCountBacking, 0);
+        Interlocked.Exchange(ref _eventsAttemptedBacking, 0);
+        Interlocked.Exchange(ref _genericAbortFlag, 0);
+        _runOffset = 0;
         CrashCount = 0;
         AnrCount = 0;
         EventsInjected = 0;
         ProgressPercent = 0;
-        Output = string.Empty;
-        _runStartedAt = DateTime.Now;
+        LatestFps = null;
+        LatestCpuPercent = null;
+        LatestPssKb = null;
+        LatestThermalStatus = null;
+    }
 
-        var args = $"-s \"{serial}\" shell monkey -p {package} " +
-                   $"-v -v --throttle {ThrottleMs} -s {Seed} --pct-touch {PctTouch} " +
-                   $"--pct-motion {PctMotion} --pct-trackball {PctTrackball} --pct-nav {PctNav} " +
-                   $"--pct-syskeys {PctSyskeys} --pct-appswitch {PctAppswitch} {EventCount}";
-
-        StatusMessage = $"Running monkey on {package} ({EventCount} events)...";
-        AppendOutput($"$ adb {args}\n");
-
-        try
+    private void OnProfilerSample(ProfilerSnapshot sample)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        lock (_metricSnapshots)
         {
-            var psi = new ProcessStartInfo
+            if (_metricSnapshots.Count >= 3600) _metricSnapshots.RemoveAt(0);
+            _metricSnapshots.Add(new MetricSnapshot
             {
-                FileName = ToolResolver.Resolve("adb"),
-                Arguments = args,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-            process.OutputDataReceived += (_, e) => { if (e.Data != null) HandleOutputLine(e.Data); };
-            process.ErrorDataReceived += (_, e) => { if (e.Data != null) HandleOutputLine(e.Data); };
-
-            process.Start();
-            LogPro.Services.ProcessManager.Instance.TrackProcess(process);
-            _adbProcess = process;
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            await process.WaitForExitAsync(runCts.Token).ConfigureAwait(false);
-
-            var duration = DateTime.Now - _runStartedAt;
-            var metrics = await CollectPerformanceMetricsAsync(serial, package).ConfigureAwait(false);
-            List<MetricSnapshot> snapshots;
-            lock (_metricSnapshots) { snapshots = _metricSnapshots.ToList(); }
-            var report = StressReportBuilder.BuildReport(new StressRunSummary
-            {
-                PackageName = package,
-                DeviceName = SelectedDevice.DisplayName,
-                EventCount = EventCount,
-                EventsInjected = EventsInjected,
-                CrashCount = Volatile.Read(ref _crashCountBacking),
-                AnrCount = Volatile.Read(ref _anrCountBacking),
-                Duration = duration,
-                Metrics = metrics,
-                MetricSnapshots = snapshots
-            });
-            AppendOutput("");
-            AppendOutput(report.TrimEnd());
-
-            await _dispatcher.InvokeAsync(() =>
-            {
-                CrashCount = Volatile.Read(ref _crashCountBacking);
-                AnrCount = Volatile.Read(ref _anrCountBacking);
-                if (!runCts.IsCancellationRequested)
-                {
-                    StatusMessage = $"Done. {EventsInjected}/{EventCount} events. Crashes: {CrashCount} ANRs: {AnrCount}";
-                    ProgressPercent = EventCount > 0 ? (double)EventsInjected / EventCount * 100 : 100;
-                }
+                Timestamp = sample.Timestamp,
+                TotalPssKb = sample.PssKb,
+                CpuPercent = sample.CpuPercent,
+                Fps = sample.Fps,
+                ThermalStatus = sample.ThermalStatus,
+                EventsInjected = Volatile.Read(ref _eventsAttemptedBacking)
             });
         }
-        catch (OperationCanceledException)
+        _dispatcher.Post(() =>
         {
-            await KillOnDeviceMonkeyAsync(serial);
-            await _dispatcher.InvokeAsync(() => StatusMessage = "Cancelled. On-device monkey killed.");
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log.Error(ex, "[StressTest] RunMonkeyAsync failed");
-            await KillOnDeviceMonkeyAsync(serial);
-            await _dispatcher.InvokeAsync(() => { StatusMessage = $"[!] Error: {ex.Message}"; AppendOutput($"\nERROR: {ex.Message}"); });
-        }
-        finally
-        {
-            _metricsTimer?.Dispose();
-            _metricsTimer = null;
-            try { _adbProcess?.Dispose(); } catch { /* best effort */ }
-            _adbProcess = null;
-            _runningOnSerial = null;
-            if (ReferenceEquals(_runCts, runCts)) _runCts = null;
-            runCts.Dispose();
-            IsRunning = false;
-            Interlocked.Exchange(ref _runActive, 0);
-        }
+            if (Volatile.Read(ref _disposed) != 0) return;
+            LatestFps = sample.Fps;
+            LatestCpuPercent = sample.CpuPercent;
+            LatestPssKb = sample.PssKb;
+            LatestThermalStatus = sample.ThermalStatus;
+            if (_activeRunMode == "Duration" && _activeDurationSeconds > 0)
+                ProgressPercent = Math.Min(100, (DateTime.UtcNow - _runStartedAt).TotalSeconds / _activeDurationSeconds * 100);
+        });
     }
 
     [RelayCommand]
     private void StopMonkey()
     {
         if (!IsRunning) return;
-        StatusMessage = "Stopping monkey...";
-        var serialAtStop = _runningOnSerial;
-
-        // Cancel waiter, kill local adb process tree, then kill on-device monkey.
-        try { _runCts?.Cancel(); } catch { /* best effort */ }
-        try
-        {
-            if (_adbProcess != null && !_adbProcess.HasExited)
-                _adbProcess.Kill(entireProcessTree: true);
-        }
-        catch (Exception ex) { AppLogger.Log.Debug(ex, "[StressTest] Local kill failed"); }
-
-        // Fire-and-forget on-device kill so STOP returns instantly.
-        _ = Task.Run(async () => await KillOnDeviceMonkeyAsync(serialAtStop));
-    }
-
-    /// <summary>
-    /// Issues `adb shell pkill com.android.commands.monkey` on the device.
-    /// Without this, monkey continues running on the device after the host adb client exits
-    /// (it survives device unplug too — the on-device process is independent).
-    /// </summary>
-    private async Task KillOnDeviceMonkeyAsync(string? serial)
-    {
-        if (string.IsNullOrEmpty(serial)) return;
-        try
-        {
-            // Multiple kill paths — different OEMs allow different signal modes.
-            await _adbService.ExecuteCommandAsync(serial, "shell pkill -l 9 com.android.commands.monkey");
-            await _adbService.ExecuteCommandAsync(serial, "shell pkill -f monkey");
-            await _adbService.ExecuteCommandAsync(serial, "shell killall -9 com.android.commands.monkey");
-            await _dispatcher.InvokeAsync(() => AppendOutput("[STOP] On-device monkey terminated."));
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log.Warn(ex, "[StressTest] On-device kill error");
-        }
+        StatusMessage = "Stopping this Monkey run…";
+        try { _runCts?.Cancel(); } catch (ObjectDisposedException) { }
     }
 
     private async Task<StressPerformanceMetrics> CollectPerformanceMetricsAsync(string serial, string packageName)
     {
-        try
-        {
-            var meminfoTask = _adbService.ExecuteCommandAsync(serial, $"shell dumpsys meminfo {packageName}");
-            var cpuinfoTask = _adbService.ExecuteCommandAsync(serial, "shell dumpsys cpuinfo");
-            var gfxinfoTask = _adbService.ExecuteCommandAsync(serial, $"shell dumpsys gfxinfo {packageName}");
-
-            await Task.WhenAll(meminfoTask, cpuinfoTask, gfxinfoTask).ConfigureAwait(false);
-            return StressReportBuilder.ParseMetrics(packageName, meminfoTask.Result, cpuinfoTask.Result, gfxinfoTask.Result);
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log.Warn(ex, "[StressTest] Failed to collect performance metrics");
-            return new StressPerformanceMetrics();
-        }
+        var meminfoTask = _adbService.ExecuteCommandWithResultAsync(serial, $"shell dumpsys meminfo {packageName}");
+        var cpuinfoTask = _adbService.ExecuteCommandWithResultAsync(serial, "shell dumpsys cpuinfo");
+        var gfxinfoTask = _adbService.ExecuteCommandWithResultAsync(serial, $"shell dumpsys gfxinfo {packageName}");
+        await Task.WhenAll(meminfoTask, cpuinfoTask, gfxinfoTask);
+        return StressReportBuilder.ParseMetrics(packageName,
+            meminfoTask.Result.Success ? meminfoTask.Result.Output : string.Empty,
+            cpuinfoTask.Result.Success ? cpuinfoTask.Result.Output : string.Empty,
+            gfxinfoTask.Result.Success ? gfxinfoTask.Result.Output : string.Empty);
     }
 
     private void HandleOutputLine(string line)
     {
-        // Parse progress markers: ":Sending event #1234"
-        if (line.Contains(":Sending event #"))
+        const string marker = "Sending event #";
+        var trimmed = line.TrimStart();
+        var markerAt = trimmed.IndexOf(marker, StringComparison.Ordinal);
+        if (markerAt >= 0 && (trimmed.StartsWith("//", StringComparison.Ordinal) || trimmed.StartsWith(":", StringComparison.Ordinal)))
         {
-            var idx = line.IndexOf(":Sending event #") + ":Sending event #".Length;
-            var rest = line.Substring(idx).Trim();
-            var spaceAt = rest.IndexOfAny(new[] { ' ', '\t', '\r', '\n' });
-            var num = spaceAt > 0 ? rest.Substring(0, spaceAt) : rest;
+            var num = new string(trimmed[(markerAt + marker.Length)..].TakeWhile(char.IsDigit).ToArray());
             if (int.TryParse(num, out var n))
             {
+                var total = _runOffset + n;
+                Interlocked.Exchange(ref _eventsAttemptedBacking, total);
                 _dispatcher.Post(() =>
                 {
-                    EventsInjected = n;
-                    if (EventCount > 0)
-                        ProgressPercent = Math.Min(100, (double)n / EventCount * 100);
+                    EventsInjected = total;
+                    if (_activeRunMode == "Events" && _activeEventBudget > 0)
+                        ProgressPercent = Math.Min(100, (double)total / _activeEventBudget * 100);
                 });
             }
         }
-
-        // Crash + ANR detection (line-anchored to avoid false positives in payload).
-        if (line.Contains("// CRASH:") || line.Contains("** Monkey aborted due to error.") || line.Contains("Process crashed"))
+        if (trimmed.StartsWith("// CRASH:", StringComparison.Ordinal) || trimmed.StartsWith("Process crashed", StringComparison.Ordinal))
             Interlocked.Increment(ref _crashCountBacking);
-        if (line.Contains("// NOT RESPONDING:") || line.Contains("ANR in"))
+        if (trimmed.StartsWith("// NOT RESPONDING:", StringComparison.Ordinal) || trimmed.StartsWith("ANR in", StringComparison.Ordinal))
             Interlocked.Increment(ref _anrCountBacking);
-
-        // Final summary
-        if (line.StartsWith("Events injected:"))
+        if (trimmed.StartsWith("** Monkey aborted due to error.", StringComparison.Ordinal))
+            Interlocked.Exchange(ref _genericAbortFlag, 1);
+        if (trimmed.StartsWith("// Monkey finished", StringComparison.Ordinal))
+            Interlocked.Exchange(ref _monkeyFinishedFlag, 1);
+        if (trimmed.StartsWith("Events injected:", StringComparison.Ordinal))
         {
-            var s = line.Substring("Events injected:".Length).Trim();
+            var s = trimmed["Events injected:".Length..].Trim();
             if (int.TryParse(s, out var total))
-                _dispatcher.Post(() => EventsInjected = total);
+            {
+                var cumulative = _runOffset + total;
+                Interlocked.Exchange(ref _eventsAttemptedBacking, cumulative);
+                _dispatcher.Post(() => EventsInjected = cumulative);
+            }
         }
-
         AppendOutput(line);
     }
 
@@ -431,62 +649,150 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
 
     private void AppendOutput(string line)
     {
-        _dispatcher.Post(() =>
+        if (Volatile.Read(ref _disposed) != 0) return;
+        _pendingOutput.Enqueue(line);
+        if (Interlocked.Increment(ref _pendingOutputCount) > 5000 && _pendingOutput.TryDequeue(out _))
+            Interlocked.Decrement(ref _pendingOutputCount);
+        if (Interlocked.CompareExchange(ref _outputDirty, 1, 0) == 0)
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(200);
+                await FlushOutputAsync();
+            });
+    }
+
+    private async Task FlushOutputAsync()
+    {
+        await _dispatcher.InvokeAsync(() =>
         {
             if (Volatile.Read(ref _disposed) != 0) return;
-            const int MaxChars = 200_000;
-            _outputBuffer.AppendLine(line);
-            if (_outputBuffer.Length > MaxChars)
+            lock (_outputLock)
             {
-                var keepFrom = _outputBuffer.Length - MaxChars / 2;
-                _outputBuffer.Remove(0, keepFrom);
-                _outputBuffer.Insert(0, "...[truncated]...\n");
-            }
-            // Debounce: flush to UI at most every 200ms to avoid O(n²) ToString per line.
-            if (Interlocked.Exchange(ref _outputDirty, 1) == 0)
-            {
-                _ = Task.Run(async () =>
+                while (_pendingOutput.TryDequeue(out var line))
                 {
-                    await Task.Delay(200);
-                    Interlocked.Exchange(ref _outputDirty, 0);
-                    _dispatcher.Post(() => { if (Volatile.Read(ref _disposed) == 0) Output = _outputBuffer.ToString(); });
-                });
+                    Interlocked.Decrement(ref _pendingOutputCount);
+                    _outputBuffer.AppendLine(line);
+                }
+                const int maxChars = 200_000;
+                if (_outputBuffer.Length > maxChars)
+                {
+                    _outputBuffer.Remove(0, _outputBuffer.Length - maxChars / 2);
+                    _outputBuffer.Insert(0, "...[truncated]...\n");
+                }
+                Output = _outputBuffer.ToString();
             }
         });
+        Interlocked.Exchange(ref _outputDirty, 0);
+        if (!_pendingOutput.IsEmpty && Interlocked.CompareExchange(ref _outputDirty, 1, 0) == 0)
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(200);
+                await FlushOutputAsync();
+            });
     }
 
     [RelayCommand]
     private void ClearOutput()
     {
+        if (IsRunning) { StatusMessage = "Stop the run before clearing its log."; return; }
+        lock (_outputLock) _outputBuffer.Clear();
+        while (_pendingOutput.TryDequeue(out _)) { }
+        Interlocked.Exchange(ref _pendingOutputCount, 0);
         Output = string.Empty;
-        CrashCount = 0;
-        AnrCount = 0;
-        Interlocked.Exchange(ref _crashCountBacking, 0);
-        Interlocked.Exchange(ref _anrCountBacking, 0);
-        EventsInjected = 0;
-        ProgressPercent = 0;
-        StatusMessage = "Cleared.";
+        StatusMessage = "Visible output cleared; saved run results are unchanged.";
     }
 
     [RelayCommand]
     private async Task SaveOutputAsync()
     {
-        if (string.IsNullOrEmpty(Output)) { StatusMessage = "[!] Nothing to save."; return; }
+        if (_lastSummary == null) { StatusMessage = "[!] No completed run to save."; return; }
         try
         {
-            var dir = PathHelper.GetDefaultSessionsDirectory();
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-            var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            var safePkg = string.IsNullOrEmpty(TargetPackage) ? "monkey" : TargetPackage.Replace('.', '_');
-            var path = Path.Combine(dir, $"monkey_{safePkg}_{stamp}.log");
-            var header = $"# LogPro monkey run\n# Device: {SecurityHelper.RedactSensitiveText(SelectedDevice?.DisplayName)} " +
-                         $"({SecurityHelper.HashSerial(SelectedDevice?.Serial ?? string.Empty)})\n" +
-                         $"# Package: {SecurityHelper.RedactSensitiveText(TargetPackage)}\n# Events: {EventCount}  Seed: {Seed}  Throttle: {ThrottleMs}ms\n" +
-                         $"# Crashes: {CrashCount}  ANRs: {AnrCount}  Events injected: {EventsInjected}\n\n";
-            await File.WriteAllTextAsync(path, header + Output);
-            StatusMessage = $"Saved → {path}";
+            await SaveArtifactsAsync(_lastSummary, false);
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[StressTest] SaveOutputAsync failed"); StatusMessage = $"[!] Save failed: {ex.Message}"; }
+    }
+
+    private async Task SaveArtifactsAsync(StressRunSummary summary, bool captureScreenshot, string? serial = null)
+    {
+        var configured = PreferencesService.Current.SessionsRootDirectory;
+        if (string.IsNullOrWhiteSpace(configured)) configured = PathHelper.GetDefaultSessionsDirectory();
+        if (!PathHelper.TryGetSafeLocalDirectory(configured, out var root))
+            throw new IOException("The configured sessions directory is not safe for saving stress-test results.");
+        var runsRoot = Path.Combine(root, "StressTests");
+        Directory.CreateDirectory(runsRoot);
+        var runDir = Path.Combine(runsRoot, $"{summary.StartedUtc:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(runDir);
+        if (!PathHelper.RestrictDirectoryAccess(runDir))
+            throw new IOException("Could not protect the stress-test artifact directory.");
+        var logPath = Path.Combine(runDir, "output.log");
+        var redacted = SecurityHelper.RedactSensitiveText(_lastRawOutput);
+        serial ??= _lastRunSerial;
+        if (!string.IsNullOrEmpty(serial)) redacted = redacted.Replace(serial, summary.DeviceSerialHash, StringComparison.Ordinal);
+        await File.WriteAllTextAsync(logPath, redacted);
+        var summaryPath = Path.Combine(runDir, "summary.json");
+        await File.WriteAllTextAsync(summaryPath, JsonSerializer.Serialize(summary, LogProJsonContext.Default.StressRunSummary));
+        var metricsPath = Path.Combine(runDir, "metrics.csv");
+        var rows = new List<string> { "utc,total_pss_kb,cpu_percent,fps,thermal_status,events_injected" };
+        foreach (var sample in summary.MetricSnapshots)
+            rows.Add(string.Join(',', sample.Timestamp.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                sample.TotalPssKb?.ToString(CultureInfo.InvariantCulture) ?? "",
+                sample.CpuPercent?.ToString(CultureInfo.InvariantCulture) ?? "",
+                sample.Fps?.ToString(CultureInfo.InvariantCulture) ?? "",
+                sample.ThermalStatus?.ToString(CultureInfo.InvariantCulture) ?? "",
+                sample.EventsInjected.ToString(CultureInfo.InvariantCulture)));
+        await File.WriteAllLinesAsync(metricsPath, rows);
+        if (captureScreenshot && !string.IsNullOrEmpty(serial))
+        {
+            var screenshotPath = Path.Combine(runDir, "failure.png");
+            if (!await _adbService.CaptureScreenshotAsync(serial, screenshotPath))
+                AppendOutput("[!] Failure screenshot could not be captured.");
+        }
+        var history = RunHistory.FirstOrDefault(item => ReferenceEquals(item.Summary, summary));
+        if (history != null) history.ArtifactsPath = runDir;
+        StatusMessage = $"{summary.Result}: artifacts saved to {runDir}";
+    }
+
+    partial void OnSelectedBaselineRunChanged(StressRunHistoryItem? value) => UpdateComparison();
+
+    private void UpdateComparison()
+    {
+        var current = _lastSummary;
+        var baseline = SelectedBaselineRun?.Summary;
+        if (current == null || baseline == null)
+        {
+            ComparisonSummary = "Choose a prior run to compare results.";
+            return;
+        }
+        if (ReferenceEquals(current, baseline))
+        {
+            ComparisonSummary = "Choose a different run as the baseline.";
+            return;
+        }
+        var parts = new List<string>
+        {
+            $"events {current.EventsInjected - baseline.EventsInjected:+#;-#;0}",
+            $"crashes {current.CrashCount - baseline.CrashCount:+#;-#;0}",
+            $"ANRs {current.AnrCount - baseline.AnrCount:+#;-#;0}"
+        };
+        if (current.PackageName != baseline.PackageName || current.DeviceSerialHash != baseline.DeviceSerialHash)
+            parts.Insert(0, "different package or device");
+        AddMetricDelta("average PSS KB", current.MetricSnapshots.Select(m => (double?)m.TotalPssKb),
+            baseline.MetricSnapshots.Select(m => (double?)m.TotalPssKb), parts);
+        AddMetricDelta("average CPU %", current.MetricSnapshots.Select(m => m.CpuPercent),
+            baseline.MetricSnapshots.Select(m => m.CpuPercent), parts);
+        AddMetricDelta("average FPS", current.MetricSnapshots.Select(m => m.Fps),
+            baseline.MetricSnapshots.Select(m => m.Fps), parts);
+        ComparisonSummary = $"Against {baseline.StartedUtc.ToLocalTime():yyyy-MM-dd HH:mm}: {string.Join(", ", parts)}.";
+    }
+
+    private static void AddMetricDelta(string label, IEnumerable<double?> current,
+        IEnumerable<double?> baseline, List<string> parts)
+    {
+        var currentValues = current.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        var baselineValues = baseline.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        if (currentValues.Count > 0 && baselineValues.Count > 0)
+            parts.Add($"{label} {currentValues.Average() - baselineValues.Average():+#0.0;-#0.0;0.0}");
     }
 
     public void Dispose()
@@ -495,18 +801,15 @@ public partial class StressTestViewModel : ObservableObject, IDisposable
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceMonitor.DeviceDisconnected -= OnDeviceDisconnected;
         try { _runCts?.Cancel(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[StressTest] Dispose: cancel CTS failed"); }
-        try { _runCts?.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[StressTest] Dispose: dispose CTS failed"); }
-        try
-        {
-            if (_adbProcess != null && !_adbProcess.HasExited)
-                _adbProcess.Kill(entireProcessTree: true);
-        }
-        catch (Exception ex) { AppLogger.Log.Debug(ex, "[StressTest] Dispose: kill process failed"); }
-        _metricsTimer?.Dispose();
-        _metricsTimer = null;
-        var serial = _runningOnSerial;
-        if (!string.IsNullOrWhiteSpace(serial))
-            _ = Task.Run(() => KillOnDeviceMonkeyAsync(serial));
         GC.SuppressFinalize(this);
     }
+}
+
+public sealed class StressRunHistoryItem
+{
+    public StressRunHistoryItem(StressRunSummary summary) => Summary = summary;
+    public StressRunSummary Summary { get; }
+    public string DisplayName => $"{Summary.StartedUtc.ToLocalTime():yyyy-MM-dd HH:mm} • {Summary.PackageName} • {Summary.Result}";
+    public string? ArtifactsPath { get; set; }
+    public override string ToString() => DisplayName;
 }

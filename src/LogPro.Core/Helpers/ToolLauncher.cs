@@ -401,7 +401,7 @@ public static class ToolLauncher
     private static string SanitizeForLog(string arguments)
         => SecurityHelper.RedactSensitiveText(arguments);
 
-    internal static void ConfigureOfflineEnvironment(ProcessStartInfo startInfo)
+    public static void ConfigureOfflineEnvironment(ProcessStartInfo startInfo)
     {
         // Strip proxy and Python vars that could leak data or break bundled tools
         foreach (var name in new[]
