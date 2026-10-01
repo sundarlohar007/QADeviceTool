@@ -64,12 +64,12 @@ public class ProfilerViewModelTests
         await vm.StopProfilingCommand.ExecuteAsync(null);
 
         vm.History.Count.Should().BeGreaterThanOrEqualTo(2, "sampler runs at ~1s intervals");
-        vm.History[0].Fps.Should().HaveValue();
-        vm.History[0].Fps!.Value.Should().BeGreaterThan(30, "fake SurfaceFlinger streams ~60fps with jank");
+        vm.History[0].Fps.Should().BeNull("the first poll only establishes a live frame baseline");
         vm.Fps.Should().BeNull("the second sample contains no newly presented frames");
         vm.JankyFrames.Should().Be(0, "unchanged SurfaceFlinger history must not be counted again");
         vm.CpuPercent.Should().Be(38.0);
         vm.PssKb.Should().Be(384000);
+        vm.SessionVerdict.Should().StartWith("INSUFFICIENT DATA");
     }
 
     [Fact]
@@ -94,5 +94,60 @@ public class ProfilerViewModelTests
         vm.StartProfilingCommand.Execute(null);
         vm.IsProfiling.Should().BeFalse();
         vm.StatusMessage.Should().Contain("Android");
+    }
+
+    [Fact]
+    public void Start_OfflineAndroid_BlockedBeforeAdbCommands()
+    {
+        var adb = CreateFakeAdb();
+        var store = new DeviceStore(new ImmediateUiDispatcher());
+        store.UpdateDevices(new[] { new LogPro.Models.DeviceInfo { Serial = "OFFLINE01", Platform = LogPro.Models.DevicePlatform.Android,
+            ConnectionState = LogPro.Models.DeviceConnectionState.Offline } });
+        using var vm = new ProfilerViewModel(adb.Object, store, new ImmediateUiDispatcher(), "com.fakegame");
+        vm.StartProfilingCommand.Execute(null);
+        vm.IsProfiling.Should().BeFalse();
+        vm.StatusMessage.Should().Contain("offline");
+        adb.Verify(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void Start_InvalidSavedPackage_ShowsValidationInsteadOfThrowing()
+    {
+        var store = new DeviceStore(new ImmediateUiDispatcher());
+        store.UpdateDevices(new[] { new LogPro.Models.DeviceInfo { Serial = "FAKE01", Platform = LogPro.Models.DevicePlatform.Android } });
+        using var vm = new ProfilerViewModel(CreateFakeAdb().Object, store, new ImmediateUiDispatcher(), "bad package");
+        vm.StartProfilingCommand.Execute(null);
+        vm.IsProfiling.Should().BeFalse();
+        vm.StatusMessage.Should().Contain("valid Android package");
+    }
+
+    [Fact]
+    public async Task Disconnect_StopsRunAndPreventsLateSamples()
+    {
+        var store = new DeviceStore(new ImmediateUiDispatcher());
+        store.UpdateDevices(new[] { new LogPro.Models.DeviceInfo { Serial = "FAKE01", Model = "Pixel", Platform = LogPro.Models.DevicePlatform.Android } });
+        using var vm = new ProfilerViewModel(CreateFakeAdb().Object, store, new ImmediateUiDispatcher(), "com.fakegame");
+        vm.StartProfilingCommand.Execute(null);
+        vm.IsProfiling.Should().BeTrue();
+        store.UpdateDevices(Array.Empty<LogPro.Models.DeviceInfo>());
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (vm.IsProfiling && DateTime.UtcNow < deadline) await Task.Delay(50);
+        vm.IsProfiling.Should().BeFalse();
+        var count = vm.History.Count;
+        await Task.Delay(300);
+        vm.History.Count.Should().Be(count);
+        vm.StatusMessage.Should().Contain("disconnected");
+    }
+
+    [Fact]
+    public void Baseline_CanBePinnedAndClearedAfterSufficientRun()
+    {
+        using var vm = new ProfilerViewModel(CreateFakeAdb().Object, new DeviceStore(new ImmediateUiDispatcher()), new ImmediateUiDispatcher());
+        vm.History.Add(new LogPro.Services.Profiling.ProfilerSnapshot { Fps = 60 });
+        vm.History.Add(new LogPro.Services.Profiling.ProfilerSnapshot { Fps = 58 });
+        vm.PinBaselineCommand.Execute(null);
+        vm.BaselineComparison.Should().Contain("Pinned baseline");
+        vm.ClearBaselineCommand.Execute(null);
+        vm.BaselineComparison.Should().Be("No baseline yet");
     }
 }

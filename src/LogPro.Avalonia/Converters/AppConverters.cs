@@ -34,11 +34,16 @@ public sealed class SparklineConverter : IValueConverter
                 "mem" => s.PssKb.HasValue ? s.PssKb.Value / 1024.0 : double.NaN,
                 _ => double.NaN
             };
-            if (!double.IsNaN(v)) samples.Add(v);
+            samples.Add(v);
         }
         if (samples.Count < 2) return points;
 
         var tail = samples.Skip(Math.Max(0, samples.Count - 120)).ToList();
+        // A Polyline cannot represent gaps. Render only the most recent
+        // contiguous segment so an unavailable poll never appears connected.
+        var lastGap = tail.FindLastIndex(double.IsNaN);
+        if (lastGap >= 0) tail = tail.Skip(lastGap + 1).ToList();
+        if (tail.Count < 2) return points;
         var min = tail.Min();
         var max = tail.Max();
         var range = max - min > 0 ? max - min : 1;

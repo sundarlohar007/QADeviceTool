@@ -8,13 +8,14 @@ public class TierMatrixTests
     private static Mock<LogPro.Services.IAdbService> CreateFakeAdb(double fastFps, double slowFps)
     {
         var mock = new Mock<LogPro.Services.IAdbService>();
+        var calls = new System.Collections.Concurrent.ConcurrentDictionary<string, int>();
         mock.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string serial, string command, CancellationToken _) =>
             {
                 if (command.Contains("SurfaceFlinger --list"))
                     return "SurfaceView[com.fakegame/com.fakegame.MainActivity](BLAST)#0\n";
                 if (command.Contains("SurfaceFlinger --latency"))
-                    return Latency(serial == "SLOW01" ? slowFps : fastFps);
+                    return Latency(serial == "SLOW01" ? slowFps : fastFps, calls.AddOrUpdate(serial, 1, (_, n) => n + 1));
                 if (command.Contains("cpuinfo"))
                     return "  38% 2345/com.fakegame: 25% user + 13% kernel\n";
                 if (command.Contains("meminfo"))
@@ -28,12 +29,12 @@ public class TierMatrixTests
         return mock;
     }
 
-    private static string Latency(double fps)
+    private static string Latency(double fps, int extraFrames)
     {
         var ns = (long)(1_000_000_000.0 / fps);
         var sb = new System.Text.StringBuilder("16666666\n");
         long present = 10_000_000_000L;
-        for (var i = 0; i < 120; i++)
+        for (var i = 0; i < 120 + extraFrames; i++)
         {
             present += ns;
             sb.AppendLine($"{i * ns:D14}\t{i * ns + 2_000_000:D14}\t{present:D14}");

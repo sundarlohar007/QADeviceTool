@@ -24,8 +24,8 @@
 | Screenshots + screen recording | ✅ | ◐ |
 | Macro record/replay | ✅ | — |
 | Monkey stress testing | ✅ | — |
-| **Performance profiler** — FPS/jank/CPU/memory/thermal/battery | ✅ | Phase 6 (macOS) |
-| Live HUD + sparklines + HTML reports | ✅ | — |
+| **Performance profiler** — live FPS, estimated frame gaps, CPU, memory, thermal, battery | ✅ | — |
+| Performance run charts, HUD, markers, baseline alerts, tier comparison, JSON/CSV/HTML reports | ✅ | — |
 | **Soak runs** — memory-growth / FPS-decay flags | ✅ | — |
 | **Device-tier matrix** — multi-device comparison | ✅ | — |
 | **Condition simulation** — network presets, mock location | ✅ | — |
@@ -85,8 +85,8 @@ dotnet publish src/LogPro.App/LogPro.App.csproj -c Release -r win-x64 --self-con
 logpro-cli devices                                    # list devices
 logpro-cli capture --serial S [--seconds N] --out DIR # capture logs
 logpro-cli profile --serial S --seconds N --package P # FPS/CPU/mem/thermal sampling
-logpro-cli soak    --serial S --seconds N             # endurance run with decay flags
-logpro-cli matrix  --serials A,B,C --seconds N        # tier comparison
+logpro-cli soak    --serial S --seconds N --package P # endurance run with decay flags
+logpro-cli matrix  --serials A,B,C --seconds N --package P # tier comparison
 logpro-cli location route --serial S --app P --waypoints "lat,lon;lat,lon" --speed 5
 logpro-cli location reset --serial S --app P          # MANDATORY mock-location reset
 logpro-cli network apply --serial S --preset 4g       # tc/netem conditioning (root)
@@ -94,6 +94,8 @@ logpro-cli serve --port 8417                           # loopback API; prints a 
 logpro-cli issue  --serial S --out DIR                # redacted issue bundle (no network)
 logpro-cli plugins --dir DIR                          # plugin discovery
 ```
+
+Performance runs use an online Android device and a selected app for app FPS, CPU, and memory. The first SurfaceFlinger poll establishes a baseline; missing FPS is reported as insufficient data rather than a healthy run. Frame-gap counts are estimates from presentation timestamps, not Android FrameTimeline jank classifications. Soak loads run for the entire requested duration, and CLI soak exits nonzero for missing data, an early or failed load, or threshold flags.
 
 ## Architecture
 

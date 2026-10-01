@@ -16,7 +16,10 @@ public sealed class SoakReport
     public bool MemoryGrowthFlagged { get; init; }
     public bool FpsDecayFlagged { get; init; }
     public bool ThermalFlagged { get; init; }
-    public bool HasIssues => MemoryGrowthFlagged || FpsDecayFlagged || ThermalFlagged;
+    public string? LoadError { get; init; }
+    public bool LoadCompletedEarly { get; init; }
+    public bool HasSufficientData { get; init; }
+    public bool HasIssues => !HasSufficientData || LoadError != null || LoadCompletedEarly || MemoryGrowthFlagged || FpsDecayFlagged || ThermalFlagged;
 }
 
 /// <summary>
@@ -27,7 +30,7 @@ public static class SoakRunner
 {
     private const double MemoryGrowthFlagKb = 150 * 1024;  // 150 MB growth over a run
     private const double FpsDecayFlag = 10.0;              // 10 FPS drop between start and end thirds
-    private const int ThermalFlag = 1;                     // THROTTLING or worse
+    private const int ThermalFlag = 3;                     // Android THERMAL_STATUS_SEVERE or worse
 
     public static async Task<SoakReport> RunAsync(
         IAdbService adb, string serial, string package,
@@ -41,27 +44,35 @@ public static class SoakRunner
 
         using var durationCts = new CancellationTokenSource(duration);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, durationCts.Token);
-        var loadTask = Task.Run(async () =>
-        {
-            try { await loadLoop(cts.Token); }
-            catch (OperationCanceledException) { /* run window elapsed */ }
-        });
+        var loadTask = Task.Run(() => loadLoop(cts.Token));
+        string? loadError = null;
+        var loadCompletedEarly = false;
 
         try
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token);
+            var timeout = Task.Delay(Timeout.InfiniteTimeSpan, cts.Token);
+            var completed = await Task.WhenAny(timeout, loadTask);
+            if (completed == loadTask && !cts.IsCancellationRequested)
+            {
+                loadCompletedEarly = loadTask.IsCompletedSuccessfully;
+                if (loadTask.IsCanceled) loadError = "Load cancelled before the soak duration ended.";
+            }
         }
         catch (OperationCanceledException) { }
         finally
         {
             cts.Cancel();
-            try { await loadTask; } catch (Exception ex) { AppLogger.Log.Debug(ex, "[Soak] Load loop faulted"); }
+            try { await loadTask; }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested) { }
+            catch (Exception ex) { loadError = LogPro.Helpers.SecurityHelper.RedactSensitiveText(ex.Message); AppLogger.Log.Debug(ex, "[Soak] Load loop faulted"); }
             await profiler.StopAsync();
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         var history = profiler.History;
         if (history.Count == 0)
-            return new SoakReport { Duration = duration };
+            return new SoakReport { Duration = duration, LoadError = loadError, LoadCompletedEarly = loadCompletedEarly };
 
         double? AverageFps(IEnumerable<ProfilerSnapshot> s)
         {
@@ -69,9 +80,10 @@ public static class SoakRunner
             return values.Count > 0 ? values.Average() : null;
         }
 
-        var third = Math.Max(1, history.Count / 3);
-        var firstThird = history.Take(third);
-        var lastThird = history.Skip(history.Count - third);
+        var fpsHistory = history.Where(s => s.Fps.HasValue).ToList();
+        var third = Math.Max(1, fpsHistory.Count / 3);
+        var firstThird = fpsHistory.Take(third);
+        var lastThird = fpsHistory.Skip(Math.Max(0, fpsHistory.Count - third));
         var avgStart = AverageFps(firstThird);
         var avgEnd = AverageFps(lastThird);
 
@@ -93,7 +105,10 @@ public static class SoakRunner
             MaxThermalStatus = thermalMax,
             MemoryGrowthFlagged = memoryGrowth > MemoryGrowthFlagKb,
             FpsDecayFlagged = fpsDecay is > FpsDecayFlag,
-            ThermalFlagged = thermalMax >= ThermalFlag
+            ThermalFlagged = thermalMax >= ThermalFlag,
+            LoadError = loadError,
+            LoadCompletedEarly = loadCompletedEarly,
+            HasSufficientData = history.Count(s => s.Fps.HasValue) >= 2 && history.Count(s => s.PssKb.HasValue) >= 2
         };
     }
 }

@@ -78,12 +78,13 @@ if (joined.Contains("SurfaceFlinger --latency", StringComparison.Ordinal))
     // Per-device frame pacing: FAKE02 is the slower tier (fewer FPS), FAKE03 the fastest.
     var serial = ExtractSerial(joined);
     var frameNs = serial == "FAKE02" ? 27_000_000L : serial == "FAKE03" ? 14_000_000L : 16_666_666L;
-    var jankEvery = serial == "FAKE02" ? 5 : 10;
-    long present = 10_000_000_000L;
+    // A rolling buffer anchored to the clock makes later polls contain genuinely
+    // new presentation timestamps; a fixed fixture would only test stale data.
+    var nowNs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L;
+    long present = (nowNs / frameNs - 90) * frameNs;
     for (var i = 0; i < 90; i++)
     {
         present += frameNs;
-        if (i % jankEvery == 0) present += 25_000_000L;
         Console.WriteLine($"{(i * frameNs):D14}\t{(i * frameNs + 2_000_000):D14}\t{present:D14}");
     }
     return 0;

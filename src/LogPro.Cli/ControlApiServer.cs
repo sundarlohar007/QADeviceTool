@@ -180,13 +180,21 @@ public sealed class ControlApiServer : IDisposable
                     { await WriteJsonAsync(ctx.Response, 400, new { error = "network device selectors are disabled" }); return; }
                     if (!string.IsNullOrWhiteSpace(package) && !SecurityHelper.IsValidPackageName(package))
                     { await WriteJsonAsync(ctx.Response, 400, new { error = "invalid package" }); return; }
+                    var device = await FindDeviceAsync(serial);
+                    if (device is not { Platform: DevicePlatform.Android, ConnectionState: DeviceConnectionState.Online })
+                    { await WriteJsonAsync(ctx.Response, 422, new { error = "profile requires an online Android device" }); return; }
 
+                    bool alreadyProfiling;
                     lock (_lock)
                     {
-                        _profiler?.Dispose();
-                        _profiler = new AndroidPerformanceProfiler(_adb, serial, string.IsNullOrWhiteSpace(package) ? null : package);
-                        _profiler.Start();
+                        alreadyProfiling = _profiler != null;
+                        if (!alreadyProfiling)
+                        {
+                            _profiler = new AndroidPerformanceProfiler(_adb, serial, string.IsNullOrWhiteSpace(package) ? null : package);
+                            _profiler.Start();
+                        }
                     }
+                    if (alreadyProfiling) { await WriteJsonAsync(ctx.Response, 409, new { error = "a profile is already running" }); return; }
                     await WriteJsonAsync(ctx.Response, 200, new { ok = true });
                     return;
                 }
@@ -225,7 +233,9 @@ public sealed class ControlApiServer : IDisposable
                         jankyFrames = summary.JankyFrames,
                         maxCpuPercent = summary.MaxCpuPercent,
                         memoryGrowthKb = summary.MemoryGrowthKb,
-                        slowSession = summary.SlowSession
+                        slowSession = summary.SlowSession,
+                        hasSufficientData = summary.HasSufficientData,
+                        verdict = summary.Verdict
                     });
                     return;
                 }
@@ -238,6 +248,9 @@ public sealed class ControlApiServer : IDisposable
                     { await WriteJsonAsync(ctx.Response, 400, new { error = "network device selectors are disabled" }); return; }
                     if (!string.IsNullOrWhiteSpace(req.Package) && !SecurityHelper.IsValidPackageName(req.Package))
                     { await WriteJsonAsync(ctx.Response, 400, new { error = "invalid package" }); return; }
+                    var device = await FindDeviceAsync(req.Serial);
+                    if (device is not { Platform: DevicePlatform.Android, ConnectionState: DeviceConnectionState.Online })
+                    { await WriteJsonAsync(ctx.Response, 422, new { error = "soak requires an online Android device" }); return; }
                     var seconds = Math.Clamp(req.Seconds, 1, 24 * 3600);
 
                     Func<CancellationToken, Task> load = async token =>
@@ -262,7 +275,10 @@ public sealed class ControlApiServer : IDisposable
                         report.MemoryGrowthKb,
                         report.JankyFrames,
                         report.MaxThermalStatus,
-                        flagged = report.HasIssues
+                        flagged = report.HasIssues,
+                        report.HasSufficientData,
+                        report.LoadCompletedEarly,
+                        report.LoadError
                     });
                     return;
                 }

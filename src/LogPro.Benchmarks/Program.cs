@@ -42,7 +42,7 @@ public class HotPathBenchmarks
     }
 
     [Benchmark]
-    public double? ParseCpuPercent() => AndroidDumpsysParsers.ParseCpuPercent(_cpuinfo, "fakegame");
+    public double? ParseCpuPercent() => AndroidDumpsysParsers.ParseCpuPercent(_cpuinfo, "com.fakegame");
 
     [Benchmark]
     public (int? Pss, int? Rss) ParseMemInfoTotals() => AndroidDumpsysParsers.ParseMemInfoTotals(_meminfo);

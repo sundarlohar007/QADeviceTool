@@ -18,7 +18,7 @@ public class ProfilerReportHtmlTests
         html.Should().Contain("<!DOCTYPE html>");
         html.Should().Contain("Test Run");
         html.Should().Contain("Avg FPS");
-        html.Should().Contain("Janky Frames");
+        html.Should().Contain("Est. Frame Gaps");
         html.Should().Contain("3 samples");
         html.Should().Contain("<table>");
         html.Should().Contain("53.0", "avg of 60/59/40"); // invariant culture formatting
@@ -38,5 +38,27 @@ public class ProfilerReportHtmlTests
         var html = ProfilerReportHtml.Render("Empty", Array.Empty<ProfilerSnapshot>());
         html.Should().Contain("0 samples");
         html.Should().Contain("n/a");
+        html.Should().Contain("INSUFFICIENT DATA");
+    }
+
+    [Fact]
+    public void Summarize_RequiresTwoLiveFpsSamples()
+    {
+        ProfilerReportWriter.Summarize(new[] { new ProfilerSnapshot { PssKb = 1000, CpuPercent = 20 } })
+            .Verdict.Should().Be("INSUFFICIENT DATA");
+        ProfilerReportWriter.Summarize(new[] { new ProfilerSnapshot { Fps = 60 }, new ProfilerSnapshot { Fps = 58 } })
+            .Verdict.Should().Be("OK");
+    }
+
+    [Fact]
+    public void Summarize_ConsecutiveSlowFrameWindows_AreNotHealthy()
+    {
+        var samples = new[]
+        {
+            new ProfilerSnapshot { Fps = 15, FrameTimeP90Ms = 65, TotalFrames = 10 },
+            new ProfilerSnapshot { Fps = 14, FrameTimeP90Ms = 70, TotalFrames = 10 }
+        };
+        ProfilerReportWriter.Summarize(samples).Verdict.Should().Be("SLOW SESSION");
+        ProfilerReportHtml.Render("Slow", samples).Should().Contain("SLOW SESSION");
     }
 }

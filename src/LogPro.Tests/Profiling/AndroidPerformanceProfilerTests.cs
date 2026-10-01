@@ -23,6 +23,8 @@ public class AndroidPerformanceProfilerTests
         await using var profiler = new AndroidPerformanceProfiler(adb.Object, "S1", "com.game");
 
         var first = await profiler.SampleOnceAsync();
+        first.Fps.Should().BeNull("old SurfaceFlinger frames must not appear as live FPS");
+        first.TotalFrames.Should().Be(0);
         first.JankyFrames.Should().Be(0);
         present = new[] { present[0], present[1], present[2], 1_083_333_333L };
         var second = await profiler.SampleOnceAsync();
@@ -33,5 +35,19 @@ public class AndroidPerformanceProfilerTests
         third.TotalFrames.Should().Be(0);
         third.Fps.Should().BeNull("no new frames means the previous FPS is stale");
         adb.Verify(a => a.ExecuteCommandAsync("S1", $"shell dumpsys SurfaceFlinger --latency \"{layer}\"", It.IsAny<CancellationToken>()), Times.Exactly(3));
+    }
+
+    [Fact]
+    public async Task SampleOnce_WithoutPackage_DoesNotSelectArbitraryAppLayerOrCpu()
+    {
+        var adb = new Mock<IAdbService>();
+        adb.Setup(a => a.ExecuteCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string serial, string command, CancellationToken token) => command.Contains("--list")
+                ? "SurfaceView[com.other/Main]#1\n" : "22% 123/com.other: user\n");
+        await using var profiler = new AndroidPerformanceProfiler(adb.Object, "S1");
+        var sample = await profiler.SampleOnceAsync();
+        sample.Fps.Should().BeNull();
+        sample.CpuPercent.Should().BeNull();
+        adb.Verify(a => a.ExecuteCommandAsync("S1", It.Is<string>(c => c.Contains("--latency")), It.IsAny<CancellationToken>()), Times.Never);
     }
 }
