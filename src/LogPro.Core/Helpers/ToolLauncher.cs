@@ -158,7 +158,8 @@ public static class ToolLauncher
     }
 
     public static async Task<ToolLauncherResult> RunAsync(string exeName, string arguments, int timeoutMs = 15000,
-        Action<string>? outputCallback = null, CancellationToken cancellationToken = default, bool forwardErrorToCallback = false)
+        Action<string>? outputCallback = null, CancellationToken cancellationToken = default, bool forwardErrorToCallback = false,
+        bool hidePayloadInLogs = false, int? gateTimeoutMs = null)
     {
         var result = new ToolLauncherResult();
         var fullExePath = ResolveExecutablePath(exeName);
@@ -178,7 +179,16 @@ public static class ToolLauncher
             return result;
         }
 
-        using var gate = await EnterDeviceGateAsync(arguments, cancellationToken).ConfigureAwait(false);
+        using var gateCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (gateTimeoutMs is { } gateLimit) gateCts.CancelAfter(Math.Max(1, gateLimit));
+        IDisposable gate;
+        try { gate = await EnterDeviceGateAsync(arguments, gateCts.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (gateTimeoutMs.HasValue && gateCts.IsCancellationRequested)
+        {
+            result.Error = cancellationToken.IsCancellationRequested ? "Process cancelled." : "Device queue timed out.";
+            return result;
+        }
+        using var gateLease = gate;
         Process? process = null;
         Task outputTask = Task.CompletedTask;
         Task errorTask = Task.CompletedTask;
@@ -187,7 +197,7 @@ public static class ToolLauncher
         {
             var logger = Services.AppLogger.Log;
             var workDir = ResolveWorkDir(fullExePath);
-            var logArgs = SanitizeForLog(arguments);
+            var logArgs = hidePayloadInLogs ? "[Deep link payload hidden]" : SanitizeForLog(arguments);
             logger.Info($"[ToolLauncher] Launching: {fullExePath} {logArgs}");
             logger.Debug($"[ToolLauncher] WorkingDirectory: {workDir}");
 
@@ -256,10 +266,10 @@ public static class ToolLauncher
             logger.Info($"[ToolLauncher] ExitCode: {result.ExitCode} | Success: {result.Success}");
 
             if (!string.IsNullOrWhiteSpace(result.Output))
-                logger.Debug($"[ToolLauncher] STDOUT:\n{SecurityHelper.RedactSensitiveText(result.Output)}");
+                logger.Debug(hidePayloadInLogs ? "[ToolLauncher] Deep link output hidden." : $"[ToolLauncher] STDOUT:\n{SecurityHelper.RedactSensitiveText(result.Output)}");
 
             if (!string.IsNullOrWhiteSpace(result.Error))
-                logger.Error($"[ToolLauncher] STDERR:\n{SecurityHelper.RedactSensitiveText(result.Error)}");
+                logger.Error(hidePayloadInLogs ? "[ToolLauncher] Deep link error output hidden." : $"[ToolLauncher] STDERR:\n{SecurityHelper.RedactSensitiveText(result.Error)}");
         }
         catch (OperationCanceledException)
         {

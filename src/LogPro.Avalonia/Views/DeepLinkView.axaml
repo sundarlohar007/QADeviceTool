@@ -1,22 +1,66 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:LogPro.ViewModels"
-             xmlns:conv="using:LogPro.Avalonia.Converters"
-             x:Class="LogPro.Avalonia.Views.DeepLinkView"
-             x:DataType="vm:DeepLinkViewModel">
-  <DockPanel>
-    <Border DockPanel.Dock="Top" Padding="24,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
-      <DockPanel>
-        <TextBlock Text="Deep Link" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
-        <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="220" />
-      </DockPanel>
-    </Border>
-    <StackPanel Margin="24" Spacing="12" MaxWidth="720" HorizontalAlignment="Left">
-      <TextBlock Text="TARGET URL" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" FontWeight="SemiBold" />
-      <TextBox Text="{Binding TargetUrl}" PlaceholderText="myapp://route?param=1 or intent:…" Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorder}" FontFamily="Consolas, Menlo, monospace" />
-      <Button HorizontalAlignment="Left" Content="Fire Intent" Command="{Binding FireIntentCommand}"
-              IsEnabled="{Binding IsRouting, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="16,8" />
-      <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushAccent}" FontSize="12" TextWrapping="Wrap" />
-    </StackPanel>
-  </DockPanel>
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:LogPro.ViewModels" xmlns:models="using:LogPro.Models" xmlns:conv="using:LogPro.Avalonia.Converters" x:Class="LogPro.Avalonia.Views.DeepLinkView" x:DataType="vm:DeepLinkViewModel">
+
+    <Grid>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <StackPanel Margin="24,16">
+        <TextBlock Text="Deep Link" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
+        <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsEnabled="{Binding IsRouting, Converter={x:Static conv:AppConverters.InverseBool}}" HorizontalAlignment="Left" MinWidth="300" Margin="0,8">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="models:DeviceInfo"><StackPanel>
+            <TextBlock Text="{Binding DisplayName}"/>
+            <StackPanel Orientation="Horizontal"><TextBlock Text="{Binding PlatformIcon}" Margin="0,0,8,0"/><TextBlock Text="{Binding MaskedSerial}" Margin="0,0,8,0"/><TextBlock Text="{Binding StatusText}"/></StackPanel>
+          </StackPanel></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Text="{Binding CapabilityMessage}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}"/>
+      </StackPanel>
+      <ScrollViewer Grid.Row="1" ScrollViewer.VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,0,24,24">
+          <StackPanel IsEnabled="{Binding IsRouting, Converter={x:Static conv:AppConverters.InverseBool}}">
+            <TextBlock Text="Target link (Enter to launch)" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8"/>
+            <TextBox Text="{Binding TargetUrl}" KeyDown="TargetUrl_KeyDown" AutomationProperties.Name="Target deep link"/>
+            <TextBlock Text="{Binding ValidationMessage}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4"/>
+            <CheckBox Content="Reveal full link in preview" IsChecked="{Binding RevealPreview}" Margin="0,8"/>
+            <TextBlock Text="{Binding LinkPreview}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,12"/>
+            <TextBlock Text="Optional target package (empty uses Android resolution)" Foreground="{DynamicResource BrushTextPrimary}"/>
+            <TextBox Text="{Binding TargetPackage}" AutomationProperties.Name="Target package" Margin="0,4"/>
+            <ComboBox ItemsSource="{Binding InstalledPackages}" SelectedItem="{Binding SelectedInstalledPackage}" MinWidth="300" HorizontalAlignment="Left" AutomationProperties.Name="Installed packages"/>
+            <TextBlock Text="{Binding OptionsMessage}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4"/><CheckBox Content="Include BROWSABLE category (browser-style launch)" IsChecked="{Binding Browsable}" Margin="0,8"/>
+          </StackPanel>
+          <WrapPanel Margin="0,8">
+            <Button Content="Launch" Command="{Binding FireIntentCommand}" Padding="16,8" Margin="0,0,8,0"/>
+            <Button Content="Inspect handlers" Command="{Binding InspectHandlersCommand}" Padding="12,8" Margin="0,0,8,0"/>
+            <Button Content="Load installed apps" Command="{Binding LoadAppsCommand}" Padding="12,8" Margin="0,0,8,0"/>
+            <Button Content="Clear input" Command="{Binding ClearInputCommand}" IsEnabled="{Binding IsRouting, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="12,8" Margin="0,0,8,0"/>
+            <Button Content="Stop" Command="{Binding StopCommand}" Padding="12,8"/>
+          </WrapPanel>
+          <ProgressBar IsIndeterminate="{Binding IsRouting}" Height="4" Margin="0,4"/>
+          <TextBlock Text="{Binding StatusKind}" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8,0,0"/>
+          <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,4"/>
+          <TextBlock Text="{Binding HandlerSummary}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4"/>
+          <Expander Header="Saved presets" Margin="0,12">
+            <StackPanel IsEnabled="{Binding IsRouting, Converter={x:Static conv:AppConverters.InverseBool}}">
+              <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" AutomationProperties.Name="Saved presets" Margin="0,8"><ComboBox.ItemTemplate><DataTemplate x:DataType="models:DeepLinkPreset"><TextBlock Text="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+              <TextBox Text="{Binding PresetName}" AutomationProperties.Name="Preset name"/>
+              <WrapPanel Margin="0,8"><Button Content="Save current link" Command="{Binding SavePresetCommand}" Padding="12,6" Margin="0,0,8,0"/><Button Content="Remove selected preset" Command="{Binding RemovePresetCommand}" Padding="12,6"/></WrapPanel>
+              <CheckBox Content="Persist presets locally (includes full URLs and parameters)" IsChecked="{Binding PersistPresets}" Margin="0,4"/>
+              <TextBlock Text="Persistence is optional. History and exports always hide link payloads." TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}"/>
+            </StackPanel>
+          </Expander>
+          <Expander Header="Batch test (one link per line, up to 50)" Margin="0,8">
+            <StackPanel>
+              <TextBox Text="{Binding BatchInput}" AcceptsReturn="True" Height="120" ScrollViewer.VerticalScrollBarVisibility="Auto" IsEnabled="{Binding IsRouting, Converter={x:Static conv:AppConverters.InverseBool}}" AutomationProperties.Name="Batch deep links"/>
+              <TextBlock Text="Links run sequentially on the selected device with the current package and category options. A timeout stops the batch. Each batch has a five-minute time limit." TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8"/>
+              <Button Content="Run batch" Command="{Binding RunBatchCommand}" Padding="12,6" HorizontalAlignment="Left"/>
+            </StackPanel>
+          </Expander>
+          <Expander Header="Launch history (last 100 results)" IsExpanded="True" Margin="0,8">
+            <StackPanel>
+              <WrapPanel Margin="0,8"><Button Content="Export sanitized results" Command="{Binding ExportHistoryCommand}" Padding="12,6" Margin="0,0,8,0"/><Button Content="Clear history" Command="{Binding ClearHistoryCommand}" Padding="12,6"/></WrapPanel>
+              <ListBox ItemsSource="{Binding History}" Height="180" AutomationProperties.Name="Launch history">
+                <ListBox.ItemTemplate><DataTemplate x:DataType="models:DeepLinkHistoryEntry"><StackPanel Margin="4"><TextBlock Text="{Binding Summary}" TextWrapping="Wrap"/><TextBlock Text="{Binding Result.Activity}"/><StackPanel Orientation="Horizontal"><TextBlock Text="Total / wait (ms): "/><TextBlock Text="{Binding Result.TotalTimeMs}"/><TextBlock Text=" / "/><TextBlock Text="{Binding Result.WaitTimeMs}"/></StackPanel></StackPanel></DataTemplate></ListBox.ItemTemplate>
+              </ListBox>
+            </StackPanel>
+          </Expander>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
 </UserControl>

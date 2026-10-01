@@ -9,6 +9,44 @@
 
 var joined = string.Join(' ', Environment.GetCommandLineArgs().Skip(1));
 
+// Isolated deep-link scenarios exercise host argv round trips and old Android result semantics.
+if (joined.Contains("shell am start -W", StringComparison.Ordinal))
+{
+    var argv = Environment.GetCommandLineArgs().Skip(1).ToArray();
+    if (argv.Length != 4 || argv[2] != "shell")
+    {
+        Console.WriteLine("Error: Remote shell command was split by host argument parsing.");
+        return 1;
+    }
+    Console.WriteLine("Starting: " + argv[3]);
+    if (joined.Contains("no-handler", StringComparison.Ordinal))
+    {
+        Console.WriteLine("Error: Activity not started, unable to resolve Intent");
+        return 0; // Android 14's error-with-zero-exit case.
+    }
+    if (joined.Contains("roundtrip", StringComparison.Ordinal) && !argv[3].Contains("O'\\''Brien?note=\"quoted\"&locale=日本語", StringComparison.Ordinal))
+    {
+        Console.WriteLine("Error: Quotes or Unicode did not survive host argv parsing.");
+        return 1;
+    }
+    Console.WriteLine("Status: ok");
+    Console.WriteLine("Activity: com.example.app/.MainActivity");
+    Console.WriteLine("TotalTime: 120");
+    Console.WriteLine("WaitTime: 130");
+    Console.WriteLine("Complete");
+    return 0;
+}
+if (joined.Contains("shell cmd package query-activities", StringComparison.Ordinal))
+{
+    if (joined.Contains("unsupported-inspection", StringComparison.Ordinal))
+        Console.WriteLine("Unknown command: query-activities");
+    else if (joined.Contains("no-handler", StringComparison.Ordinal))
+        Console.WriteLine("No activities found");
+    else
+        Console.WriteLine("com.example.app/.MainActivity");
+    return 0;
+}
+
 static string? ExtractSerial(string args)
 {
     var idx = args.IndexOf("-s ", StringComparison.Ordinal);

@@ -100,11 +100,7 @@ public static class SecurityHelper
     /// <summary>Only non-network custom URI schemes are allowed in offline mode.</summary>
     public static bool IsOfflineSafeUri(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return false;
-        var uri = value.Trim();
-        if (uri.Contains('\r') || uri.Contains('\n')) return false;
-        if (Regex.IsMatch(uri, @"(?i)(?:https?|ftp|ftps|ws|wss|file|data|mailto):")) return false;
-        return Regex.IsMatch(uri, @"^[a-zA-Z][a-zA-Z0-9+.-]*:", RegexOptions.CultureInvariant);
+        return DeepLinkHelper.TryValidate(value, out _);
     }
 
     /// <summary>Returns true for command text that can initiate host/device network traffic.</summary>
