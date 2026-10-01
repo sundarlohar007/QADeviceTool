@@ -197,6 +197,7 @@ public static class Program
         var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 30;
         var package = Opt(args, "--package");
         var layer = Opt(args, "--layer");
+        if (seconds < 2) { Console.Error.WriteLine("profile requires at least 2 seconds to collect live frames"); return 2; }
         if (!TryGetOutputDirectory(Opt(args, "--out"), out var outDir)) return 2;
 
         var device = await FindDevice(adb, ios, serial);
@@ -205,6 +206,9 @@ public static class Program
             Console.Error.WriteLine($"device not found: {serial}");
             return 1;
         }
+
+        if (device.Platform != DevicePlatform.Android || device.ConnectionState != DeviceConnectionState.Online)
+        { Console.Error.WriteLine("profile requires an online Android device"); return 1; }
 
         using var profiler = new LogPro.Services.Profiling.AndroidPerformanceProfiler(
             adb, serial, package, layer, intervalMs: 1000);
@@ -221,9 +225,9 @@ public static class Program
         await LogPro.Services.Profiling.ProfilerReportWriter.WriteCsvAsync(history, csvPath);
 
         var sum = LogPro.Services.Profiling.ProfilerReportWriter.Summarize(history);
-        Console.WriteLine($"Samples: {history.Count} | Avg FPS: {sum.AvgFps?.ToString("F1") ?? "n/a"} | Janky: {sum.JankyFrames} | Max CPU: {sum.MaxCpuPercent?.ToString("F0") ?? "n/a"}% | Mem growth: {sum.MemoryGrowthKb / 1024} MB | Slow session: {sum.SlowSession}");
+        Console.WriteLine($"Samples: {history.Count} | Avg FPS: {sum.AvgFps?.ToString("F1") ?? "n/a"} | Est. frame gaps: {sum.JankyFrames} | Max CPU: {sum.MaxCpuPercent?.ToString("F0") ?? "n/a"}% | Mem growth: {(sum.MemoryGrowthKb.HasValue ? $"{sum.MemoryGrowthKb / 1024} MB" : "n/a")} | Verdict: {sum.Verdict}");
         Console.WriteLine($"Report: {jsonPath}");
-        return history.Count > 0 ? 0 : 1;
+        return sum.HasSufficientData ? 0 : 1;
     }
 
     /// <summary>Soak/endurance run — sustained load while the profiler samples (§12.5).</summary>
@@ -237,6 +241,7 @@ public static class Program
         }
 
         var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 600;
+        if (seconds < 2) { Console.Error.WriteLine("soak requires at least 2 seconds"); return 2; }
         var package = Opt(args, "--package") ?? string.Empty;
         var macroPath = Opt(args, "--macro");
         if (!TryGetOutputDirectory(Opt(args, "--out"), out var outDir)) return 2;
@@ -247,6 +252,8 @@ public static class Program
             Console.Error.WriteLine($"device not found: {serial}");
             return 1;
         }
+        if (device.Platform != DevicePlatform.Android || device.ConnectionState != DeviceConnectionState.Online)
+        { Console.Error.WriteLine("soak requires an online Android device"); return 1; }
 
         MacroFile? macro = null;
         string? currentTouchPath = null;
@@ -270,11 +277,15 @@ public static class Program
             ? async token =>
             {
                 var service = new MacroService(adb);
-                if (macro.Events.Count > 0)
-                    await service.ReplayMacroAsync(serial, macro, inputDevice: currentTouchPath, token: token);
-                else if (macro.SimpleSteps.Count > 0)
-                    await service.ReplaySimpleMacroAsync(serial, macro.SimpleSteps, token: token);
-                else throw new InvalidOperationException("The selected macro has no playable steps.");
+                while (!token.IsCancellationRequested)
+                {
+                    if (macro.Events.Count > 0)
+                        await service.ReplayMacroAsync(serial, macro, inputDevice: currentTouchPath, token: token);
+                    else if (macro.SimpleSteps.Count > 0)
+                        await service.ReplaySimpleMacroAsync(serial, macro.SimpleSteps, token: token);
+                    else throw new InvalidOperationException("The selected macro has no playable steps.");
+                    await Task.Delay(100, token);
+                }
             }
         : async token =>
         {
@@ -291,12 +302,12 @@ public static class Program
         var report = await LogPro.Services.Profiling.SoakRunner.RunAsync(adb, serial, package, duration, load);
 
         Console.WriteLine($"Samples: {report.SampleCount} | FPS start/end: {report.AvgFpsStart?.ToString("F1") ?? "n/a"} / {report.AvgFpsEnd?.ToString("F1") ?? "n/a"} | decay: {report.FpsDecay?.ToString("F1") ?? "n/a"}");
-        Console.WriteLine($"Memory growth: {report.MemoryGrowthKb / 1024} MB | Janky: {report.JankyFrames} | Max thermal: {report.MaxThermalStatus}");
+        Console.WriteLine($"Memory growth: {report.MemoryGrowthKb / 1024} MB | Est. frame gaps: {report.JankyFrames} | Max thermal: {report.MaxThermalStatus}");
         Console.WriteLine($"Flags: mem={(report.MemoryGrowthFlagged ? "YES" : "no")} fpsDecay={(report.FpsDecayFlagged ? "YES" : "no")} thermal={(report.ThermalFlagged ? "YES" : "no")}");
+        if (report.LoadError != null) Console.Error.WriteLine($"load failed: {report.LoadError}");
+        if (report.LoadCompletedEarly) Console.Error.WriteLine("load completed before the soak duration");
         Console.WriteLine(report.HasIssues ? "RESULT: ISSUES DETECTED" : "RESULT: PASS");
-
-        var summary = LogPro.Services.Profiling.ProfilerReportWriter.Summarize(new List<LogPro.Services.Profiling.ProfilerSnapshot>());
-        return report.SampleCount > 0 ? 0 : 1;
+        return report.HasIssues ? 1 : 0;
     }
 
     /// <summary>Runs the loopback control API (§16) for CI/Appium harnesses.</summary>
@@ -353,11 +364,17 @@ public static class Program
                         Timestamp = ReadDate(s, "Timestamp"),
                         Fps = ReadDouble(s, "Fps"),
                         FrameTimeP90Ms = ReadDouble(s, "FrameTimeP90Ms"),
+                        FrameTimeP95Ms = ReadDouble(s, "FrameTimeP95Ms"),
                         CpuPercent = ReadDouble(s, "CpuPercent"),
                         PssKb = ReadInt(s, "PssKb"),
+                        RssKb = ReadInt(s, "RssKb"),
                         JankyFrames = ReadInt(s, "JankyFrames"),
+                        TotalFrames = ReadInt(s, "TotalFrames"),
                         ThermalStatus = ReadInt(s, "ThermalStatus"),
-                        BatteryLevel = ReadInt(s, "BatteryLevel")
+                        BatteryLevel = ReadInt(s, "BatteryLevel"),
+                        ThermalFresh = ReadBool(s, "ThermalFresh"),
+                        BatteryFresh = ReadBool(s, "BatteryFresh"),
+                        SampleDurationMs = ReadDouble(s, "SampleDurationMs") ?? 0
                     });
                 }
             }
@@ -375,6 +392,8 @@ public static class Program
             => e.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetDouble() : null;
         static int? ReadInt(System.Text.Json.JsonElement e, string name)
             => e.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetInt32() : null;
+        static bool ReadBool(System.Text.Json.JsonElement e, string name)
+            => e.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.True;
     }
 
     /// <summary>Device-tier matrix — profiles several devices in parallel and compares (§12.2).</summary>
@@ -389,11 +408,19 @@ public static class Program
 
         var seconds = int.TryParse(Opt(args, "--seconds"), out var s) ? s : 60;
         var package = Opt(args, "--package");
+        if (seconds < 2) { Console.Error.WriteLine("matrix requires at least 2 seconds"); return 2; }
+        if (string.IsNullOrWhiteSpace(package) || !LogPro.Helpers.SecurityHelper.IsValidPackageName(package))
+        { Console.Error.WriteLine("matrix requires a valid --package for comparable app metrics"); return 2; }
         if (!TryGetOutputDirectory(Opt(args, "--out"), out var outDir)) return 2;
         var labels = (Opt(args, "--labels") ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries);
         var chipsets = (Opt(args, "--chipsets") ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries);
 
         var serials = serialsArg.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var connected = await adb.GetConnectedDevicesAsync();
+        if (serials.Length < 2 || serials.Distinct(StringComparer.OrdinalIgnoreCase).Count() != serials.Length ||
+            serials.Any(serial => !connected.Any(d => d.Serial.Equals(serial, StringComparison.OrdinalIgnoreCase) &&
+                d.ConnectionState == DeviceConnectionState.Online)))
+        { Console.Error.WriteLine("matrix requires at least two distinct online Android devices"); return 1; }
         var profiles = serials.Select((serial, i) => new LogPro.Services.Profiling.DeviceTierProfile
         {
             Serial = serial,
@@ -410,13 +437,13 @@ public static class Program
         var jsonPath = Path.Combine(outDir, "tier-comparison.json");
         await LogPro.Services.Profiling.TierMatrix.WriteJsonAsync(results, jsonPath, TimeSpan.FromSeconds(seconds));
 
-        Console.WriteLine($"{"Device",-14} {"Label",-12} {"AvgFPS",8} {"MinFPS",8} {"Jank",6} {"MaxCPU",8} {"MemGrw",8} {"Slow",6}");
+        Console.WriteLine($"{"Device",-14} {"Label",-12} {"AvgFPS",8} {"MinFPS",8} {"Gaps",6} {"MaxCPU",8} {"MemGrw",8} {"Slow",6}");
         foreach (var r in results)
         {
-            Console.WriteLine($"{r.Profile.Serial,-14} {r.Profile.Label,-12} {(r.AvgFps?.ToString("F1") ?? "n/a"),8} {(r.MinFps?.ToString("F1") ?? "n/a"),8} {r.JankyFrames,6} {(r.MaxCpuPercent?.ToString("F0") ?? "n/a"),8} {$"{r.MemoryGrowthKb / 1024} MB",8} {(r.SlowSession ? "YES" : "no"),6}");
+            Console.WriteLine($"{r.Profile.Serial,-14} {r.Profile.Label,-12} {(r.AvgFps?.ToString("F1") ?? "n/a"),8} {(r.MinFps?.ToString("F1") ?? "n/a"),8} {r.JankyFrames,6} {(r.MaxCpuPercent?.ToString("F0") ?? "n/a"),8} {(r.MemoryGrowthKb.HasValue ? $"{r.MemoryGrowthKb / 1024} MB" : "n/a"),8} {(r.HasSufficientData ? (r.SlowSession ? "YES" : "no") : "n/a"),6}");
         }
         Console.WriteLine($"Report: {jsonPath}");
-        return results.Count > 0 ? 0 : 1;
+        return results.Count > 0 && results.All(r => r.HasSufficientData) ? 0 : 1;
     }
 
     /// <summary>Bundled-tool integrity (§7.1): write or verify the sha256 manifest.</summary>

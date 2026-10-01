@@ -105,6 +105,13 @@ public class GfxInfoFrameStatsParserTests
     {
         AndroidDumpsysParsers.ParseGfxInfoFrameStats("no such data").Should().BeEmpty();
     }
+
+    [Fact]
+    public void Parse_MissingFrameCompletedColumn_ReturnsEmpty()
+    {
+        var output = "---PROFILEDATA---\nFlags,IntendedVsync,Vsync\n0,100000000,110000000\n---PROFILEDATA---";
+        AndroidDumpsysParsers.ParseGfxInfoFrameStats(output).Should().BeEmpty();
+    }
 }
 
 public class CpuMemThermalBatteryParserTests
@@ -116,8 +123,17 @@ public class CpuMemThermalBatteryParserTests
                       "CPU usage from 1000ms to 0ms ago:\n" +
                       "  45% 2345/com.supercell.brawlstars: 30% user + 15% kernel / faults: 100 minor\n" +
                       "  12% 999/system: 8% user + 4% kernel\n";
-        AndroidDumpsysParsers.ParseCpuPercent(cpuinfo, "brawlstars").Should().Be(45.0);
+        AndroidDumpsysParsers.ParseCpuPercent(cpuinfo, "com.supercell.brawlstars").Should().Be(45.0);
+        AndroidDumpsysParsers.ParseCpuPercent(cpuinfo, "brawlstars").Should().BeNull("substring matches can select an unrelated process");
         AndroidDumpsysParsers.ParseCpuPercent(cpuinfo, "nonexistent").Should().BeNull();
+        AndroidDumpsysParsers.ParseCpuPercent(cpuinfo).Should().BeNull("an unspecified app has no meaningful app CPU value");
+    }
+
+    [Fact]
+    public void ParseCpuPercent_OnlyExactPackageAndChildProcesses()
+    {
+        var cpu = "10% 1/com.game2: user\n20% 2/com.game: user\n5% 3/com.game:service: user\n";
+        AndroidDumpsysParsers.ParseCpuPercent(cpu, "com.game").Should().Be(25);
     }
 
     [Fact]

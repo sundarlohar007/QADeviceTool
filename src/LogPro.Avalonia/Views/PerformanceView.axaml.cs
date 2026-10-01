@@ -17,7 +17,11 @@ public partial class PerformanceView : UserControl
             _hud = null;
             return;
         }
-        _hud = new HudWindow { DataContext = DataContext };
-        _hud.Show();
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner == null) return;
+        var hud = new HudWindow { DataContext = DataContext };
+        _hud = hud;
+        hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
+        hud.Show(owner);
     }
 }

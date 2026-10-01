@@ -30,12 +30,12 @@ public static class ProfilerReportHtml
         sb.Append("<div class=\"cards\">");
         Card("Avg FPS", Fmt(summary.AvgFps, "F1"), summary.AvgFps is null ? "muted" : (summary.AvgFps < 30 ? "red" : "ok"));
         Card("Min FPS", Fmt(summary.MinFps, "F1"), summary.MinFps is null ? "muted" : (summary.MinFps < 20 ? "red" : ""));
-        Card("Janky Frames", summary.JankyFrames.ToString(), summary.JankyFrames > 0 ? "bad" : "ok");
+        Card("Est. Frame Gaps", snapshots.Any(s => s.JankyFrames.HasValue) ? summary.JankyFrames.ToString() : "n/a", summary.JankyFrames > 0 ? "bad" : "muted");
         Card("Max CPU", summary.MaxCpuPercent is null ? "n/a" : $"{summary.MaxCpuPercent:F0}%", "");
-        Card("Memory Growth", $"{summary.MemoryGrowthKb / 1024} MB", summary.MemoryGrowthKb > 0 ? "bad" : "ok");
-        Card("Battery Drain", $"{summary.BatteryDrainPercent}%", summary.BatteryDrainPercent > 5 ? "bad" : "ok");
-        Card("Max Thermal", summary.MaxThermalStatus.ToString(), summary.MaxThermalStatus >= 1 ? "bad" : "ok");
-        Card("Verdict", summary.SlowSession ? "SLOW SESSION" : "OK", summary.SlowSession ? "bad" : "ok");
+        Card("Memory Growth", summary.MemoryGrowthKb.HasValue ? $"{summary.MemoryGrowthKb / 1024} MB" : "n/a", summary.MemoryGrowthKb > 0 ? "bad" : "muted");
+        Card("Battery Drain", summary.BatteryDrainPercent.HasValue ? $"{summary.BatteryDrainPercent}%" : "n/a", summary.BatteryDrainPercent > 5 ? "bad" : "muted");
+        Card("Max Thermal", summary.MaxThermalStatus?.ToString() ?? "n/a", summary.MaxThermalStatus >= 3 ? "bad" : "muted");
+        Card("Verdict", summary.Verdict, !summary.HasSufficientData || summary.SlowSession ? "bad" : "ok");
         sb.Append("</div>");
 
         sb.Append("<table><tr><th>Time</th><th>FPS</th><th>p90 ms</th><th>CPU %</th><th>PSS KB</th><th>Jank</th><th>Thermal</th><th>Battery</th></tr>");

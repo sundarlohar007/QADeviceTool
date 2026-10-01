@@ -23,8 +23,9 @@ public sealed class TierResult
     public double? MinFps { get; init; }
     public int JankyFrames { get; init; }
     public double? MaxCpuPercent { get; init; }
-    public int MemoryGrowthKb { get; init; }
-    public int BatteryDrainPercent { get; init; }
+    public int? MemoryGrowthKb { get; init; }
+    public int? BatteryDrainPercent { get; init; }
+    public bool HasSufficientData { get; init; }
     public bool SlowSession { get; init; }
 }
 
@@ -36,15 +37,15 @@ public static class TierMatrix
 {
     public static async Task<IReadOnlyList<TierResult>> CompareAsync(
         IAdbService adb, IReadOnlyList<DeviceTierProfile> devices, string? package,
-        TimeSpan duration, int sampleIntervalMs = 1000)
+        TimeSpan duration, int sampleIntervalMs = 1000, CancellationToken cancellationToken = default)
     {
         var tasks = devices.Select(async profile =>
         {
             using var profiler = new AndroidPerformanceProfiler(adb, profile.Serial,
                 string.IsNullOrWhiteSpace(package) ? null : package, intervalMs: sampleIntervalMs);
             profiler.Start();
-            await Task.Delay(duration);
-            await profiler.StopAsync();
+            try { await Task.Delay(duration, cancellationToken); }
+            finally { await profiler.StopAsync(); }
             var summary = ProfilerReportWriter.Summarize(profiler.History);
             return new TierResult
             {
@@ -55,7 +56,8 @@ public static class TierMatrix
                 MaxCpuPercent = summary.MaxCpuPercent,
                 MemoryGrowthKb = summary.MemoryGrowthKb,
                 BatteryDrainPercent = summary.BatteryDrainPercent,
-                SlowSession = summary.SlowSession
+                SlowSession = summary.SlowSession,
+                HasSufficientData = summary.HasSufficientData
             };
         });
 
@@ -84,9 +86,11 @@ public static class TierMatrix
             if (r.MinFps.HasValue) writer.WriteNumber("MinFps", Math.Round(r.MinFps.Value, 1));
             writer.WriteNumber("JankyFrames", r.JankyFrames);
             if (r.MaxCpuPercent.HasValue) writer.WriteNumber("MaxCpuPercent", Math.Round(r.MaxCpuPercent.Value, 1));
-            writer.WriteNumber("MemoryGrowthKb", r.MemoryGrowthKb);
-            writer.WriteNumber("BatteryDrainPercent", r.BatteryDrainPercent);
+            if (r.MemoryGrowthKb.HasValue) writer.WriteNumber("MemoryGrowthKb", r.MemoryGrowthKb.Value);
+            if (r.BatteryDrainPercent.HasValue) writer.WriteNumber("BatteryDrainPercent", r.BatteryDrainPercent.Value);
+            writer.WriteBoolean("HasSufficientData", r.HasSufficientData);
             writer.WriteBoolean("SlowSession", r.SlowSession);
+            writer.WriteString("Verdict", !r.HasSufficientData ? "INSUFFICIENT DATA" : r.SlowSession ? "SLOW SESSION" : "OK");
             writer.WriteEndObject();
         }
         writer.WriteEndArray();

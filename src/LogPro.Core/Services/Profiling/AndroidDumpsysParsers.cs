@@ -48,7 +48,7 @@ public static class AndroidDumpsysParsers
         return new SurfaceFlingerLatencyResult { RefreshPeriodMs = refreshMs, Frames = frames };
     }
 
-    /// <summary>Computes FPS + jank from decoded SurfaceFlinger frames (16.67 ms budget default).</summary>
+    /// <summary>Computes FPS and estimated presentation gaps from SurfaceFlinger frames.</summary>
     public static (double? Fps, double? FrameTimeP90Ms, double? FrameTimeP95Ms, int? JankyFrames, int? TotalFrames)
         SummarizeFrames(IReadOnlyList<FrameSample> frames, double refreshPeriodMs = 16.67)
     {
@@ -62,7 +62,10 @@ public static class AndroidDumpsysParsers
         var spanMs = (frames[^1].PresentTimestampNs - frames[0].PresentTimestampNs) / 1_000_000.0;
         var fps = spanMs > 0 ? (frames.Count - 1) * 1000.0 / spanMs : 1000.0 / times[0];
 
-        var budgetMs = refreshPeriodMs * 1.05; // ~5% tolerance over vsync
+        // Presentation gaps are only an estimate of missed frames, not Android's
+        // FrameTimeline/JankStats classification. Two refresh periods avoids
+        // labeling ordinary vsync jitter as jank.
+        var budgetMs = refreshPeriodMs * 2.0;
         var janky = times.Count(t => t > budgetMs);
 
         double Percentile(double p)
@@ -105,7 +108,7 @@ public static class AndroidDumpsysParsers
             }
 
             var cols = line.Split(',');
-            if (completedIdx >= cols.Length || intendedIdx >= cols.Length) continue;
+            if (completedIdx < 0 || completedIdx >= cols.Length || intendedIdx >= cols.Length) continue;
             if (!long.TryParse(cols[intendedIdx], out var intended) || !long.TryParse(cols[completedIdx], out var completed))
                 continue;
             var ms = (completed - intended) / 1_000_000.0;
@@ -116,22 +119,30 @@ public static class AndroidDumpsysParsers
     }
 
     private static readonly Regex CpuPackageLine = new(
-        @"^\s*(?<total>[0-9.]+)%\s+\d+/(?<pkg>[\w.]+):\s",
+        @"^\s*(?<total>[0-9.]+)%\s+\d+/(?<pkg>[\w.]+(?::[\w.]+)?):\s",
         RegexOptions.Compiled);
 
     /// <summary>Parses `dumpsys cpuinfo` and returns the total % of the line whose package matches.</summary>
-    public static double? ParseCpuPercent(string cpuinfo, string? packageSubstring = null)
+    public static double? ParseCpuPercent(string cpuinfo, string? packageName = null)
     {
+        if (string.IsNullOrWhiteSpace(packageName)) return null;
+        double total = 0;
+        var found = false;
         foreach (var raw in cpuinfo.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
         {
             var m = CpuPackageLine.Match(raw);
             if (!m.Success) continue;
-            if (packageSubstring != null && !m.Groups["pkg"].Value.Contains(packageSubstring, StringComparison.OrdinalIgnoreCase))
+            var process = m.Groups["pkg"].Value;
+            if (!process.Equals(packageName, StringComparison.OrdinalIgnoreCase) &&
+                !process.StartsWith(packageName + ":", StringComparison.OrdinalIgnoreCase))
                 continue;
             if (double.TryParse(m.Groups["total"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var pct))
-                return pct;
+            {
+                total += pct;
+                found = true;
+            }
         }
-        return null;
+        return found ? total : null;
     }
 
     /// <summary>Parses `dumpsys meminfo &lt;pkg&gt;` TOTAL PSS/RSS rows.</summary>
