@@ -248,21 +248,43 @@ public static class Program
             return 1;
         }
 
-        var macro = macroPath != null && File.Exists(macroPath)
-            ? await MacroService.LoadMacroAsync(macroPath)
-            : null;
+        MacroFile? macro = null;
+        string? currentTouchPath = null;
+        if (macroPath != null)
+        {
+            if (device.Platform != DevicePlatform.Android)
+            { Console.Error.WriteLine("Macro playback is unsupported on iOS."); return 2; }
+            macro = await MacroService.LoadMacroAsync(macroPath);
+            if (macro?.Events == null || macro.SimpleSteps == null || macro.Events.Count + macro.SimpleSteps.Count == 0)
+            { Console.Error.WriteLine("Macro file is missing, invalid or empty."); return 2; }
+            if (macro.Events.Count > 0)
+            {
+                var service = new MacroService(adb);
+                currentTouchPath = await service.DetectTouchDeviceAsync(serial);
+                if (currentTouchPath == null || !await service.CanInjectRawEventsAsync(serial, currentTouchPath))
+                { Console.Error.WriteLine("Raw macro replay requires writable touchscreen access on this Android device."); return 2; }
+            }
+        }
 
         Func<CancellationToken, Task> load = macro != null
-            ? async token => await new MacroService(adb).ReplayMacroAsync(serial, macro, token: token)
-            : async token =>
+            ? async token =>
             {
-                var i = 0;
-                while (!token.IsCancellationRequested)
-                {
-                    await adb.ExecuteCommandAsync(serial, $"shell input keyevent {82 + (i++ % 4)}");
-                    await Task.Delay(200, token);
-                }
-            };
+                var service = new MacroService(adb);
+                if (macro.Events.Count > 0)
+                    await service.ReplayMacroAsync(serial, macro, inputDevice: currentTouchPath, token: token);
+                else if (macro.SimpleSteps.Count > 0)
+                    await service.ReplaySimpleMacroAsync(serial, macro.SimpleSteps, token: token);
+                else throw new InvalidOperationException("The selected macro has no playable steps.");
+            }
+        : async token =>
+        {
+            var i = 0;
+            while (!token.IsCancellationRequested)
+            {
+                await adb.ExecuteCommandAsync(serial, $"shell input keyevent {82 + (i++ % 4)}");
+                await Task.Delay(200, token);
+            }
+        };
 
         Console.WriteLine($"Soaking {seconds}s on {device.DisplayName} -> {outDir}");
         var duration = TimeSpan.FromSeconds(seconds);

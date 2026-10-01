@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using System.Text;
 using System.Threading.Tasks;
 using LogPro.Helpers;
 using LogPro.Models;
@@ -16,12 +18,53 @@ namespace LogPro.Services;
 /// </summary>
 public class MacroService
 {
+    public const int MaxRawBytes = 8 * 1024 * 1024;
+    public const int MaxEvents = 100_000;
+    public const int MaxSteps = 10_000;
     private readonly IAdbService _adbService;
     private readonly ConcurrentDictionary<int, Task> _recordReaders = new();
 
     public MacroService(IAdbService adbService)
     {
         _adbService = adbService;
+    }
+
+    public async Task<string?> DetectTouchDeviceAsync(string serial, CancellationToken token = default)
+    {
+        var result = await _adbService.ExecuteCommandWithResultAsync(serial, "shell getevent -pl", token);
+        if (!result.Success) return null;
+        return ParseTouchDevice(result.Output);
+    }
+
+    public async Task<bool> CanInjectRawEventsAsync(string serial, string inputDevice, CancellationToken token = default)
+    {
+        if (!Regex.IsMatch(inputDevice, @"^/dev/input/event\d+$")) return false;
+        var result = await _adbService.ExecuteCommandWithResultAsync(serial, $"shell test -w {inputDevice}", token);
+        return result.Success;
+    }
+
+    public async Task<(int Width, int Height)?> GetDisplaySizeAsync(string serial, CancellationToken token = default)
+    {
+        var result = await _adbService.ExecuteCommandWithResultAsync(serial, "shell wm size", token);
+        if (!result.Success) return null;
+        var match = Regex.Match(result.Output, @"Override size:\s*(\d+)x(\d+)", RegexOptions.IgnoreCase);
+        if (!match.Success) match = Regex.Match(result.Output, @"Physical size:\s*(\d+)x(\d+)", RegexOptions.IgnoreCase);
+        return match.Success && int.TryParse(match.Groups[1].Value, out var width) &&
+            int.TryParse(match.Groups[2].Value, out var height) && width > 0 && height > 0
+            ? (width, height) : null;
+    }
+
+    internal static string? ParseTouchDevice(string output)
+    {
+        string? device = null;
+        foreach (var line in output.Split('\n'))
+        {
+            var header = Regex.Match(line, @"add device\s+\d+:\s*(/dev/input/[A-Za-z0-9_.-]+)", RegexOptions.IgnoreCase);
+            if (header.Success) device = header.Groups[1].Value;
+            if (device != null && (line.Contains("ABS_MT_POSITION_X", StringComparison.OrdinalIgnoreCase) ||
+                Regex.IsMatch(line, @"\b0035\b"))) return device;
+        }
+        return null;
     }
 
     /// <summary>
@@ -31,17 +74,22 @@ public class MacroService
     // NOTE: getevent is a continuous streaming process, not a serialized command.
     // It intentionally bypasses AdbService's command semaphore (ADB server
     // handles concurrent streams natively). Commands during recording work fine.
-    public async Task<System.Diagnostics.Process?> StartRecordingAsync(string serial, string outputFilePath)
+    public async Task<System.Diagnostics.Process?> StartRecordingAsync(string serial, string outputFilePath, string? inputDevice = null)
     {
         if (!Helpers.SecurityHelper.IsValidOfflineDeviceSelector(serial) ||
             !Helpers.PathHelper.IsSafeLocalPath(outputFilePath)) return null;
+
+        inputDevice ??= await DetectTouchDeviceAsync(serial).ConfigureAwait(false);
+        if (inputDevice == null || !Regex.IsMatch(inputDevice, @"^/dev/input/event\d+$")) return null;
+        var directory = Path.GetDirectoryName(outputFilePath);
+        if (directory == null || !Directory.Exists(directory) || !PathHelper.RestrictDirectoryAccess(directory)) return null;
 
         var process = new System.Diagnostics.Process
         {
             StartInfo = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = Helpers.ToolResolver.Resolve("adb"),
-                Arguments = $"-s {serial} shell getevent -t",
+                Arguments = $"-s {serial} shell getevent -t {inputDevice}",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -56,19 +104,33 @@ public class MacroService
             ProcessManager.Instance.TrackProcess(process);
 
             // Drain stdout to file asynchronously to prevent buffer deadlock
+            var outputReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var outputTask = Task.Run(async () =>
             {
                 try
                 {
-                    await using var stream = new FileStream(outputFilePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+                    await using var stream = new FileStream(outputFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+                    outputReady.TrySetResult(true);
                     using var writer = new StreamWriter(stream);
+                    long rawBytes = 0;
                     while (await process.StandardOutput.ReadLineAsync() is { } line)
                     {
                         await writer.WriteLineAsync(line);
+                        rawBytes += Encoding.UTF8.GetByteCount(line) + Environment.NewLine.Length;
+                        if (rawBytes >= MaxRawBytes)
+                        {
+                            AppLogger.Log.Warn("[MacroService] Recording stopped at raw-data size limit");
+                            if (!process.HasExited) process.Kill(entireProcessTree: true);
+                            break;
+                        }
                     }
                 }
-                catch (ObjectDisposedException) { /* process ended */ }
-                catch (IOException) { /* file write error */ }
+                catch (Exception ex)
+                {
+                    outputReady.TrySetException(ex);
+                    AppLogger.Log.Warn(ex, "[MacroService] Recording output failed");
+                    try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+                }
             });
 
             var errorTask = Task.Run(async () =>
@@ -82,6 +144,7 @@ public class MacroService
             });
             _recordReaders[process.Id] = Task.WhenAll(outputTask, errorTask);
 
+            await outputReady.Task.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
             await Task.Delay(250).ConfigureAwait(false);
             if (process.HasExited)
             {
@@ -95,6 +158,9 @@ public class MacroService
         catch (Exception ex)
         {
             Services.AppLogger.Log.Error(ex, "[MacroService] StartRecording failed");
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+            try { await CompleteRecordingAsync(process).ConfigureAwait(false); } catch { }
+            process.Dispose();
             return null;
         }
     }
@@ -112,11 +178,11 @@ public class MacroService
     /// <summary>
     /// Parses raw getevent output into a macro structure.
     /// </summary>
-    public static MacroFile ParseMacro(string rawEventOutput, string macroName, int screenWidth = 1080, int screenHeight = 2400)
+    public static MacroFile ParseMacro(string rawEventOutput, string macroName, int screenWidth = 0, int screenHeight = 0, string? inputDevicePath = null)
     {
         var events = new List<MacroEvent>();
         long lastTimestamp = -1;
-        string? inputDevice = null;
+        string? inputDevice = inputDevicePath;
 
         foreach (var line in rawEventOutput.Split('\n', '\r'))
         {
@@ -139,6 +205,7 @@ public class MacroService
                     var candidateDevice = rest[..colon].Trim();
                     if (candidateDevice.StartsWith("/dev/input/", StringComparison.Ordinal))
                     {
+                        if (inputDevice != null && candidateDevice != inputDevice) continue;
                         inputDevice ??= candidateDevice;
                         rest = rest[(colon + 1)..].Trim();
                     }
@@ -157,8 +224,8 @@ public class MacroService
                 else
                     delayMs = (long)Math.Round((seconds - lastTimestamp / 1_000_000.0) * 1000);
 
+                if (delayMs > 60_000) continue;
                 lastTimestamp = (long)(seconds * 1_000_000);
-
                 events.Add(new MacroEvent
                 {
                     Type = type,
@@ -166,6 +233,7 @@ public class MacroService
                     Value = value,
                     DelayMs = (int)Math.Max(0, delayMs)
                 });
+                if (events.Count >= MaxEvents) break;
             }
             catch (Exception ex) { AppLogger.Log.Debug(ex, "[MacroService] Skipping unparseable line"); }
         }
@@ -186,84 +254,99 @@ public class MacroService
     public async Task ReplayMacroAsync(string serial, MacroFile macro, string? inputDevice = null,
         float speedMultiplier = 1.0f, CancellationToken token = default)
     {
-        if (macro.Events.Count == 0) return;
-        var device = inputDevice ?? macro.InputDevice ?? "/dev/input/event2";
-        if (!System.Text.RegularExpressions.Regex.IsMatch(device, @"^/dev/input/[A-Za-z0-9_.-]+$"))
+        ValidateSpeed(speedMultiplier);
+        if (macro.Events.Count == 0) throw new InvalidOperationException("This macro has no raw events.");
+        if (macro.Events.Count > MaxEvents) throw new InvalidOperationException("Macro exceeds the event limit.");
+        var device = inputDevice ?? macro.InputDevice;
+        if (device == null || !Regex.IsMatch(device, @"^/dev/input/event\d+$"))
             throw new ArgumentException("Invalid input device path.", nameof(inputDevice));
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var expectedElapsed = 0L;
-        foreach (var evt in macro.Events)
-
+        var batch = new List<string>(32);
+        async Task FlushAsync()
         {
-
+            if (batch.Count == 0) return;
             token.ThrowIfCancellationRequested();
-
-            var cmd = $"sendevent {device} {evt.Type} {evt.Code} {evt.Value}";
-
-            var result = await _adbService.ExecuteCommandAsync(serial, $"shell {cmd}");
-            if (result != null && (result.Contains("Error") || result.Contains("Failure")))
-            {
-                AppLogger.Log.Warn($"[MacroService] Replay command failed: {SecurityHelper.RedactSensitiveText(cmd)} - {SecurityHelper.RedactSensitiveText(result)}");
-            }
-
-            var delay = (int)(evt.DelayMs / speedMultiplier);
-
-            if (delay > 0)
-
-            {
-
-                expectedElapsed += delay;
-
-                var remaining = (int)(expectedElapsed - sw.ElapsedMilliseconds);
-
-                if (remaining > 0)
-
-                    await Task.Delay(remaining, token);
-
-            }
-
+            var command = "shell " + string.Join(" && ", batch);
+            batch.Clear();
+            var result = await _adbService.ExecuteCommandWithResultAsync(serial, command, token);
+            if (!result.Success)
+                throw new InvalidOperationException($"Raw event replay failed: {SecurityHelper.RedactSensitiveText(result.Error)}");
         }
+        foreach (var evt in macro.Events)
+        {
+            token.ThrowIfCancellationRequested();
+            if (evt.DelayMs is < 0 or > 60_000) throw new InvalidOperationException("Macro event delay is outside the supported range.");
+            if (evt.DelayMs > 0) await FlushAsync();
+            expectedElapsed += (long)Math.Round(evt.DelayMs / speedMultiplier);
+            var remaining = expectedElapsed - sw.ElapsedMilliseconds;
+            if (remaining > 0) await Task.Delay(TimeSpan.FromMilliseconds(remaining), token);
+            batch.Add($"sendevent {device} {evt.Type} {evt.Code} {evt.Value}");
+            if (batch.Count == 32) await FlushAsync();
+        }
+        await FlushAsync();
+    }
 
+    private static void ValidateSpeed(float speed)
+    {
+        if (!float.IsFinite(speed) || speed is < 0.5f or > 5f)
+            throw new ArgumentOutOfRangeException(nameof(speed), "Playback speed must be between 0.5x and 5x.");
     }
 
     /// <summary>
-    /// FEAT-34: sanitizes text for `adb shell input text`. Rejects shell metacharacters,
-    /// escapes quotes, and converts spaces to adb's %s encoding. Empty result = rejected.
+    /// Sanitizes text for `adb shell input text`. Only a conservative ASCII subset is
+    /// accepted, and spaces use adb's %s encoding. Empty result means rejected.
     /// </summary>
     internal static string SafeInputText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
-        if (text.Length > 4096 || text.Any(c => c is '\n' or '\r' or ';' or '|' or '&' or '`' or '$' or '<' or '>') || text.Contains("$("))
+        if (text.Length > 4096 || !Regex.IsMatch(text, @"^[A-Za-z0-9 _.,:!?-]+$"))
             return string.Empty;
-        return text.Replace("'", "\\'").Replace(" ", "%s");
+        return text.Replace(" ", "%s");
     }
 
     /// <summary>
     /// Replays high-level input commands (tap/swipe) for simpler macros.
     /// </summary>
     public async Task ReplaySimpleMacroAsync(string serial, List<SimpleMacroStep> steps,
-        float speedMultiplier = 1.0f, CancellationToken token = default)
+        float speedMultiplier = 1.0f, CancellationToken token = default, string? screenshotDirectory = null)
     {
+        ValidateSpeed(speedMultiplier);
+        if (steps.Count is 0 or > MaxSteps) throw new InvalidOperationException("Macro has no steps or exceeds the step limit.");
         foreach (var step in steps)
         {
             token.ThrowIfCancellationRequested();
+            if (step.DelayMs is < 0 or > 60_000 || step.DurationMs is < 0 or > 60_000)
+                throw new InvalidOperationException("Macro step delay or duration is outside the supported range.");
+            if (new[] { step.X, step.Y, step.X1, step.Y1, step.X2, step.Y2 }.Any(n => n < 0) || step.KeyCode is < 0 or > 300)
+                throw new InvalidOperationException("Macro step coordinates or key code are invalid.");
 
             string? cmd = step.Action switch
             {
                 "tap" => $"shell input tap {step.X} {step.Y}",
                 "swipe" => $"shell input swipe {step.X1} {step.Y1} {step.X2} {step.Y2} {step.DurationMs}",
                 "keyevent" => $"shell input keyevent {step.KeyCode}",
-                "text" => SafeInputText(step.Text) is { Length: > 0 } safeText ? $"shell input text '{safeText}'" : null,
-                _ => null
+                "text" => SafeInputText(step.Text) is { Length: > 0 } safeText ? $"shell input text {safeText}" : throw new InvalidOperationException("Text contains characters unsupported by Android input text."),
+                "wait" => null,
+                "screenshot" => null,
+                _ => throw new InvalidOperationException($"Unsupported macro step: {step.Action}")
             };
 
+            if (step.Action == "screenshot")
+            {
+                var directory = screenshotDirectory ?? Path.Combine(PathHelper.GetAppDataDirectory(), "Macros", "Screenshots");
+                if (!PathHelper.IsSafeLocalPath(directory)) throw new InvalidOperationException("Screenshot directory is invalid.");
+                Directory.CreateDirectory(directory);
+                if (!PathHelper.RestrictDirectoryAccess(directory)) throw new InvalidOperationException("Could not protect screenshot directory.");
+                var capturePath = Path.Combine(directory, $"checkpoint_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.png");
+                if (!await _adbService.CaptureScreenshotAsync(serial, capturePath).WaitAsync(token))
+                    throw new InvalidOperationException("Screenshot checkpoint failed.");
+            }
             if (cmd != null)
             {
-                var result = await _adbService.ExecuteCommandAsync(serial, cmd);
-                if (result != null && (result.Contains("Error") || result.Contains("Failure")))
-                {
-                    AppLogger.Log.Warn($"[MacroService] Replay command failed: {SecurityHelper.RedactSensitiveText(cmd)} - {SecurityHelper.RedactSensitiveText(result)}");
-                }
+                var result = await _adbService.ExecuteCommandWithResultAsync(serial, cmd, token);
+                if (!result.Success)
+                    throw new InvalidOperationException($"Macro step failed: {SecurityHelper.RedactSensitiveText(result.Error)}");
             }
 
             var delay = (int)(step.DelayMs / speedMultiplier);
@@ -277,17 +360,27 @@ public class MacroService
         if (!Helpers.PathHelper.IsSafeLocalPath(filePath)) return null;
         try
         {
+            if (new FileInfo(filePath).Length > MaxRawBytes) return null;
             var json = await File.ReadAllTextAsync(filePath);
             return JsonSerializer.Deserialize(json, LogProJsonContext.Default.MacroFile);
         }
         catch (Exception ex) { AppLogger.Log.Warn(ex, "[MacroService] Replay failed"); return null; }
     }
 
-    public static async Task SaveMacroAsync(MacroFile macro, string filePath)
+    public static async Task SaveMacroAsync(MacroFile macro, string filePath, bool overwrite = false)
     {
         if (!Helpers.PathHelper.IsSafeLocalPath(filePath)) throw new ArgumentException("Macro path must be local.", nameof(filePath));
         var json = JsonSerializer.Serialize(macro, LogProJsonContext.Default.MacroFile);
-        await File.WriteAllTextAsync(filePath, json);
+        var tempPath = filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, json);
+            File.Move(tempPath, filePath, overwrite);
+        }
+        finally
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+        }
     }
 }
 
@@ -297,8 +390,8 @@ public class MacroService
 public class MacroFile
 {
     public string Name { get; set; } = "Unnamed Macro";
-    public int ScreenWidth { get; set; } = 1080;
-    public int ScreenHeight { get; set; } = 2400;
+    public int ScreenWidth { get; set; }
+    public int ScreenHeight { get; set; }
     public string? InputDevice { get; set; }
     public List<MacroEvent> Events { get; set; } = new();
     public List<SimpleMacroStep> SimpleSteps { get; set; } = new();
@@ -337,23 +430,6 @@ public class SimpleMacroStep
     /// <summary>Auto-detects the touchscreen input device path via getevent -pl.</summary>
     public static async Task<string> DetectTouchDeviceAsync(AdbService adb, string serial)
     {
-        try
-        {
-            var result = await adb.ExecuteCommandAsync(serial, "shell getevent -pl");
-            if (string.IsNullOrEmpty(result)) return "/dev/input/event2";
-            // Look for ABS_MT_POSITION_X capability — indicates touchscreen
-            var lines = result.Split('\n');
-            string? currentDevice = null;
-            foreach (var line in lines)
-            {
-                var trimmed = line.Trim();
-                if (trimmed.StartsWith("add device"))
-                    currentDevice = trimmed.Split(' ').LastOrDefault()?.Trim(':') ?? currentDevice;
-                if (trimmed.Contains("ABS_MT_POSITION_X") && currentDevice != null)
-                    return currentDevice;
-            }
-        }
-        catch { /* fallback to default */ }
-        return "/dev/input/event2";
+        return await new MacroService(adb).DetectTouchDeviceAsync(serial) ?? string.Empty;
     }
 }
