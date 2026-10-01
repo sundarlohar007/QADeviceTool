@@ -122,7 +122,7 @@
             <StackPanel Grid.Column="0">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="&#xE945;" FontFamily="Segoe MDL2 Assets" FontSize="22" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,10,0" VerticalAlignment="Center" />
-                    <TextBlock Text="QA TERMINAL v1.0" FontFamily="{StaticResource FontHeader}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" />
+                    <TextBlock Text="STRESS TEST" FontFamily="{StaticResource FontHeader}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" />
                 </StackPanel>
                 <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushPrimaryLight}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
@@ -205,6 +205,21 @@
                             <TextBlock Text="RESOLVED PACKAGE" Style="{StaticResource MetaLabel}" Margin="0,0,0,4" />
                             <TextBox Style="{StaticResource DarkInput}" Text="{Binding TargetPackage, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,18"
                                      ToolTip="Auto-filled from selection. Manual edit OK." />
+                            <Button Style="{StaticResource GhostBtn}" Content="Check device and package" Command="{Binding CheckReadinessCommand}" Margin="0,0,0,6" />
+                            <TextBlock Text="{Binding ReadinessMessage}" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,0,0,14" />
+                            <TextBlock Text="MODE / PRESETS" Style="{StaticResource SectionLabel}" />
+                            <ComboBox ItemsSource="{Binding RunModes}" SelectedItem="{Binding RunMode}" Margin="0,0,0,6" />
+                            <TextBox Style="{StaticResource DarkInput}" Text="{Binding DurationSeconds, UpdateSourceTrigger=PropertyChanged}" ToolTip="Duration in seconds (30–7200), used in Duration mode" Margin="0,0,0,6" />
+                            <WrapPanel Margin="0,0,0,6">
+                                <Button Style="{StaticResource GhostBtn}" Content="Balanced" Command="{Binding ApplyPresetCommand}" CommandParameter="Balanced" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Touch" Command="{Binding ApplyPresetCommand}" CommandParameter="Touch" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Navigation" Command="{Binding ApplyPresetCommand}" CommandParameter="Navigation" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Safe" Command="{Binding ApplyPresetCommand}" CommandParameter="Safe" />
+                            </WrapPanel>
+                            <CheckBox Content="Safe mode (no system keys or app switches)" IsChecked="{Binding SafeMode}" Margin="0,0,0,6" />
+                            <CheckBox Content="Automatically save run artifacts" IsChecked="{Binding AutoSaveRuns}" Margin="0,0,0,6" />
+                            <CheckBox Content="Capture screenshot on failure" IsChecked="{Binding CaptureFailureScreenshot}" Margin="0,0,0,6" />
+                            <TextBlock Text="{Binding EstimatedDuration}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,14" />
 
                             <!-- Run Config -->
                             <TextBlock Text="RUN CONFIG" Style="{StaticResource SectionLabel}" />
@@ -260,6 +275,9 @@
                                     <TextBox  Grid.Row="10" Grid.Column="1" Style="{StaticResource DarkInput}" Text="{Binding PctAppswitch, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Center" />
                                 </Grid>
                             </Border>
+                            <TextBlock Text="RECENT RUNS" Style="{StaticResource SectionLabel}" Margin="0,14,0,0" />
+                            <ComboBox ItemsSource="{Binding RunHistory}" SelectedItem="{Binding SelectedBaselineRun}" DisplayMemberPath="DisplayName" />
+                            <TextBlock Text="{Binding ComparisonSummary}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,6,0,4" />
                         </StackPanel>
                     </ScrollViewer>
                 </DockPanel>
@@ -285,7 +303,7 @@
                                         <Run Text="EVENTS " Foreground="{DynamicResource BrushTextMuted}" />
                                         <Run Text="{Binding EventsInjected, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" />
                                         <Run Text=" / " Foreground="{DynamicResource BrushTextMuted}" />
-                                        <Run Text="{Binding EventCount, Mode=OneWay}" Foreground="{DynamicResource BrushTextSecondary}" />
+                                        <Run Text="{Binding EventGoalDisplay, Mode=OneWay}" Foreground="{DynamicResource BrushTextSecondary}" />
                                     </TextBlock>
                                 </Border>
                                 <Border Style="{StaticResource Badge}">
@@ -311,6 +329,12 @@
                     <Border DockPanel.Dock="Top" Background="{DynamicResource BrushBase}" Height="4" Margin="16,12,16,0" CornerRadius="2">
                         <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Maximum="100" Height="4" Background="Transparent" Foreground="{DynamicResource BrushCyan}" BorderThickness="0" />
                     </Border>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,8,16,0">
+                        <TextBlock Text="FPS " Foreground="{DynamicResource BrushTextMuted}" /><TextBlock Text="{Binding LatestFps}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
+                        <TextBlock Text="CPU % " Foreground="{DynamicResource BrushTextMuted}" /><TextBlock Text="{Binding LatestCpuPercent}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
+                        <TextBlock Text="PSS KB " Foreground="{DynamicResource BrushTextMuted}" /><TextBlock Text="{Binding LatestPssKb}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
+                        <TextBlock Text="Thermal " Foreground="{DynamicResource BrushTextMuted}" /><TextBlock Text="{Binding LatestThermalStatus}" Foreground="{DynamicResource BrushTextPrimary}" />
+                    </StackPanel>
 
                     <Border Margin="16,12,16,16" Background="{DynamicResource BrushVoid}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8">
                         <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True"

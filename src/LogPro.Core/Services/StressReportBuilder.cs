@@ -8,6 +8,8 @@ public sealed class MetricSnapshot
     public DateTime Timestamp { get; set; }
     public int? TotalPssKb { get; set; }
     public double? CpuPercent { get; set; }
+    public double? Fps { get; set; }
+    public int? ThermalStatus { get; set; }
     public int EventsInjected { get; set; }
 }
 
@@ -26,12 +28,35 @@ public sealed class StressRunSummary
     public string PackageName { get; set; } = string.Empty;
     public string DeviceName { get; set; } = string.Empty;
     public int EventCount { get; set; }
+    public int RequestedEventCount { get; set; }
+    public int CycleCount { get; set; }
     public int EventsInjected { get; set; }
     public int CrashCount { get; set; }
     public int AnrCount { get; set; }
     public TimeSpan Duration { get; set; }
     public List<MetricSnapshot> MetricSnapshots { get; set; } = new();
     public StressPerformanceMetrics Metrics { get; set; } = new();
+    public string Outcome { get; set; } = "Completed";
+    public string RunMode { get; set; } = "Events";
+    public int? ExitCode { get; set; }
+    public int Seed { get; set; }
+    public int ThrottleMs { get; set; }
+    public int PctTouch { get; set; }
+    public int PctMotion { get; set; }
+    public int PctTrackball { get; set; }
+    public int PctNav { get; set; }
+    public int PctSyskeys { get; set; }
+    public int PctAppswitch { get; set; }
+    public DateTime StartedUtc { get; set; }
+    public string DeviceSerialHash { get; set; } = string.Empty;
+    public string? FailureReason { get; set; }
+
+    public string Result => CrashCount > 0 || AnrCount > 0 ? "FAILED" :
+        Outcome == "Cancelled" ? "CANCELLED" :
+        Outcome == "Error" ? "ERROR" :
+        Outcome == "DurationComplete" ? EventsInjected > 0 ? "PASSED" : "INCOMPLETE" :
+        ExitCode is > 0 or < 0 ? "ERROR" :
+        EventsInjected < EventCount ? "INCOMPLETE" : "PASSED";
 }
 
 public static class StressReportBuilder
@@ -57,17 +82,22 @@ public static class StressReportBuilder
         return metrics;
     }
 
-    private static string BuildBasicReport(StressRunSummary s) => string.Empty;
-
     public static string BuildReport(StressRunSummary summary)
     {
-        var result = summary.CrashCount == 0 && summary.AnrCount == 0 ? "PASSED" : "FAILED";
         var sb = new StringBuilder();
         sb.AppendLine("========== Stress Test Report ==========");
-        sb.AppendLine($"Result: {result}");
+        sb.AppendLine($"Result: {summary.Result}");
         sb.AppendLine($"Device: {summary.DeviceName}");
+        if (!string.IsNullOrEmpty(summary.DeviceSerialHash)) sb.AppendLine($"Device ID hash: {summary.DeviceSerialHash}");
         sb.AppendLine($"Package: {summary.PackageName}");
-        sb.AppendLine($"Duration: {summary.Duration:mm\\:ss}");
+        sb.AppendLine($"Mode: {summary.RunMode}");
+        if (summary.RunMode == "Duration")
+            sb.AppendLine($"Cycles: {summary.CycleCount}  Events per cycle: {summary.RequestedEventCount}");
+        sb.AppendLine($"Duration: {(int)summary.Duration.TotalHours:D2}:{summary.Duration.Minutes:D2}:{summary.Duration.Seconds:D2}");
+        sb.AppendLine($"Seed: {summary.Seed}  Throttle: {summary.ThrottleMs}ms");
+        sb.AppendLine($"Mix %: touch {summary.PctTouch}, motion {summary.PctMotion}, trackball {summary.PctTrackball}, nav {summary.PctNav}, system keys {summary.PctSyskeys}, app switch {summary.PctAppswitch}");
+        if (summary.ExitCode.HasValue) sb.AppendLine($"ADB exit code: {summary.ExitCode.Value}");
+        if (!string.IsNullOrWhiteSpace(summary.FailureReason)) sb.AppendLine($"Reason: {summary.FailureReason}");
         sb.AppendLine($"Events: {summary.EventsInjected}/{summary.EventCount}");
         sb.AppendLine($"Crashes: {summary.CrashCount}");
         sb.AppendLine($"ANRs: {summary.AnrCount}");
@@ -79,6 +109,16 @@ public static class StressReportBuilder
         sb.AppendLine($"Janky Frames: {FormatInt(summary.Metrics.JankyFrames)}");
         sb.AppendLine($"Frame P90: {FormatMs(summary.Metrics.FrameP90Ms)}");
         sb.AppendLine($"Missed Vsync: {FormatInt(summary.Metrics.MissedVsync)}");
+        if (summary.MetricSnapshots.Count > 0)
+        {
+            var validMemory = summary.MetricSnapshots.Where(m => m.TotalPssKb.HasValue).Select(m => m.TotalPssKb!.Value).ToList();
+            var validCpu = summary.MetricSnapshots.Where(m => m.CpuPercent.HasValue).Select(m => m.CpuPercent!.Value).ToList();
+            var validFps = summary.MetricSnapshots.Where(m => m.Fps.HasValue).Select(m => m.Fps!.Value).ToList();
+            sb.AppendLine($"Samples: {summary.MetricSnapshots.Count}");
+            if (validMemory.Count > 0) sb.AppendLine($"Memory range: {validMemory.Min() / 1024}–{validMemory.Max() / 1024} MB");
+            if (validCpu.Count > 0) sb.AppendLine($"Average CPU: {validCpu.Average():F1}%");
+            if (validFps.Count > 0) sb.AppendLine($"Average FPS: {validFps.Average():F1}");
+        }
         sb.AppendLine("========================================");
         return sb.ToString();
     }
@@ -101,26 +141,5 @@ public static class StressReportBuilder
     private static string FormatInt(int? value) => value.HasValue ? value.Value.ToString() : "not available";
     private static string FormatText(string value) => string.IsNullOrWhiteSpace(value) ? "not available" : value.Trim();
 
-    private static string BuildDetailedReport(StressRunSummary s)
-    {
-        var sb = new StringBuilder(BuildBasicReport(s));
-        sb.AppendLine();
-        sb.AppendLine("--- PERFORMANCE TIME-SERIES ---");
-        sb.AppendLine($"Snapshots taken: {s.MetricSnapshots.Count}");
-        if (s.MetricSnapshots.Count > 0)
-        {
-            var minMem = s.MetricSnapshots.Min(m => m.TotalPssKb ?? 0);
-            var maxMem = s.MetricSnapshots.Max(m => m.TotalPssKb ?? 0);
-            var avgCpu = s.MetricSnapshots.Average(m => m.CpuPercent ?? 0);
-            sb.AppendLine($"Memory range: {minMem / 1024}MB - {maxMem / 1024}MB");
-            sb.AppendLine($"Average CPU: {avgCpu:F1}%");
-            sb.AppendLine();
-            sb.AppendLine("  Time          | Mem (MB) | CPU%  | Events");
-            sb.AppendLine("  --------------|----------|-------|-------");
-            foreach (var m in s.MetricSnapshots)
-                sb.AppendLine($"  {m.Timestamp:HH:mm:ss}   | {(m.TotalPssKb ?? 0) / 1024,7} | {m.CpuPercent ?? 0,4:F1} | {m.EventsInjected,5}");
-        }
-        return sb.ToString();
-    }
 }
 
