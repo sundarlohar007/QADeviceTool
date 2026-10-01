@@ -100,6 +100,7 @@
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
         </Style>
+        <BooleanToVisibilityConverter x:Key="BoolVisibility" />
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource BrushVoid}">
@@ -118,6 +119,7 @@
             <StackPanel Grid.Column="0">
                 <TextBlock Text="Macros" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
                 <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushPrimaryLight}" FontSize="12" Margin="0,4,0,0" />
+                <TextBlock Text="{Binding CapabilityMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="200" Margin="0,0,8,0" />
@@ -142,6 +144,9 @@
                         IsEnabled="{Binding IsPlaying, Converter={x:Static conv:InverseBoolConverter.Instance}}"
                         Content="▶ Play" Margin="0,0,6,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding StopPlaybackCommand}" IsEnabled="{Binding IsPlaying}" Content="■ Stop" Margin="0,0,6,0" />
+                <Button Style="{StaticResource GhostBtn}" Command="{Binding ImportMacroCommand}" Content="Import" Margin="0,0,6,0" />
+                <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportMacroCommand}" Content="Export" Margin="0,0,6,0" />
+                <Button Style="{StaticResource GhostBtn}" Command="{Binding EditSelectedSequenceCommand}" Content="Edit Copy" Margin="0,0,6,0" />
                 <Button Style="{StaticResource DangerBtn}" Command="{Binding DeleteMacroCommand}" IsEnabled="{Binding SelectedMacro, Converter={x:Static conv:NullToBoolConverter.Instance}}" Content="Delete" />
             </StackPanel>
         </Grid>
@@ -149,11 +154,8 @@
         <!-- Filter Bar -->
         <Border Grid.Row="1" Margin="24,0,24,12" Padding="0">
             <StackPanel Orientation="Horizontal">
-                <ToggleButton Style="{DynamicResource FilterPill}" Content="All" IsChecked="True" />
-                <ToggleButton Style="{DynamicResource FilterPill}" Content="Input" />
-                <ToggleButton Style="{DynamicResource FilterPill}" Content="Gestures" />
-                <ToggleButton Style="{DynamicResource FilterPill}" Content="System" />
-                <ToggleButton Style="{DynamicResource FilterPill}" Content="Custom" />
+                <TextBlock Text="FILTER" Style="{StaticResource MetaLabel}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                <ComboBox ItemsSource="{Binding Filters}" SelectedItem="{Binding SelectedFilter}" Width="150" />
             </StackPanel>
         </Border>
 
@@ -174,7 +176,7 @@
                             <TextBlock Text="MACRO LIBRARY" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
-                    <ListBox ItemsSource="{Binding Macros}" SelectedItem="{Binding SelectedMacro}" Background="Transparent" BorderThickness="0" Padding="8">
+                    <ListBox ItemsSource="{Binding FilteredMacros}" SelectedItem="{Binding SelectedMacro}" Background="Transparent" BorderThickness="0" Padding="8">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="14,10" />
@@ -230,7 +232,7 @@
                         </StackPanel>
                     </Border>
 
-                    <StackPanel Margin="16">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="16">
                         <!-- Selected Macro -->
                         <TextBlock Text="SELECTION" Style="{StaticResource MetaLabel}" Margin="0,0,0,6" />
                         <Border Background="{DynamicResource BrushBase}" CornerRadius="8" Padding="12" Margin="0,0,0,18" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
@@ -271,7 +273,42 @@
                                 </TextBlock>
                             </StackPanel>
                         </Border>
-                    </StackPanel>
+                        <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolVisibility}}" Margin="0,18,0,0">
+                            <TextBlock Text="SEQUENCE EDITOR" Style="{StaticResource MetaLabel}" Margin="0,0,0,6" />
+                            <TextBox Style="{StaticResource DarkInput}" Text="{Binding DraftName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
+                            <WrapPanel Margin="0,0,0,8">
+                                <Button Style="{StaticResource GhostBtn}" Content="Tap" Command="{Binding AddStepCommand}" CommandParameter="tap" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Swipe" Command="{Binding AddStepCommand}" CommandParameter="swipe" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Key" Command="{Binding AddStepCommand}" CommandParameter="keyevent" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Text" Command="{Binding AddStepCommand}" CommandParameter="text" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Wait" Command="{Binding AddStepCommand}" CommandParameter="wait" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Screenshot" Command="{Binding AddStepCommand}" CommandParameter="screenshot" />
+                            </WrapPanel>
+                            <ListBox ItemsSource="{Binding DraftSteps}" SelectedItem="{Binding SelectedDraftStep}" Height="100" DisplayMemberPath="Action" />
+                            <WrapPanel Margin="0,6,0,8">
+                                <Button Style="{StaticResource GhostBtn}" Content="Remove" Command="{Binding RemoveStepCommand}" />
+                                <Button Style="{StaticResource GhostBtn}" Content="↑" Command="{Binding MoveStepUpCommand}" />
+                                <Button Style="{StaticResource GhostBtn}" Content="↓" Command="{Binding MoveStepDownCommand}" />
+                            </WrapPanel>
+                            <StackPanel DataContext="{Binding SelectedDraftStep}">
+                                <TextBlock Text="Tap X / Y" Style="{StaticResource MetaLabel}" />
+                                <WrapPanel><TextBox Style="{StaticResource DarkInput}" Width="75" Text="{Binding X}" /><TextBox Style="{StaticResource DarkInput}" Width="75" Text="{Binding Y}" /></WrapPanel>
+                                <TextBlock Text="Swipe X1 / Y1 / X2 / Y2" Style="{StaticResource MetaLabel}" Margin="0,6,0,0" />
+                                <WrapPanel><TextBox Style="{StaticResource DarkInput}" Width="65" Text="{Binding X1}" /><TextBox Style="{StaticResource DarkInput}" Width="65" Text="{Binding Y1}" /><TextBox Style="{StaticResource DarkInput}" Width="65" Text="{Binding X2}" /><TextBox Style="{StaticResource DarkInput}" Width="65" Text="{Binding Y2}" /></WrapPanel>
+                                <TextBlock Text="Duration ms / Key code / Delay ms" Style="{StaticResource MetaLabel}" Margin="0,6,0,0" />
+                                <WrapPanel><TextBox Style="{StaticResource DarkInput}" Width="75" Text="{Binding DurationMs}" /><TextBox Style="{StaticResource DarkInput}" Width="75" Text="{Binding KeyCode}" /><TextBox Style="{StaticResource DarkInput}" Width="75" Text="{Binding DelayMs}" /></WrapPanel>
+                                <TextBlock Text="Text (Android input text supports basic ASCII)" Style="{StaticResource MetaLabel}" Margin="0,6,0,0" />
+                                <TextBox Style="{StaticResource DarkInput}" Text="{Binding Text}" />
+                            </StackPanel>
+                            <WrapPanel Margin="0,8,0,0">
+                                <Button Style="{StaticResource GhostBtn}" Content="Preview" Command="{Binding PreviewSequenceCommand}" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Test Run" Command="{Binding TestRunSequenceCommand}" />
+                                <Button Style="{StaticResource PrimaryBtn}" Content="Save" Command="{Binding SaveSequenceCommand}" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Cancel" Command="{Binding CancelSequenceCommand}" />
+                            </WrapPanel>
+                            <TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8,0,0" />
+                        </StackPanel>
+                    </StackPanel></ScrollViewer>
                 </DockPanel>
             </Border>
         </Grid>

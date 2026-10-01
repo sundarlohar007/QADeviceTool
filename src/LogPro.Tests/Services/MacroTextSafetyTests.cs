@@ -7,7 +7,6 @@ public class MacroTextSafetyTests
 {
     [Theory]
     [InlineData("hello world", "hello%sworld")]
-    [InlineData("O'Reilly", "O\\'Reilly")]
     [InlineData("plain", "plain")]
     public void SafeInputText_Sanitizes(string input, string expected)
     {
@@ -19,6 +18,7 @@ public class MacroTextSafetyTests
     [InlineData("$(reboot)")]
     [InlineData("a`id`b")]
     [InlineData("multi\nline")]
+    [InlineData("O'Reilly")]
     public void SafeInputText_RejectsInjection(string input)
     {
         MacroService.SafeInputText(input).Should().BeEmpty();

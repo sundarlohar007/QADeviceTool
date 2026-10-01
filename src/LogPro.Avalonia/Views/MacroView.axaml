@@ -9,17 +9,26 @@
       <DockPanel>
         <TextBlock Text="Macros" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="160">
+            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayName}" /></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
           <Button Content="+ New" Command="{Binding NewSequenceCommand}" Padding="14,6" />
           <Button Content="{Binding IsRecording, Converter={x:Static conv:AppConverters.RecordingLabel}}" Command="{Binding ToggleRecordingCommand}" Padding="14,6" />
           <Button Content="Play" Command="{Binding PlayMacroCommand}" IsEnabled="{Binding IsPlaying, Converter={x:Static conv:AppConverters.InverseBool}}" Padding="14,6" />
           <Button Content="Stop" Command="{Binding StopPlaybackCommand}" IsEnabled="{Binding IsPlaying}" Padding="14,6" />
+          <Button Content="Import" Command="{Binding ImportMacroCommand}" Padding="14,6" />
+          <Button Content="Export" Command="{Binding ExportMacroCommand}" Padding="14,6" />
+          <Button Content="Edit Copy" Command="{Binding EditSelectedSequenceCommand}" Padding="14,6" />
           <Button Content="Delete" Command="{Binding DeleteMacroCommand}" IsEnabled="{Binding SelectedMacro, Converter={x:Static conv:AppConverters.NullToBool}}" Padding="14,6" />
         </StackPanel>
       </DockPanel>
     </Border>
-    <DockPanel Margin="16">
-      <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,8,0,0" />
-      <ListBox ItemsSource="{Binding Macros}" SelectedItem="{Binding SelectedMacro}" Background="Transparent">
+    <Grid Margin="16" ColumnDefinitions="*,320" ColumnSpacing="16">
+      <StackPanel Grid.Column="0" Spacing="8">
+      <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding CapabilityMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" TextWrapping="Wrap" />
+      <ComboBox ItemsSource="{Binding Filters}" SelectedItem="{Binding SelectedFilter}" Width="150" HorizontalAlignment="Left" />
+      <ListBox ItemsSource="{Binding FilteredMacros}" SelectedItem="{Binding SelectedMacro}" Background="Transparent">
         <ListBox.ItemTemplate>
           <DataTemplate>
             <StackPanel Margin="0,4">
@@ -29,6 +38,37 @@
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
-    </DockPanel>
+      </StackPanel>
+      <ScrollViewer Grid.Column="1"><StackPanel Spacing="8">
+        <TextBlock Text="Playback speed (0.5–5x)" />
+        <Slider Minimum="0.5" Maximum="5" Value="{Binding PlaybackSpeed}" />
+        <TextBlock Text="Loop count (1–100)" />
+        <NumericUpDown Minimum="1" Maximum="100" Value="{Binding LoopCount}" />
+        <StackPanel IsVisible="{Binding IsEditing}" Spacing="8">
+        <TextBlock Text="Sequence editor" FontWeight="Bold" />
+        <TextBox Text="{Binding DraftName}" PlaceholderText="Sequence name" />
+        <WrapPanel>
+          <Button Content="Tap" Command="{Binding AddStepCommand}" CommandParameter="tap" />
+          <Button Content="Swipe" Command="{Binding AddStepCommand}" CommandParameter="swipe" />
+          <Button Content="Key" Command="{Binding AddStepCommand}" CommandParameter="keyevent" />
+          <Button Content="Text" Command="{Binding AddStepCommand}" CommandParameter="text" />
+          <Button Content="Wait" Command="{Binding AddStepCommand}" CommandParameter="wait" />
+          <Button Content="Screenshot" Command="{Binding AddStepCommand}" CommandParameter="screenshot" />
+        </WrapPanel>
+        <ListBox ItemsSource="{Binding DraftSteps}" SelectedItem="{Binding SelectedDraftStep}" Height="100">
+          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Action}" /></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <WrapPanel><Button Content="Remove" Command="{Binding RemoveStepCommand}" /><Button Content="↑" Command="{Binding MoveStepUpCommand}" /><Button Content="↓" Command="{Binding MoveStepDownCommand}" /></WrapPanel>
+        <StackPanel DataContext="{Binding SelectedDraftStep}" Spacing="4">
+          <TextBlock Text="Tap X / Y" /><WrapPanel><TextBox Width="70" Text="{Binding X}" /><TextBox Width="70" Text="{Binding Y}" /></WrapPanel>
+          <TextBlock Text="Swipe X1 / Y1 / X2 / Y2" /><WrapPanel><TextBox Width="60" Text="{Binding X1}" /><TextBox Width="60" Text="{Binding Y1}" /><TextBox Width="60" Text="{Binding X2}" /><TextBox Width="60" Text="{Binding Y2}" /></WrapPanel>
+          <TextBlock Text="Duration ms / Key code / Delay ms" /><WrapPanel><TextBox Width="70" Text="{Binding DurationMs}" /><TextBox Width="70" Text="{Binding KeyCode}" /><TextBox Width="70" Text="{Binding DelayMs}" /></WrapPanel>
+          <TextBox Text="{Binding Text}" PlaceholderText="Text (basic ASCII)" />
+        </StackPanel>
+        <WrapPanel><Button Content="Preview" Command="{Binding PreviewSequenceCommand}" /><Button Content="Test Run" Command="{Binding TestRunSequenceCommand}" /><Button Content="Save" Command="{Binding SaveSequenceCommand}" /><Button Content="Cancel" Command="{Binding CancelSequenceCommand}" /></WrapPanel>
+        <TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" />
+        </StackPanel>
+      </StackPanel></ScrollViewer>
+    </Grid>
   </DockPanel>
 </UserControl>

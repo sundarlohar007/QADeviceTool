@@ -92,6 +92,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         FileExplorerVM = new FileExplorerViewModel(_adbService, _iosService, _deviceMonitor, _dispatcher);
         FileExplorerVM.PropertyChanged += OnFileExplorerPropertyChanged;
         MacroVM = new MacroViewModel(new MacroService(_adbService), _adbService, _deviceMonitor, _dispatcher);
+        MacroVM.PropertyChanged += OnMacroPropertyChanged;
         StressTestVM = new StressTestViewModel(_adbService, _deviceMonitor, _dispatcher);
         SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService, _adbService, _dispatcher);
         ProfilerVM = new ProfilerViewModel(_adbService, _deviceStore, _dispatcher);
@@ -144,6 +145,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         else if (DeviceVM != null)
         {
             DeviceVM.SelectedDevice = null;
+            MacroVM?.OnDeviceSelected(null);
         }
     }
 
@@ -157,6 +159,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (e.PropertyName == nameof(FileExplorerViewModel.SelectedDevice) && FileExplorerVM.SelectedDevice != null)
             _deviceStore.SelectedDevice = FileExplorerVM.SelectedDevice;
+    }
+
+    private void OnMacroPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MacroViewModel.SelectedDevice) && MacroVM.SelectedDevice != null &&
+            (_deviceStore.SelectedDevice?.Serial != MacroVM.SelectedDevice.Serial ||
+             _deviceStore.SelectedDevice.Platform != MacroVM.SelectedDevice.Platform))
+            _deviceStore.SelectedDevice = MacroVM.SelectedDevice;
     }
 
     [RelayCommand]
@@ -217,6 +227,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _deviceStore.Changed -= OnDevicesStoreChanged;
         DeviceVM.PropertyChanged -= OnDeviceViewModelPropertyChanged;
         FileExplorerVM.PropertyChanged -= OnFileExplorerPropertyChanged;
+        MacroVM.PropertyChanged -= OnMacroPropertyChanged;
 
         _sessionService.StopAllCaptures();
 
