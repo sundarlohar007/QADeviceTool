@@ -11,33 +11,65 @@
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
           <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="220" />
           <Button Content="{Binding IsPolling, Converter={x:Static conv:AppConverters.PollLabel}}" Command="{Binding TogglePollingCommand}" IsEnabled="{Binding IsPollingSupported}" Padding="14,6" />
-          <Button Content="Record" Command="{Binding RecordCommand}" Padding="14,6" />
+          <Button Content="Record / Pause" Command="{Binding RecordCommand}" IsEnabled="{Binding IsPollingSupported}" Padding="14,6" />
           <Button Content="CSV" Command="{Binding ExportCsvCommand}" Padding="14,6" />
+          <Button Content="Clear samples" Command="{Binding ClearRecordedSamplesCommand}" Padding="14,6" />
         </StackPanel>
       </DockPanel>
     </Border>
     <TextBlock DockPanel.Dock="Top" Text="{Binding CapabilityMessage}" Foreground="{DynamicResource BrushTextSecondary}" Margin="16,8,16,0" />
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="16,8,16,0">
+      <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" />
+      <TextBlock Text="{Binding LastSampleText}" Foreground="{DynamicResource BrushTextSecondary}" />
+      <TextBlock Text="{Binding IsRecording, StringFormat='Recording: {0}'}" Foreground="{DynamicResource BrushAccent}" />
+      <TextBlock Text="Interval (s)" Foreground="{DynamicResource BrushTextSecondary}" />
+      <ComboBox ItemsSource="{Binding PollIntervals}" SelectedItem="{Binding PollIntervalSeconds}" Width="65" />
+      <TextBlock Text="Target package" Foreground="{DynamicResource BrushTextSecondary}" />
+      <TextBox Text="{Binding TargetPackage}" Width="140" />
+      <CheckBox Content="Include device ID + SSID/IP in CSV" IsChecked="{Binding IncludeIdentifiersInExport}" />
+    </StackPanel>
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="16,8,16,0">
+      <TextBlock Text="CPU alert %" Foreground="{DynamicResource BrushTextSecondary}" />
+      <TextBox Text="{Binding CpuAlertThreshold}" Width="42" />
+      <TextBlock Text="Memory alert %" Foreground="{DynamicResource BrushTextSecondary}" />
+      <TextBox Text="{Binding MemoryAlertThreshold}" Width="42" />
+      <TextBlock Text="Battery low %" Foreground="{DynamicResource BrushTextSecondary}" />
+      <TextBox Text="{Binding BatteryAlertThreshold}" Width="42" />
+    </StackPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
     <Grid ColumnDefinitions="*,*" Margin="16">
       <StackPanel Grid.Column="0" Spacing="10">
         <Border Background="{DynamicResource BrushSurface}" CornerRadius="10" Padding="16">
           <StackPanel Spacing="4">
             <TextBlock Text="CPU" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
-            <TextBlock Text="{Binding CpuPercent, StringFormat='{}{0:F1}%'}" Foreground="{DynamicResource BrushAccent}" FontSize="28" FontWeight="Bold" />
+            <TextBlock Text="{Binding CpuDisplay}" Foreground="{DynamicResource BrushAccent}" FontSize="28" FontWeight="Bold" />
+            <TextBlock Text="{Binding CpuStatus}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Text="{Binding CpuTrend}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Text="{Binding TargetAppDetail}" Foreground="{DynamicResource BrushTextSecondary}" />
           </StackPanel>
         </Border>
         <Border Background="{DynamicResource BrushSurface}" CornerRadius="10" Padding="16">
           <StackPanel Spacing="4">
             <TextBlock Text="MEMORY" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
             <TextBlock Text="{Binding MemoryDetail}" Foreground="{DynamicResource BrushAccent}" FontSize="20" FontWeight="Bold" />
+            <TextBlock Text="{Binding MemoryStatus}" Foreground="{DynamicResource BrushTextSecondary}" />
             <ProgressBar Maximum="100" Value="{Binding MemoryPercent}" Height="6" />
+            <TextBlock Text="{Binding MemoryTrend}" Foreground="{DynamicResource BrushTextSecondary}" />
           </StackPanel>
         </Border>
         <Border Background="{DynamicResource BrushSurface}" CornerRadius="10" Padding="16">
           <StackPanel Spacing="4">
             <TextBlock Text="TEMPERATURE / BATTERY / NETWORK" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
-            <TextBlock Text="{Binding TemperatureCelsius, StringFormat='{}{0:F1} °C'}" Foreground="{DynamicResource BrushTextPrimary}" />
-            <TextBlock Text="{Binding BatteryPercent, StringFormat='battery {0}%'}" Foreground="{DynamicResource BrushTextPrimary}" />
+            <TextBlock Text="{Binding TemperatureDisplay}" Foreground="{DynamicResource BrushTextPrimary}" />
+            <TextBlock Text="{Binding TemperatureStatus}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Text="{Binding ThermalStatus}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Text="{Binding BatteryDisplay}" Foreground="{DynamicResource BrushTextPrimary}" />
+            <TextBlock Text="{Binding BatteryStatusText}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Text="{Binding BatteryDetail}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Text="{Binding NetworkSsid}" Foreground="{DynamicResource BrushTextPrimary}" />
+            <TextBlock Text="{Binding NetworkIp}" Foreground="{DynamicResource BrushTextSecondary}" />
             <TextBlock Text="{Binding NetworkLatency}" Foreground="{DynamicResource BrushTextPrimary}" />
+            <TextBlock Text="{Binding DiskStatus}" Foreground="{DynamicResource BrushTextSecondary}" />
           </StackPanel>
         </Border>
       </StackPanel>
@@ -52,5 +84,6 @@
         </ListBox>
       </DockPanel>
     </Grid>
+    </ScrollViewer>
   </DockPanel>
 </UserControl>

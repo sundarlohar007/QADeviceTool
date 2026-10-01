@@ -103,6 +103,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="180" />
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0" Margin="24,24,24,16" Style="{StaticResource GlassPanel}" Padding="24,12">
@@ -117,10 +118,10 @@
                     <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="220" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Style="{StaticResource HeaderBtn}" Command="{Binding RecordCommand}">
+                    <Button Style="{StaticResource HeaderBtn}" Command="{Binding RecordCommand}" IsEnabled="{Binding IsPollingSupported}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
-                            <TextBlock Text="RECORD" VerticalAlignment="Center" />
+                            <TextBlock Text="RECORD / PAUSE" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource HeaderBtn}" Command="{Binding ExportCsvCommand}" Margin="8,0,0,0">
@@ -129,7 +130,8 @@
                             <TextBlock Text="EXPORT CSV" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button Style="{StaticResource HeaderBtn}" Command="{Binding TogglePollingCommand}" Margin="8,0,0,0" Foreground="{DynamicResource BrushTextSecondary}">
+                    <Button Style="{StaticResource HeaderBtn}" Command="{Binding ClearRecordedSamplesCommand}" Margin="8,0,0,0" Content="CLEAR SAMPLES" />
+                    <Button Style="{StaticResource HeaderBtn}" Command="{Binding TogglePollingCommand}" IsEnabled="{Binding IsPollingSupported}" Margin="8,0,0,0" Foreground="{DynamicResource BrushTextSecondary}">
                         <TextBlock>
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -149,7 +151,26 @@
             </Grid>
         </Border>
 
-        <UniformGrid Grid.Row="1" Columns="3" Rows="2" Margin="24,0,24,16">
+        <WrapPanel Grid.Row="1" Margin="24,0,24,12">
+            <TextBlock Text="{Binding CapabilityMessage}" Foreground="{DynamicResource BrushAmberBright}" Margin="0,0,12,0" />
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,12,0" />
+            <TextBlock Text="{Binding LastSampleText}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,12,0" />
+            <TextBlock Text="{Binding IsRecording, StringFormat='Recording: {0}'}" Foreground="{DynamicResource BrushAmberBright}" Margin="0,0,12,0" />
+            <TextBlock Text="Interval (s):" Foreground="{DynamicResource BrushTextSecondary}" />
+            <ComboBox ItemsSource="{Binding PollIntervals}" SelectedItem="{Binding PollIntervalSeconds}" Width="55" Margin="6,0,12,0" />
+            <TextBlock Text="Target package:" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBox Text="{Binding TargetPackage, UpdateSourceTrigger=PropertyChanged}" Width="150" Margin="6,0,12,0" />
+            <TextBlock Text="CPU alert %:" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBox Text="{Binding CpuAlertThreshold}" Width="35" Margin="6,0,8,0" />
+            <TextBlock Text="Memory alert %:" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBox Text="{Binding MemoryAlertThreshold}" Width="35" Margin="6,0,8,0" />
+            <TextBlock Text="Battery alert %:" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBox Text="{Binding BatteryAlertThreshold}" Width="35" Margin="6,0,8,0" />
+            <CheckBox Content="Include device ID + SSID/IP in CSV" IsChecked="{Binding IncludeIdentifiersInExport}" Foreground="{DynamicResource BrushTextSecondary}" />
+        </WrapPanel>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <UniformGrid Columns="3" Rows="2" Margin="24,0,24,16">
             <UniformGrid.Resources>
                 <Style TargetType="Border" BasedOn="{StaticResource GlassPanel}">
                     <Setter Property="Margin" Value="0,0,12,12" />
@@ -163,7 +184,7 @@
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="CPU USAGE" Style="{StaticResource GaugeLabel}" />
                     <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource GaugeSubtitle}">
-                        <Run Text="LOAD: " /><Run Text="{Binding CpuPercent, StringFormat={}{0:F0}%}" />
+                        <Run Text="TREND: " /><Run Text="{Binding CpuTrend}" />
                     </TextBlock>
                     <Grid Margin="0,8">
                         <Canvas Width="120" Height="120" HorizontalAlignment="Center">
@@ -172,13 +193,11 @@
                                   Data="{Binding CpuPercent, Converter={StaticResource PercentToArc}}" />
                         </Canvas>
                         <TextBlock Style="{StaticResource GaugeValue}" Foreground="{DynamicResource BrushPrimaryLight}">
-                            <Run Text="{Binding CpuPercent, StringFormat={}{0:F0}}" /><Run Text="%" />
+                            <Run Text="{Binding CpuDisplay}" />
                         </TextBlock>
                     </Grid>
-                    <!-- Sparkline -->
-                    <Polyline DockPanel.Dock="Bottom" Points="0,8 8,5 16,7 24,3 32,6 40,2 48,5 56,4 64,7 72,3 80,5" 
-                              Stroke="{DynamicResource BrushCyan}" StrokeThickness="1.5" Opacity="0.4"
-                              Stretch="Fill" Height="16" Margin="0,4,0,0" />
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding TargetAppDetail}" Style="{StaticResource GaugeSubtitle}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding CpuStatus}" Style="{StaticResource GaugeSubtitle}" />
                 </DockPanel>
             </Border>
 
@@ -194,13 +213,11 @@
                                   Data="{Binding MemoryPercent, Converter={StaticResource PercentToArc}}" />
                         </Canvas>
                         <TextBlock Style="{StaticResource GaugeValue}" Foreground="{DynamicResource BrushAmberBright}">
-                            <Run Text="{Binding MemoryPercent, StringFormat={}{0:F0}}" /><Run Text="%" />
+                            <Run Text="{Binding MemoryDisplay}" />
                         </TextBlock>
                     </Grid>
-                    <!-- Sparkline -->
-                    <Polyline DockPanel.Dock="Bottom" Points="0,4 10,7 20,5 30,8 40,6 50,9 60,7 70,8 80,6" 
-                              Stroke="{DynamicResource BrushAmberBright}" StrokeThickness="1.5" Opacity="0.4"
-                              Stretch="Fill" Height="16" Margin="0,4,0,0" />
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding MemoryTrend}" Style="{StaticResource GaugeSubtitle}" />
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding MemoryStatus}" Style="{StaticResource GaugeSubtitle}" />
                 </DockPanel>
             </Border>
 
@@ -208,7 +225,8 @@
             <Border>
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="TEMPERATURE" Style="{StaticResource GaugeLabel}" />
-                    <TextBlock DockPanel.Dock="Bottom" Text="THERMAL THROTTLE AT 45°C" Style="{StaticResource GaugeSubtitle}" />
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding ThermalStatus}" Style="{StaticResource GaugeSubtitle}" />
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding TemperatureStatus}" Style="{StaticResource GaugeSubtitle}" />
                     <Grid Margin="0,8">
                         <Canvas Width="120" Height="120" HorizontalAlignment="Center">
                             <Ellipse Canvas.Left="6" Canvas.Top="6" Width="108" Height="108" Stroke="#15FFFFFF" StrokeThickness="8" />
@@ -218,14 +236,10 @@
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal">
                             <TextBlock Text="&#xE9CA;" FontFamily="Segoe MDL2 Assets" FontSize="20" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" Margin="0,0,4,0" />
                             <TextBlock Style="{StaticResource GaugeValue}" Foreground="{DynamicResource BrushPrimaryLight}">
-                                <Run Text="{Binding TemperatureCelsius, StringFormat={}{0:F0}}" /><Run Text="°C" />
+                                <Run Text="{Binding TemperatureDisplay}" />
                             </TextBlock>
                         </StackPanel>
                     </Grid>
-                    <!-- Sparkline -->
-                    <Polyline DockPanel.Dock="Bottom" Points="0,6 12,4 24,5 36,3 48,5 60,4 72,6 80,5" 
-                              Stroke="{DynamicResource BrushPrimaryLight}" StrokeThickness="1.5" Opacity="0.4"
-                              Stretch="Fill" Height="16" Margin="0,4,0,0" />
                 </DockPanel>
             </Border>
 
@@ -241,11 +255,12 @@
                     <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="0,12">
                         <TextBlock Text="&#xE83F;" FontFamily="Segoe MDL2 Assets" FontSize="44" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" Margin="0,0,8,0" />
                         <TextBlock Foreground="{DynamicResource BrushPrimaryLight}" FontFamily="{StaticResource FontHeader}" FontSize="40" FontWeight="Bold" VerticalAlignment="Center">
-                            <Run Text="{Binding BatteryPercent, StringFormat={}{0:F0}}" /><Run Text="%" />
+                            <Run Text="{Binding BatteryDisplay}" />
                         </TextBlock>
                     </StackPanel>
                     <StackPanel Grid.Row="2">
                         <TextBlock Text="{Binding BatteryDetail}" Style="{StaticResource GaugeSubtitle}" />
+                        <TextBlock Text="{Binding BatteryStatusText}" Style="{StaticResource GaugeSubtitle}" />
                         <Border Height="6" Background="{DynamicResource BrushOverlay}" CornerRadius="3" Margin="0,6,0,0">
                             <Border Background="{DynamicResource BrushCyan}" CornerRadius="3" HorizontalAlignment="Left" Width="{Binding BatteryPercent}" />
                         </Border>
@@ -261,7 +276,7 @@
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="NETWORK STABILITY" Style="{StaticResource GaugeLabel}" />
+                    <TextBlock Grid.Row="0" Text="NETWORK INFO" Style="{StaticResource GaugeLabel}" />
                     <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,12">
                         <TextBlock Text="&#xE701;" FontFamily="Segoe MDL2 Assets" FontSize="40" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" Margin="0,0,12,0" />
                         <StackPanel VerticalAlignment="Center">
@@ -273,42 +288,22 @@
                     </StackPanel>
                     <StackPanel Grid.Row="2" Orientation="Horizontal">
                         <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushCyan}" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <TextBlock Text="{Binding NetworkLatency, StringFormat=LATENCY: {0}}" FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding NetworkLatency}" FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- Disk I/O -->
+            <!-- Disk I/O capability -->
             <Border>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="DISK I/O" Style="{StaticResource GaugeLabel}" />
-                    <StackPanel Grid.Row="1" Margin="0,12,0,0">
-                        <Grid Margin="0,0,0,6">
-                            <TextBlock FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{DynamicResource BrushPrimaryLight}" HorizontalAlignment="Left">
-                                <Run Text="READ: " /><Run Text="{Binding DiskReadMbs, StringFormat={}{0:F0}}" /><Run Text=" MB/s" />
-                            </TextBlock>
-                            <TextBlock FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{DynamicResource BrushAmberBright}" HorizontalAlignment="Right">
-                                <Run Text="WRITE: " /><Run Text="{Binding DiskWriteMbs, StringFormat={}{0:F0}}" /><Run Text=" MB/s" />
-                            </TextBlock>
-                        </Grid>
-                        <Border Height="4" Background="{DynamicResource BrushOverlay}" CornerRadius="2" Margin="0,0,0,4">
-                            <Border Background="{DynamicResource BrushCyan}" CornerRadius="2" HorizontalAlignment="Left" Width="{Binding DiskReadMbs}" />
-                        </Border>
-                        <Border Height="4" Background="{DynamicResource BrushOverlay}" CornerRadius="2">
-                            <Border Background="{DynamicResource BrushAmberBright}" CornerRadius="2" HorizontalAlignment="Left" Width="{Binding DiskWriteMbs}" />
-                        </Border>
-                    </StackPanel>
-                    <TextBlock Grid.Row="2" Text="TOTAL READ: SESSION" Style="{StaticResource GaugeSubtitle}" />
-                </Grid>
+                <StackPanel>
+                    <TextBlock Text="DISK I/O" Style="{StaticResource GaugeLabel}" />
+                    <TextBlock Text="{Binding DiskStatus}" Style="{StaticResource GaugeSubtitle}" Margin="0,12,0,0" TextWrapping="Wrap" />
+                </StackPanel>
             </Border>
         </UniformGrid>
+        </ScrollViewer>
 
-        <Border Grid.Row="2" Margin="24,0,24,24" Style="{StaticResource GlassPanel}" Padding="16">
+        <Border Grid.Row="3" Margin="24,0,24,24" Style="{StaticResource GlassPanel}" Padding="16">
             <DockPanel>
                 <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
@@ -319,10 +314,7 @@
                         <TextBlock Text="&#xEA37;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,8,0" VerticalAlignment="Center" />
                         <TextBlock Text="VITALS LOG" FontFamily="{StaticResource FontHeader}" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" />
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="AUTO-SCROLL" FontFamily="{StaticResource FontHeader}" FontSize="10" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <CheckBox Style="{DynamicResource ToggleSwitch}" IsChecked="{Binding AutoScroll}" VerticalAlignment="Center" />
-                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="Recent samples and alerts" Style="{StaticResource GaugeSubtitle}" />
                 </Grid>
                 <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource BrushBorder}" Margin="0,0,0,6" />
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
