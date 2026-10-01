@@ -1,4 +1,5 @@
 using LogPro.Services;
+using LogPro.Helpers;
 
 namespace LogPro.Tests.Services;
 
@@ -13,7 +14,7 @@ public class AdbServiceCommandTests
             out var args);
 
         success.Should().BeTrue();
-        args.Should().Contain("-s emulator-5554 shell am start -W");
+        args.Should().Contain("-s emulator-5554 shell \"am start -W --user current");
         args.Should().Contain("'intent://scan/#Intent;scheme=zxing;package=com.google.zxing.client.android;end'");
     }
 
@@ -26,7 +27,7 @@ public class AdbServiceCommandTests
             out var args);
 
         success.Should().BeTrue();
-        args.Should().Be("-s device-1 shell am start -W -a android.intent.action.VIEW -d 'myapp://orders/123?source=qa'");
+        args.Should().Be("-s device-1 shell " + ToolLauncher.QuoteArgument("am start -W --user current -a android.intent.action.VIEW -d 'myapp://orders/123?source=qa'"));
     }
 
     [Fact]
@@ -34,7 +35,7 @@ public class AdbServiceCommandTests
     {
         var success = AdbService.TryBuildDeepLinkIntentArgs(
             "device-1",
-            "https://example.com/$(id)",
+            "myapp://example/$(id)",
             out _);
 
         success.Should().BeFalse();

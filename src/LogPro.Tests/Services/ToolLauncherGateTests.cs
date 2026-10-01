@@ -27,6 +27,19 @@ public class ToolLauncherGateTests
     }
 
     [Fact]
+    public async Task QueueDeadline_DoesNotLaunchAndReleasesGlobalCapacity()
+    {
+        using var first = await ToolLauncher.TestAcquireAsync("-s DEEP_GATE_TEST cmd");
+        var result = await ToolLauncher.RunAsync("nonexistent-deep-link-test-executable", "-s DEEP_GATE_TEST shell am start",
+            hidePayloadInLogs: true, gateTimeoutMs: 50);
+        result.Success.Should().BeFalse();
+        result.Error.Should().Be("Device queue timed out.");
+        first!.Dispose();
+        using var after = await ToolLauncher.TestAcquireAsync("-s DEEP_GATE_TEST cmd", waitMs: 5000);
+        after.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task DifferentDevices_DoNotBlockEachOther()
     {
         var first = await ToolLauncher.TestAcquireAsync("-s DEVICE_A cmd");

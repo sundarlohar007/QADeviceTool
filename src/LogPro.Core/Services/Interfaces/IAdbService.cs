@@ -16,6 +16,10 @@ public interface IAdbService
     Task<(bool Success, string Message)> InstallApkAsync(string serial, string apkPath, Action<string>? progressCallback, CancellationToken cancellationToken, bool allowTestApk)
         => InstallApkAsync(serial, apkPath, progressCallback, cancellationToken);
     Task<bool> BroadcastIntentAsync(string serial, string uri);
+    Task<DeepLinkResult> LaunchDeepLinkAsync(string serial, string uri, DeepLinkOptions options, CancellationToken cancellationToken = default)
+        => Task.FromResult(new DeepLinkResult(DeepLinkOutcome.Unsupported, "Structured deep-link launching is unavailable in this device service."));
+    Task<DeepLinkInspection> InspectDeepLinkAsync(string serial, string uri, DeepLinkOptions options, CancellationToken cancellationToken = default)
+        => Task.FromResult(new DeepLinkInspection(false, Array.Empty<string>(), "Handler inspection is unavailable in this device service."));
     Task<string> ExecuteCommandAsync(string serial, string command, CancellationToken cancellationToken = default);
     Task<(bool Success, string Output, string Error)> ExecuteCommandWithResultAsync(string serial, string args, CancellationToken cancellationToken = default);
     Task<string?> GetDevicePropertyAsync(string serial, string property);

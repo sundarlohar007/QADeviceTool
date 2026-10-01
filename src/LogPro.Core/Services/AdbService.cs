@@ -20,11 +20,41 @@ public class AdbService : IAdbService
 
     public async Task<bool> BroadcastIntentAsync(string serial, string uri)
     {
-        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !SecurityHelper.IsOfflineSafeUri(uri))
-            return false;
-        if (!TryBuildDeepLinkIntentArgs(serial, uri, out var args)) return false;
-        var result = await RunAdbAsync(args, FastTimeoutMs);
-        return result.Success && (result.Output.Contains("Starting:") || result.Output.Contains("Complete"));
+        return (await LaunchDeepLinkAsync(serial, uri, new DeepLinkOptions()).ConfigureAwait(false)).Success;
+    }
+
+    public async Task<DeepLinkResult> LaunchDeepLinkAsync(string serial, string uri, DeepLinkOptions options, CancellationToken cancellationToken = default)
+    {
+        if (!DeepLinkHelper.TryValidate(uri, out var error)) return new(DeepLinkOutcome.Failed, error);
+        if (!TryBuildDeepLinkArgs(serial, uri, options, false, out var args))
+            return new(DeepLinkOutcome.Failed, "Invalid device selector, package, or conflicting intent target.");
+        // Launches are never retried: the app may already have received the intent.
+        var result = await ToolLauncher.RunAsync(_adb, args, 30000, cancellationToken: cancellationToken,
+            hidePayloadInLogs: true, gateTimeoutMs: 15000).ConfigureAwait(false);
+        return DeepLinkHelper.ParseResult(result);
+    }
+
+    public async Task<DeepLinkInspection> InspectDeepLinkAsync(string serial, string uri, DeepLinkOptions options, CancellationToken cancellationToken = default)
+    {
+        if (!DeepLinkHelper.TryValidate(uri, out var error)) return new(false, Array.Empty<string>(), error);
+        if (!TryBuildDeepLinkArgs(serial, uri, options, true, out var args))
+            return new(false, Array.Empty<string>(), "Invalid device selector, package, or conflicting intent target.");
+        var result = await ToolLauncher.RunAsync(_adb, args, 10000, cancellationToken: cancellationToken,
+            hidePayloadInLogs: true, gateTimeoutMs: 15000).ConfigureAwait(false);
+        var text = result.Output + "\n" + result.Error;
+        if (cancellationToken.IsCancellationRequested) return new(false, Array.Empty<string>(), "Inspection cancelled.");
+        if (!result.Success || Regex.IsMatch(text, @"(?im)^\s*(?:Error:|Unknown command|Exception|java\.)"))
+            return new(false, Array.Empty<string>(), "Handler inspection failed or is unsupported on this Android version. Check USB authorization and connectivity.");
+        var handlers = Regex.Matches(result.Output, @"(?m)^\s*([A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+)\s*$")
+            .Select(m => m.Groups[1].Value).Distinct(StringComparer.Ordinal).Take(100).ToArray();
+        if (handlers.Length == 0 && !text.Contains("No activities found", StringComparison.OrdinalIgnoreCase))
+            return new(false, handlers, "Android returned an unrecognized handler response; no handler count can be confirmed.");
+        return new(true, handlers, handlers.Length switch
+        {
+            0 => "No installed activity handles this link.",
+            1 => "One matching activity found. Android permissions may still prevent launching it.",
+            _ => $"{handlers.Length} matching activities found. Choose a target package to narrow the test."
+        });
     }
 
     public async Task<string> ExecuteCommandAsync(string serial, string command, CancellationToken cancellationToken = default)
@@ -55,6 +85,8 @@ public class AdbService : IAdbService
     {
         _adb = ToolResolver.Resolve("adb");
     }
+
+    internal AdbService(string executablePath) => _adb = executablePath;
 
     // ─── Semaphore-guarded ADB execution ─────────────────────────
     // All adb calls go through these to prevent concurrent USB transport access.
@@ -913,26 +945,29 @@ public class AdbService : IAdbService
     }
 
     internal static bool TryBuildDeepLinkIntentArgs(string serial, string url, out string args)
+        => TryBuildDeepLinkArgs(serial, url, new DeepLinkOptions(), false, out args);
+
+    internal static bool TryBuildDeepLinkArgs(string serial, string url, DeepLinkOptions options, bool inspect, out string args)
     {
+        args = string.Empty;
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !DeepLinkHelper.TryValidate(url, out _) ||
+            !DeepLinkHelper.TryValidateOptions(url.Trim(), options, out _)) return false;
         var trimmed = url.Trim();
-        if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !SecurityHelper.IsOfflineSafeUri(trimmed) ||
-            trimmed.Contains('`') || trimmed.Contains("$("))
-        {
-            args = string.Empty;
-            return false;
-        }
-
         var isIntentUri = trimmed.StartsWith("intent:", StringComparison.OrdinalIgnoreCase);
-        if (!isIntentUri && !Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+        if (isIntentUri) trimmed = "intent:" + trimmed[7..];
+        if (isIntentUri && !string.IsNullOrEmpty(options.PackageId))
         {
-            args = string.Empty;
-            return false;
+            var package = Regex.Match(trimmed, @";package=([^;]+)").Groups[1].Value;
+            // Insert a target into the intent itself so positional parsing cannot override it.
+            if (package.Length == 0) trimmed = trimmed[..^3] + "package=" + options.PackageId + ";end";
         }
-
         var safeUrl = EscapeSingleQuotedShell(trimmed);
-        args = isIntentUri
-            ? $"-s {serial} shell am start -W '{safeUrl}'"
-            : $"-s {serial} shell am start -W -a android.intent.action.VIEW -d '{safeUrl}'";
+        var intentArgs = isIntentUri ? $"'{safeUrl}'" : $"-a android.intent.action.VIEW -d '{safeUrl}'";
+        var extras = options.Browsable ? "-c android.intent.category.BROWSABLE " : string.Empty;
+        if (!isIntentUri && options.PackageId.Length > 0) extras += "-p " + options.PackageId + " ";
+        var command = inspect ? "cmd package query-activities --brief --components --user current " : "am start -W --user current ";
+        // Quote for the host process AND the device shell. ADB receives one complete shell command.
+        args = $"-s {serial} shell {ToolLauncher.QuoteArgument(command + extras + intentArgs)}";
         return true;
     }
 
