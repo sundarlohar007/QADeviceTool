@@ -57,6 +57,21 @@ public partial class App : Application
 
             window.DataContext = CompositionRoot.CreateMainViewModel();
             desktop.MainWindow = window;
+            window.Opened += async (_, _) =>
+            {
+                var preferences = LogPro.Services.PreferencesService.Current;
+                if (!preferences.PrivacyNoticeAccepted)
+                {
+                    var accepted = await LogPro.ViewModels.UiServices.Dialogs.ConfirmAsync(
+                        "Privacy Notice",
+                        "LogPro stores preferences, logs, screenshots and sessions locally. Optional update checks contact GitHub when enabled; diagnostic data is not included in those requests. Continue?");
+                    if (!accepted) { desktop.Shutdown(); return; }
+                    preferences.PrivacyNoticeAccepted = true;
+                    if (!LogPro.Services.PreferencesService.Save()) { desktop.Shutdown(); return; }
+                }
+                LogPro.Services.PreferencesService.CleanupOldLogs();
+                LogPro.Services.PreferencesService.CleanupOldSessions();
+            };
         }
 
         base.OnFrameworkInitializationCompleted();

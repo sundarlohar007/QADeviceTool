@@ -12,8 +12,12 @@ public sealed class UpdateInfo
     public string Sha256 { get; init; } = string.Empty;
     public string ReleaseNotes { get; init; } = string.Empty;
     public string FileName { get; init; } = string.Empty;
-    public bool IsNewerAvailable => !string.IsNullOrEmpty(LatestVersion) &&
-                                     !string.Equals(CurrentVersion, LatestVersion, StringComparison.OrdinalIgnoreCase);
+    public bool IsNewerAvailable =>
+        Version.TryParse(CurrentVersion.TrimStart('v', 'V'), out var current) &&
+        Version.TryParse(LatestVersion.TrimStart('v', 'V'), out var latest) && latest > current;
+    public bool IsInstallable => (IsNewerAvailable || CurrentVersion == "unknown") &&
+        !string.IsNullOrWhiteSpace(DownloadUrl) &&
+        System.Text.RegularExpressions.Regex.IsMatch(Sha256, "^[a-fA-F0-9]{64}$");
 }
 
 /// <summary>Preferences for the auto-update subsystem.</summary>
