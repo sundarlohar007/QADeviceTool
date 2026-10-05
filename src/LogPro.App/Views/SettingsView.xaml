@@ -108,7 +108,7 @@
                     <StackPanel Margin="0,0,0,24">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="LOGPRO TERMINAL" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" />
-                            <TextBlock Text="V4.2 STABLE" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource BrushTextMuted}" Opacity="0.7" VerticalAlignment="Center" Margin="12,4,0,0" />
+                            <TextBlock Text="{Binding AppVersion, StringFormat=v{0}}" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource BrushTextMuted}" Opacity="0.7" VerticalAlignment="Center" Margin="12,4,0,0" />
                         </StackPanel>
                         <TextBlock Text="System configuration, dependencies, and runtime preferences."
                                    Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
@@ -158,6 +158,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            <TextBlock Text="If a device is missing, reconnect USB, approve debugging or trust on the device, then Re-check. Windows iOS USB also needs the Apple Mobile Device Service running." TextWrapping="Wrap" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" Margin="0,6,0,0" />
                         </StackPanel>
                     </Border>
 
@@ -183,7 +184,7 @@
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <TextBlock Text="LOG RETENTION" Style="{StaticResource SectionLabel}" />
-                            <TextBlock Text="Automatically purge log files older than the selected threshold." Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,0,0,10" />
+                            <TextBlock Text="Automatically purge old logs and completed LogPro sessions, including their screenshots and recordings." Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" />
                             <StackPanel Orientation="Horizontal">
                                 <ComboBox ItemsSource="{Binding LogRetentionOptions}"
                                           SelectedItem="{Binding SelectedLogRetention}"
@@ -267,15 +268,20 @@
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Margin="0,0,10,0">
                                     <TextBlock Text="PAIRING CODE" Style="{StaticResource MetaLabel}" Margin="0,0,0,6" />
-                                    <TextBox Style="{StaticResource DarkInput}" Text="{Binding PairingCode, UpdateSourceTrigger=PropertyChanged}" />
+                                    <PasswordBox x:Name="PairingCodeInput" PasswordChanged="PairingCodeInput_PasswordChanged" Padding="10,7" />
                                 </StackPanel>
-                                <Button Grid.Column="2" Style="{StaticResource PrimaryBtn}" Content="Pair" Command="{Binding PairDeviceCommand}" VerticalAlignment="Bottom" />
+                                <Button Grid.Column="2" Style="{StaticResource PrimaryBtn}" Content="Pair" Command="{Binding PairDeviceCommand}" IsEnabled="{Binding IsWirelessAvailable}" VerticalAlignment="Bottom" />
                             </Grid>
 
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock Text="CONNECTION IP:PORT (shown separately in Wireless debugging)" Style="{StaticResource MetaLabel}" Margin="0,0,0,6" />
+                                <TextBox Style="{StaticResource DarkInput}" Text="{Binding ConnectionIpPort, UpdateSourceTrigger=PropertyChanged}" Width="260" HorizontalAlignment="Left" />
+                            </StackPanel>
+
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                <Button Style="{StaticResource GhostBtn}" Content="Discover" Command="{Binding DiscoverPortsCommand}" Margin="0,0,8,0" />
-                                <Button Style="{StaticResource GhostBtn}" Content="Connect" Command="{Binding ConnectWirelessDeviceCommand}" Margin="0,0,8,0" />
-                                <Button Style="{StaticResource DangerBtn}" Content="Disconnect" Command="{Binding DisconnectWirelessDeviceCommand}" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Discover" Command="{Binding DiscoverPortsCommand}" IsEnabled="{Binding IsWirelessAvailable}" Margin="0,0,8,0" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Connect" Command="{Binding ConnectWirelessDeviceCommand}" IsEnabled="{Binding IsWirelessAvailable}" Margin="0,0,8,0" />
+                                <Button Style="{StaticResource DangerBtn}" Content="Disconnect" Command="{Binding DisconnectWirelessDeviceCommand}" IsEnabled="{Binding IsWirelessAvailable}" />
                             </StackPanel>
 
                             <Border Background="{DynamicResource BrushBase}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="12,8">
@@ -297,12 +303,36 @@
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <TextBlock Text="DATA MANAGEMENT" Style="{StaticResource SectionLabel}" />
-                            <TextBlock Text="Clear all stored preferences and cached logs. This cannot be undone."
+                            <TextBlock Text="Clear settings, app logs and completed LogPro sessions after reviewing the exact scope. Other files in a custom Sessions folder are kept."
                                        Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,0,0,12" />
                             <Button Style="{StaticResource DangerBtn}" Content="Clear All Data" Command="{Binding ClearAllDataCommand}" HorizontalAlignment="Left" />
                             <TextBlock Text="{Binding ClearDataStatus}" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" Margin="0,8,0,0" />
+                            <TextBlock Text="{Binding StorageSummary}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,8,0,0" />
+                            <ListBox ItemsSource="{Binding CleanupTargets}" Height="90" Margin="0,6,0,0" FontSize="10" />
+                            <Button Style="{StaticResource GhostBtn}" Content="Refresh Storage Inventory" Command="{Binding RefreshStorageInventoryCommand}" HorizontalAlignment="Left" Margin="0,8,0,0" />
+                            <Button Style="{StaticResource GhostBtn}" Content="Export My Data" Command="{Binding ExportMyDataCommand}" HorizontalAlignment="Left" Margin="0,8,0,0" />
                             <Button Style="{StaticResource GhostBtn}" Content="Open Logs Folder" Command="{Binding OpenLogsFolderCommand}" HorizontalAlignment="Left" Margin="0,8,0,0" />
                             <TextBlock Text="View diagnostic log files in Explorer." Foreground="{DynamicResource BrushTextMuted}" FontSize="11" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- UPDATES -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="UPDATES" Style="{StaticResource SectionLabel}" />
+                            <CheckBox Content="Check GitHub for updates at startup" IsChecked="{Binding CheckForUpdatesOnStartup}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,8" />
+                            <Button Style="{StaticResource GhostBtn}" Content="Check Now" Command="{Binding CheckForUpdatesCommand}" HorizontalAlignment="Left" />
+                            <TextBlock Text="{Binding UpdateStatus}" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,8,0,8" />
+                            <TextBlock Text="{Binding UpdateCheckDetails}" Foreground="{DynamicResource BrushTextMuted}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                            <ListBox ItemsSource="{Binding AvailableUpdates}" SelectedItem="{Binding SelectedUpdate}" DisplayMemberPath="ToolName" Height="90" />
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Style="{StaticResource PrimaryBtn}" Content="Install Selected" Command="{Binding ApplyUpdateCommand}" CommandParameter="{Binding SelectedUpdate}" Margin="0,0,8,0" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Skip Selected Version" Command="{Binding SkipUpdateCommand}" CommandParameter="{Binding SelectedUpdate}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Style="{StaticResource GhostBtn}" Content="Rollback scrcpy" Command="{Binding RollbackToolCommand}" CommandParameter="scrcpy" Margin="0,0,8,0" />
+                                <Button Style="{StaticResource GhostBtn}" Content="Rollback iOS tool" Command="{Binding RollbackToolCommand}" CommandParameter="pymobiledevice3" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

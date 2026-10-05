@@ -162,10 +162,18 @@ public partial class App : Application
             var prefs = Services.PreferencesService.Current;
             EarlyLog("PreferencesService initialized.");
 
-            // Cleanup old logs based on retention settings
+            if (!prefs.PrivacyNoticeAccepted)
+            {
+                var accepted = System.Windows.MessageBox.Show(
+                    "LogPro stores preferences, logs, screenshots and sessions locally. Optional update checks contact GitHub when enabled; diagnostic data is not included in those requests. Continue?",
+                    "Privacy Notice", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (accepted != MessageBoxResult.Yes) { Shutdown(); return; }
+                prefs.PrivacyNoticeAccepted = true;
+                if (!PreferencesService.Save()) { Shutdown(); return; }
+            }
+            // Cleanup only after the first-run notice is accepted.
             Services.PreferencesService.CleanupOldLogs();
             Services.PreferencesService.CleanupOldSessions();
-            // First-run privacy notice             if (!PreferencesService.Current.PrivacyNoticeAccepted)             {                 var accepted = System.Windows.MessageBox.Show(                     "LogPro stores logs, screenshots, and session data locally on this machine. No data is sent externally. This data is used for QA testing purposes only. Continue?",                     "Privacy Notice",                     System.Windows.MessageBoxButton.YesNo,                     System.Windows.MessageBoxImage.Information);                 if (accepted == System.Windows.MessageBoxResult.Yes)                 {                     PreferencesService.Current.PrivacyNoticeAccepted = true;                     PreferencesService.Save();                 }             }
             EarlyLog("Old logs cleaned up.");
 
             Services.AppLogger.Log.Info("========================================");

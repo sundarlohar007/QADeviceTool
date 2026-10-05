@@ -62,7 +62,7 @@ public class DependencyChecker
             status.IsInstalled = key != null;
             status.Version = key != null ? "Registered" : "Missing";
             status.StatusMessage = key != null
-                ? "Service is installed. If iOS devices are missing, check that it is running and trust the device."
+                ? "Service is registered; running state and device trust have not been verified."
                 : "Install the classic iTunes package to provide Apple Mobile Device Service for iOS USB discovery.";
         }
         catch (Exception ex)
@@ -99,7 +99,7 @@ public class DependencyChecker
             {
                 status.IsInstalled = true;
                 status.Version = "Installed";
-                status.StatusMessage = "USB driver detected. Android devices should be recognized.";
+                status.StatusMessage = "WinUSB service registered; Android device-specific driver binding is not verified. Test with adb devices.";
                 status.Path = "Windows Driver";
                 key.Dispose();
             }
@@ -111,7 +111,7 @@ public class DependencyChecker
                 {
                     status.IsInstalled = true;
                     status.Version = "Installed";
-                    status.StatusMessage = "ADB USB driver detected.";
+                    status.StatusMessage = "USB driver service registered; test recognition with adb devices.";
                     status.Path = "Windows Driver";
                     adbKey.Dispose();
                 }

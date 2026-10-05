@@ -65,27 +65,27 @@ public sealed class UpdateService : IDisposable
     /// </summary>
     public async Task<List<UpdateInfo>> CheckAllAsync(CancellationToken ct = default)
     {
-        var results = new List<UpdateInfo>();
-        foreach (var (toolName, source) in _sources)
+        var checks = _sources.Select(async entry =>
         {
+            var (toolName, source) = entry;
             try
             {
-                var info = await CheckOneAsync(toolName, source, ct).ConfigureAwait(false);
-                results.Add(info);
+                return await CheckOneAsync(toolName, source, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                if (ex is OperationCanceledException && ct.IsCancellationRequested) throw;
                 AppLogger.Log.Debug(ex, $"[UpdateService] Failed to check {toolName}");
-                results.Add(new UpdateInfo
+                return new UpdateInfo
                 {
                     ToolName = toolName,
                     CurrentVersion = GetCurrentVersion(toolName),
                     LatestVersion = "",
                     ReleaseNotes = $"Check failed: {ex.Message}"
-                });
+                };
             }
-        }
-        return results;
+        });
+        return (await Task.WhenAll(checks).ConfigureAwait(false)).ToList();
     }
 
     /// <summary>
@@ -94,7 +94,7 @@ public sealed class UpdateService : IDisposable
     /// </summary>
     public async Task<(bool Success, string Message)> ApplyUpdateAsync(UpdateInfo update, IProgress<int>? progress = null, CancellationToken ct = default)
     {
-        if (!update.IsNewerAvailable)
+        if (!update.IsNewerAvailable && update.CurrentVersion != "unknown")
             return (false, "No update available.");
 
         if (string.IsNullOrWhiteSpace(update.DownloadUrl))
@@ -143,15 +143,7 @@ public sealed class UpdateService : IDisposable
                 if (!_sources.TryGetValue(update.ToolName, out var source))
                     return (false, $"Unknown tool: {update.ToolName}");
 
-                await InstallToolAsync(downloadPath, source, ct).ConfigureAwait(false);
-
-                // 5. Regenerate manifest and clear resolver cache
-                var manifestPath = Path.Combine(_appDir, ToolManifest.DefaultFileName);
-                if (Directory.Exists(_toolsDir))
-                {
-                    await ToolManifest.WriteAsync(_toolsDir, manifestPath).ConfigureAwait(false);
-                }
-                ToolResolver.ClearCache();
+                await InstallToolAsync(downloadPath, source, update.ToolName, ct).ConfigureAwait(false);
 
                 AppLogger.Log.Info($"[UpdateService] Successfully updated {update.ToolName} to v{update.LatestVersion}");
                 return (true, $"{update.ToolName} updated to v{update.LatestVersion}");
@@ -267,37 +259,133 @@ public sealed class UpdateService : IDisposable
         return "unknown";
     }
 
-    private async Task InstallToolAsync(string downloadPath, ToolSource source, CancellationToken ct)
+    private async Task InstallToolAsync(string downloadPath, ToolSource source, string toolName, CancellationToken ct)
     {
-        if (!Directory.Exists(_toolsDir))
-            Directory.CreateDirectory(_toolsDir);
-
-        if (downloadPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        Directory.CreateDirectory(_toolsDir);
+        var staging = Path.Combine(_toolsDir, $".update_{Guid.NewGuid():N}");
+        var backup = BackupPath(toolName);
+        string? installed = null;
+        string? previous = null;
+        var installedNew = false;
+        var backupCreated = false;
+        Directory.CreateDirectory(staging);
+        try
         {
-            // Remove old version directory
-            if (!string.IsNullOrEmpty(source.SubDirectory))
+            ct.ThrowIfCancellationRequested();
+            if (downloadPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
-                foreach (var old in Directory.GetDirectories(_toolsDir, source.SubDirectory))
+                ZipFile.ExtractToDirectory(downloadPath, staging);
+                var staged = Directory.GetDirectories(staging, source.SubDirectory ?? "*");
+                if (staged.Length != 1 || !File.Exists(Path.Combine(staged[0], "scrcpy.exe")))
+                    throw new InvalidDataException("Update archive does not contain a valid scrcpy installation.");
+                installed = Path.Combine(_toolsDir, Path.GetFileName(staged[0]));
+                previous = Directory.Exists(installed) ? installed :
+                    Directory.GetDirectories(_toolsDir, source.SubDirectory ?? "*").FirstOrDefault();
+                if (previous != null)
                 {
-                    try { Directory.Delete(old, true); }
-                    catch (Exception ex) { AppLogger.Log.Debug(ex, $"[UpdateService] Failed to remove old {old}"); }
+                    if (Directory.Exists(backup)) Directory.Delete(backup, true);
+                    Directory.Move(previous, backup);
+                    backupCreated = true;
                 }
+                Directory.Move(staged[0], installed);
+                installedNew = true;
             }
-
-            // Extract zip directly into tools/
-            ZipFile.ExtractToDirectory(downloadPath, _toolsDir, overwriteFiles: true);
-        }
-        else if (downloadPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-        {
-            // Single executable — place in subdirectory
-            if (!string.IsNullOrEmpty(source.SubDirectory))
+            else if (downloadPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             {
-                var targetDir = Path.Combine(_toolsDir, source.SubDirectory);
-                if (!Directory.Exists(targetDir))
-                    Directory.CreateDirectory(targetDir);
-                var targetPath = Path.Combine(targetDir, Path.GetFileName(downloadPath));
-                File.Copy(downloadPath, targetPath, overwrite: true);
+                if (source.SubDirectory == null) throw new InvalidDataException("Missing tool directory.");
+                installed = Path.Combine(_toolsDir, source.SubDirectory);
+                var staged = Path.Combine(staging, source.SubDirectory);
+                Directory.CreateDirectory(staged);
+                File.Copy(downloadPath, Path.Combine(staged, "pymobiledevice3.exe"));
+                if (Directory.Exists(installed))
+                {
+                    previous = installed;
+                    if (Directory.Exists(backup)) Directory.Delete(backup, true);
+                    Directory.Move(installed, backup);
+                    backupCreated = true;
+                }
+                Directory.Move(staged, installed);
+                installedNew = true;
             }
+            else throw new InvalidDataException("Unsupported tool update asset.");
+
+            ct.ThrowIfCancellationRequested();
+            await ToolManifest.WriteAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false);
+            ToolResolver.ClearCache();
+            if (previous != null) File.WriteAllText(backup + ".name", Path.GetFileName(previous));
+            else
+            {
+                try
+                {
+                    if (Directory.Exists(backup)) Directory.Delete(backup, true);
+                    if (File.Exists(backup + ".name")) File.Delete(backup + ".name");
+                }
+                catch (Exception ex) { AppLogger.Log.Warn(ex, "[UpdateService] Could not remove stale rollback data"); }
+            }
+        }
+        catch
+        {
+            if (installedNew && installed != null && Directory.Exists(installed)) Directory.Delete(installed, true);
+            if (backupCreated && previous != null && Directory.Exists(backup)) Directory.Move(backup, previous);
+            try { await ToolManifest.WriteAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false); }
+            catch (Exception ex) { AppLogger.Log.Warn(ex, "[UpdateService] Could not restore tool manifest after rollback"); }
+            ToolResolver.ClearCache();
+            throw;
+        }
+        finally
+        {
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, true); }
+            catch (Exception ex) { AppLogger.Log.Debug(ex, "[UpdateService] Could not remove staging directory"); }
+        }
+    }
+
+    private string BackupPath(string toolName)
+        => Path.Combine(Path.GetDirectoryName(_toolsDir)!, $".logpro_backup_{toolName}");
+
+    public async Task<(bool Success, string Message)> RollbackLastUpdateAsync(string toolName)
+    {
+        if (toolName is not ("scrcpy" or "pymobiledevice3")) return (false, "Unknown tool.");
+        var backup = BackupPath(toolName);
+        var marker = backup + ".name";
+        if (!Directory.Exists(backup) || !File.Exists(marker)) return (false, "No previous installation is available.");
+        var previousName = File.ReadAllText(marker).Trim();
+        if (previousName != Path.GetFileName(previousName) ||
+            (toolName == "scrcpy" && !previousName.StartsWith("scrcpy-win64-", StringComparison.OrdinalIgnoreCase)) ||
+            (toolName == "pymobiledevice3" && previousName != "pymobiledevice3"))
+            return (false, "Rollback metadata is invalid.");
+        var current = toolName == "scrcpy"
+            ? Directory.GetDirectories(_toolsDir, "scrcpy-win64-*").FirstOrDefault()
+            : Path.Combine(_toolsDir, "pymobiledevice3");
+        if (current == null || !Directory.Exists(current)) return (false, "Current installation is unavailable.");
+        var restored = Path.Combine(_toolsDir, previousName);
+        if (restored != current && Directory.Exists(restored)) return (false, "Rollback target already exists.");
+        var swap = Path.Combine(Path.GetDirectoryName(_toolsDir)!, $".logpro_swap_{Guid.NewGuid():N}");
+        try
+        {
+            Directory.Move(current, swap);
+            try
+            {
+                Directory.Move(backup, restored);
+                await ToolManifest.WriteAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false);
+                ToolResolver.ClearCache();
+                Directory.Move(swap, backup);
+                File.WriteAllText(marker, Path.GetFileName(current));
+                return (true, $"Restored previous {toolName} installation.");
+            }
+            catch
+            {
+                if (Directory.Exists(restored)) Directory.Move(restored, backup);
+                Directory.Move(swap, current);
+                try { await ToolManifest.WriteAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false); }
+                catch (Exception ex) { AppLogger.Log.Warn(ex, "[UpdateService] Failed to regenerate manifest after rollback failure"); }
+                ToolResolver.ClearCache();
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, $"[UpdateService] Rollback failed for {toolName}");
+            return (false, $"Rollback failed: {ex.Message}");
         }
     }
 

@@ -38,7 +38,7 @@ public static class ThemeService
 
     public static void ApplyStartupTheme(Application app)
     {
-        if (string.IsNullOrEmpty(_currentTheme)) { _currentTheme = PreferencesService.Current.ThemePreference ?? ThemeDark; }
+        _currentTheme = PreferencesService.Current.ThemePreference == ThemeLight ? ThemeLight : ThemeDark;
         LoadThemeDictionary(app.Resources.MergedDictionaries, _currentTheme);
     }
 
