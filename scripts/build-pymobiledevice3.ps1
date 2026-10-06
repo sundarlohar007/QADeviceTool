@@ -9,7 +9,9 @@ $entrypoint = Join-Path $PSScriptRoot "pymobiledevice3_entrypoint.py"
 $target = [IO.Path]::GetFullPath((Join-Path $repoRoot $Destination))
 $buildRoot = Join-Path $env:TEMP ("logpro-pymd3-build-" + [guid]::NewGuid().ToString("N"))
 
-$version = (& $Python -m pymobiledevice3 version).Trim()
+& $Python -c "import win32security, win32api, pywintypes"
+if ($LASTEXITCODE -ne 0) { throw "Windows iOS runtime dependencies are missing. Install scripts/requirements-pymobiledevice3-build.txt with the selected Python interpreter." }
+$version = ((& $Python -m pymobiledevice3 version) -join "`n").Trim()
 if ($LASTEXITCODE -ne 0 -or $version -ne "9.12.0") {
     throw "Expected pymobiledevice3 9.12.0; found '$version'."
 }
