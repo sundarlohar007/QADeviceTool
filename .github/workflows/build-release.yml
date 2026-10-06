@@ -80,6 +80,10 @@ jobs:
         run: |
           python -m pip install -r scripts/requirements-pymobiledevice3-build.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pymobiledevice3 --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./scripts/build-pymobiledevice3.ps1
           Invoke-WebRequest -Uri "https://dl.google.com/android/repository/platform-tools-latest-windows.zip" -OutFile "$env:RUNNER_TEMP/platform-tools.zip"
 

@@ -1,3 +1,4 @@
+-c constraints-pymobiledevice3-build.txt
 pymobiledevice3==9.12.0
 pyinstaller==6.18.0
 # Required by pymobiledevice3.osu.win_util but absent from its dependency metadata.
