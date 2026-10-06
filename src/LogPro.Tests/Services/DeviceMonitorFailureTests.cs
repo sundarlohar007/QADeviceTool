@@ -7,22 +7,73 @@ namespace LogPro.Tests.Services;
 public class DeviceMonitorFailureTests
 {
     [Fact]
-    public async Task ConcurrentRefresh_WaitsForTheActivePoll()
+    public async Task ConcurrentRefresh_CoalescesWhileBothPlatformsArePending()
     {
         var pending = new TaskCompletionSource<(bool Success, List<DeviceInfo> Devices)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var iosPending = new TaskCompletionSource<(bool Success, List<DeviceInfo> Devices)>(TaskCreationOptions.RunContinuationsAsynchronously);
         var adb = new Mock<IAdbService>();
         adb.Setup(x => x.GetConnectedDevicesWithStatusAsync()).Returns(pending.Task);
         var ios = new Mock<IIosService>();
-        ios.Setup(x => x.GetConnectedDevicesWithStatusAsync()).ReturnsAsync((true, new List<DeviceInfo>()));
+        ios.Setup(x => x.GetConnectedDevicesWithStatusAsync()).Returns(iosPending.Task);
         using var monitor = new DeviceMonitorService(adb.Object, ios.Object);
 
         var first = monitor.PollDevicesAsync();
         var second = monitor.PollDevicesAsync();
-        second.Should().BeSameAs(first);
-        pending.SetResult((true, new List<DeviceInfo> { new() { Serial = "A", Platform = DevicePlatform.Android } }));
-        await Task.WhenAll(first, second);
+        try
+        {
+            second.Should().BeSameAs(first);
+            second.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            pending.TrySetResult((true, new List<DeviceInfo> { new() { Serial = "A", Platform = DevicePlatform.Android } }));
+            iosPending.TrySetResult((true, new List<DeviceInfo>()));
+            await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10));
+        }
         adb.Verify(x => x.GetConnectedDevicesWithStatusAsync(), Times.Once);
+        ios.Verify(x => x.GetConnectedDevicesWithStatusAsync(), Times.Once);
         monitor.CurrentDevices.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Refresh_RestartsCompletedAndroidPollWithoutDuplicatingPendingIosPoll()
+    {
+        var iosPending = new TaskCompletionSource<(bool, List<DeviceInfo>)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var androidPending = new TaskCompletionSource<(bool, List<DeviceInfo>)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondAndroidStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var adb = new Mock<IAdbService>();
+        adb.Setup(x => x.GetConnectedDevicesWithStatusAsync()).Returns(() =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+                return Task.FromResult((true, new List<DeviceInfo>()));
+            secondAndroidStarted.TrySetResult();
+            return androidPending.Task;
+        });
+        var ios = new Mock<IIosService>();
+        ios.Setup(x => x.GetConnectedDevicesWithStatusAsync()).Returns(iosPending.Task);
+        using var monitor = new DeviceMonitorService(adb.Object, ios.Object);
+        var first = monitor.PollDevicesAsync();
+        var latest = first;
+        try
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (!secondAndroidStarted.Task.IsCompleted)
+            {
+                await Task.Delay(10, deadline.Token);
+                latest = monitor.PollDevicesAsync();
+            }
+            first.IsCompleted.Should().BeFalse();
+            latest.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            androidPending.TrySetResult((true, new List<DeviceInfo>()));
+            iosPending.TrySetResult((true, new List<DeviceInfo>()));
+            await Task.WhenAll(first, latest).WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        adb.Verify(x => x.GetConnectedDevicesWithStatusAsync(), Times.Exactly(2));
+        ios.Verify(x => x.GetConnectedDevicesWithStatusAsync(), Times.Once);
     }
 
     [Fact]
