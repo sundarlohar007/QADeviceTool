@@ -24,8 +24,14 @@ OutputBaseFilename=LogPro_v{#MyAppVersion}
 Compression=zip
 SolidCompression=yes
 WizardStyle=modern
+InfoAfterFile=..\docs\windows-prerequisites.txt
 PrivilegesRequired=admin
+ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+CloseApplications=yes
+RestartApplications=no
+CloseApplicationsFilter=LogPro.exe
+AppMutex=LogProRunning
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
@@ -34,6 +40,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
+
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\tools\scrcpy-win64-*"
+Type: filesandordirs; Name: "{app}\tools\scrcpy"
+Type: filesandordirs; Name: "{app}\tools\pymobiledevice3"
+Type: filesandordirs; Name: "{app}\tools\adb"
+Type: files; Name: "{app}\tools\.gitkeep"
 
 [Files]
 Source: "app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -45,17 +58,11 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: quicklaunchicon
 
 [Run]
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--installation-check"; StatusMsg: "Checking compatible application and device-tool updates..."; Flags: waituntilterminated runhidden; Check: ShouldCheckUpdates
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-function InitializeSetup(): Boolean;
-var
-  ResultCode: Integer;
+function ShouldCheckUpdates(): Boolean;
 begin
-  Result := True;
-  Exec('cmd.exe', '/c taskkill /F /IM adb.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec('cmd.exe', '/c taskkill /F /IM scrcpy.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec('cmd.exe', '/c taskkill /F /IM scrcpy-server.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec('cmd.exe', '/c taskkill /F /IM pymobiledevice3.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec('cmd.exe', '/c taskkill /F /IM LogPro.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := Pos('/SKIPUPDATECHECK', Uppercase(GetCmdTail)) = 0;
 end;

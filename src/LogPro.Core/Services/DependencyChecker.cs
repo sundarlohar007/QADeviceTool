@@ -19,7 +19,15 @@ public class DependencyChecker
         _scrcpyService = scrcpyService;
     }
 
-    public async Task<List<ToolStatus>> CheckAllAsync()
+    private readonly object _checkLock = new();
+    private Task<List<ToolStatus>>? _check;
+    public Task<List<ToolStatus>> CheckAllAsync()
+    {
+        lock (_checkLock)
+            return _check is { IsCompleted: false } ? _check : _check = CheckAllCoreAsync();
+    }
+
+    private async Task<List<ToolStatus>> CheckAllCoreAsync()
     {
         var tasks = new[]
         {
@@ -29,7 +37,7 @@ public class DependencyChecker
         };
 
         var results = (await Task.WhenAll(tasks)).ToList();
-        results.Add(CheckAndroidDriver());
+        results.Add(await CheckAndroidDriverAsync().ConfigureAwait(false));
         results.Add(CheckAppleMobileDeviceService());
         return results;
     }
@@ -42,94 +50,30 @@ public class DependencyChecker
 
     private static ToolStatus CheckAppleMobileDeviceService()
     {
-        var status = new ToolStatus
+        var running = WindowsServiceHealth.IsRunning("Apple Mobile Device Service");
+        return new ToolStatus
         {
             Name = "Apple Mobile Device Service",
-            Description = "Required for iOS USB device discovery on Windows"
+            Description = "Required for iOS USB communication",
+            IsInstalled = running,
+            Version = running ? "Running" : "Unavailable",
+            StatusMessage = running ? "Service is running. Device unlock and trust are checked separately."
+                : "Apple Mobile Device Service is missing or stopped. Install Apple's iTunes package or start the service in Windows Services."
         };
-        if (!OperatingSystem.IsWindows())
-        {
-            status.IsInstalled = true;
-            status.Version = "N/A";
-            status.StatusMessage = "Windows-only prerequisite; not applicable here.";
-            return status;
-        }
-
-        try
-        {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Services\Apple Mobile Device Service");
-            status.IsInstalled = key != null;
-            status.Version = key != null ? "Registered" : "Missing";
-            status.StatusMessage = key != null
-                ? "Service is registered; running state and device trust have not been verified."
-                : "Install the classic iTunes package to provide Apple Mobile Device Service for iOS USB discovery.";
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log.Warn(ex, "[DependencyChecker] Apple Mobile Device Service check failed");
-            status.IsInstalled = false;
-            status.StatusMessage = "Could not verify Apple Mobile Device Service. Check that it is installed and running.";
-        }
-        return status;
     }
 
-    private ToolStatus CheckAndroidDriver()
+    private async Task<ToolStatus> CheckAndroidDriverAsync()
     {
-        var status = new ToolStatus
+        var result = await _adbService.GetConnectedDevicesWithStatusAsync().ConfigureAwait(false);
+        var detected = result.Success && result.Devices.Count > 0;
+        return new ToolStatus
         {
-            Name = "Android USB Driver",
-            Description = "Required for Android USB device communication"
+            Name = "Android USB transport",
+            Description = "Device recognition, not merely WinUSB registration",
+            IsInstalled = detected,
+            Version = detected ? "Detected" : "Not verified",
+            StatusMessage = detected ? "ADB sees an Android transport. Check the device's authorization status before use."
+                : "Connect a USB device with debugging enabled. If it is not recognized, install the USB driver supplied by its manufacturer: developer.android.com/studio/run/oem-usb."
         };
-
-        if (!OperatingSystem.IsWindows())
-        {
-            status.IsInstalled = true;
-            status.Version = "N/A";
-            status.StatusMessage = "USB driver check is Windows-only; not applicable here.";
-            return status;
-        }
-
-        try
-        {
-            var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Services\WinUSB");
-
-            if (key != null)
-            {
-                status.IsInstalled = true;
-                status.Version = "Installed";
-                status.StatusMessage = "WinUSB service registered; Android device-specific driver binding is not verified. Test with adb devices.";
-                status.Path = "Windows Driver";
-                key.Dispose();
-            }
-            else
-            {
-                var adbKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                    @"SYSTEM\CurrentControlSet\Services\usb_device");
-                if (adbKey != null)
-                {
-                    status.IsInstalled = true;
-                    status.Version = "Installed";
-                    status.StatusMessage = "USB driver service registered; test recognition with adb devices.";
-                    status.Path = "Windows Driver";
-                    adbKey.Dispose();
-                }
-                else
-                {
-                    status.IsInstalled = false;
-                    status.StatusMessage = "Android USB driver may not be installed. If devices aren't detected, install Google USB Driver from developer.android.com.";
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log.Warn(ex, $"[DependencyChecker] Tool resolution failed for tool");
-            status.IsInstalled = true;
-            status.Version = "Unknown";
-            status.StatusMessage = "Could not verify driver status. If devices connect, drivers are fine.";
-        }
-
-        return status;
     }
 }

@@ -15,6 +15,26 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         PreviewKeyDown += OnPreviewKeyDown;
+        SourceInitialized += (_, _) => Services.WindowPlacementService.Restore(this);
+        Closing += (_, _) =>
+        {
+            Services.WindowPlacementService.Save(this);
+            _commandPalette?.Close();
+            if (!IsThemeSwitching && DataContext is MainViewModel vm) vm.Cleanup();
+        };
+        DataContextChanged += (_, e) =>
+        {
+            if (e.OldValue is MainViewModel old)
+            {
+                old.SettingsVM.ElevatedUpdateRequested -= OnElevatedUpdateRequested;
+                old.SettingsVM.RestartForUpdateRequested -= CloseForUpdate;
+            }
+            if (e.NewValue is MainViewModel current)
+            {
+                current.SettingsVM.ElevatedUpdateRequested += OnElevatedUpdateRequested;
+                current.SettingsVM.RestartForUpdateRequested += CloseForUpdate;
+            }
+        };
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -32,6 +52,11 @@ public partial class MainWindow : Window
             }
         }
 
+        if (e.Key == Key.OemComma && Keyboard.Modifiers == ModifierKeys.Control && DataContext is MainViewModel settingsVm)
+        {
+            settingsVm.NavigateCommand.Execute("settings");
+            e.Handled = true;
+        }
         // Ctrl+K: Command palette
         if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control)
         {
@@ -63,19 +88,9 @@ public partial class MainWindow : Window
         _commandPalette.AddCommand("export:csv", "Export to CSV", "Export current session to CSV", "");
         _commandPalette.AddCommand("export:json", "Export to JSON", "Export current session to JSON", "");
 
-        // Add feature-specific commands based on FeatureFlags
-        if (FeatureFlags.AiLogAnalysis)
-        {
-            _commandPalette.AddCommand("ai:analyze", "AI Log Analysis", "Analyze logs for anomalies", "");
-        }
-
-        if (FeatureFlags.MultiSelect)
-        {
-            _commandPalette.AddCommand("action:selectAll", "Select All Devices", "Select all connected devices", "");
-        }
-
         _commandPalette.CommandExecuted += OnCommandExecuted;
         _commandPalette.WindowClosed += () => _commandPalette = null;
+        _commandPalette.Owner = this;
         _commandPalette.Show();
     }
 
@@ -92,15 +107,40 @@ public partial class MainWindow : Window
         {
             vm.DeviceVM.RefreshDevicesCommand.Execute(null);
         }
-        else if (commandId == "ai:analyze")
+        else
         {
-            vm.SessionVM?.AnalyzeWithAICommand?.Execute(null);
+            ICommand? command = commandId switch
+            {
+                "action:newSession" => vm.DashboardVM.QuickStartSessionCommand,
+                "action:screenshot" => vm.DashboardVM.QuickSnapshotCommand,
+                "action:mirror" => vm.DashboardVM.QuickMirrorCommand,
+                "export:csv" => vm.SessionVM.ExportCsvCommand,
+                "export:json" => vm.SessionVM.ExportJsonCommand,
+                _ => null
+            };
+            if (command?.CanExecute(null) == true) command.Execute(null);
         }
-        else if (commandId == "action:selectAll")
+    }
+
+    private void CloseForUpdate() => Dispatcher.Invoke(Close);
+
+    private void OnElevatedUpdateRequested(string operation)
+    {
+        try
         {
-            // Select all online devices for batch operations
-            var online = vm.Devices.Where(d => d.ConnectionState == Models.DeviceConnectionState.Online).ToList();
-            if (online.Count > 0) vm.SelectedDevice = online[0];
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Environment.ProcessPath!,
+                UseShellExecute = true,
+                Verb = "runas",
+                Arguments = $"--update-tool {LogPro.Helpers.ToolLauncher.QuoteArgument(operation)} --wait-process {Environment.ProcessId}"
+            });
+            Close();
+        }
+        catch (Exception ex)
+        {
+            if (DataContext is MainViewModel vm) vm.SettingsVM.UpdateStatus =
+                "Windows updater was not started: " + LogPro.Helpers.SecurityHelper.RedactSensitiveText(ex.Message);
         }
     }
 

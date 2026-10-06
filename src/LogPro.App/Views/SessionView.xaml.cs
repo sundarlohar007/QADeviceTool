@@ -12,43 +12,48 @@ namespace LogPro.Views;
 public partial class SessionView : UserControl
 {
     private SessionViewModel? _vm;
+    private bool _scrollPending;
 
     public SessionView()
     {
         InitializeComponent();
 
-        DataContextChanged += (_, _) =>
-        {
-            try
-            {
-                if (_vm != null)
-                {
-                    _vm.ScrollToEndRequested -= OnScrollToEndRequested;
-                }
-
-                _vm = DataContext as SessionViewModel;
-                if (_vm != null)
-                {
-                    _vm.ScrollToEndRequested += OnScrollToEndRequested;
-                }
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log.Debug(ex, "SessionView DataContextChanged error");
-            }
-        };
+        Loaded += (_, _) => AttachViewModel();
+        Unloaded += (_, _) => { if (_vm != null) _vm.ScrollToEndRequested -= OnScrollToEndRequested; _vm = null; };
+        DataContextChanged += (_, _) => AttachViewModel();
     }
 
+    private void AttachViewModel()
+    {
+        try
+        {
+            if (_vm != null)
+            {
+                _vm.ScrollToEndRequested -= OnScrollToEndRequested;
+            }
+
+            _vm = DataContext as SessionViewModel;
+            if (_vm != null)
+            {
+                _vm.ScrollToEndRequested += OnScrollToEndRequested;
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Debug(ex, "SessionView DataContextChanged error");
+        }
+    }
 
     private void OnScrollToEndRequested()
     {
-        if (_vm == null || !_vm.IsAutoScrollEnabled) return;
-
+        if (_vm == null || !_vm.IsAutoScrollEnabled || _scrollPending || !IsLoaded) return;
+        _scrollPending = true;
         Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
+            _scrollPending = false;
             try
             {
-                if (LogList.Items.Count > 0)
+                if (IsLoaded && LogList.Items.Count > 0)
                 {
                     var lastItem = LogList.Items[LogList.Items.Count - 1];
                     LogList.ScrollIntoView(lastItem);

@@ -120,34 +120,35 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <StackPanel Orientation="Horizontal">
+                <WrapPanel Orientation="Horizontal">
                     <TextBlock Text="&#xE945;" FontFamily="Segoe MDL2 Assets" FontSize="22" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,10,0" VerticalAlignment="Center" />
                     <TextBlock Text="STRESS TEST" FontFamily="{StaticResource FontHeader}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" />
-                </StackPanel>
+                </WrapPanel>
                 <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushPrimaryLight}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <WrapPanel Grid.Column="1" Orientation="Horizontal">
                 <Button Style="{StaticResource DangerBtn}" Content="■ STOP" Command="{Binding StopMonkeyCommand}" IsEnabled="{Binding IsRunning}" Margin="0,0,8,0" />
                 <Button Style="{StaticResource PrimaryBtn}" Content="▶ RUN MONKEY" Command="{Binding RunMonkeyCommand}" IsEnabled="{Binding CanRun}" />
-            </StackPanel>
+            </WrapPanel>
         </Grid>
 
         <!-- Main Split -->
         <Grid Grid.Row="1" Margin="24,0,24,24">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="380" />
+                <ColumnDefinition Width="380" MinWidth="220" MaxWidth="480" />
                 <ColumnDefinition Width="16" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <!-- Config Panel -->
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="{DynamicResource BrushBorder}" ResizeBehavior="PreviousAndNext" AutomationProperties.Name="Resize side panel" />
             <Border Grid.Column="0" Style="{StaticResource Card}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="TEST CONFIGURATION" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
 
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -290,14 +291,14 @@
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <WrapPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="&#xE9F5;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                                 <TextBlock Text="LIVE EXECUTION LOG" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="20,0,0,0" VerticalAlignment="Center">
+                            </WrapPanel>
+                            <WrapPanel Grid.Column="1" Orientation="Horizontal" Margin="20,0,0,0" VerticalAlignment="Center">
                                 <Border Style="{StaticResource Badge}">
                                     <TextBlock FontSize="11">
                                         <Run Text="EVENTS " Foreground="{DynamicResource BrushTextMuted}" />
@@ -318,23 +319,23 @@
                                         <Run Text="{Binding AnrCount, Mode=OneWay}" FontWeight="Bold" Foreground="#F59E0B" />
                                     </TextBlock>
                                 </Border>
-                            </StackPanel>
-                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            </WrapPanel>
+                            <WrapPanel Grid.Column="2" Orientation="Horizontal">
                                 <Button Style="{StaticResource GhostBtn}" Content="Save" Command="{Binding SaveOutputCommand}" Margin="0,0,6,0" ToolTip="Save output to sessions directory" />
                                 <Button Style="{StaticResource GhostBtn}" Content="Clear" Command="{Binding ClearOutputCommand}" />
-                            </StackPanel>
+                            </WrapPanel>
                         </Grid>
                     </Border>
 
                     <Border DockPanel.Dock="Top" Background="{DynamicResource BrushBase}" Height="4" Margin="16,12,16,0" CornerRadius="2">
                         <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Maximum="100" Height="4" Background="Transparent" Foreground="{DynamicResource BrushCyan}" BorderThickness="0" />
                     </Border>
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,8,16,0">
+                    <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,8,16,0">
                         <TextBlock Text="FPS " Foreground="{DynamicResource BrushTextMuted}" /><TextBlock Text="{Binding LatestFps}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
                         <TextBlock Text="CPU % " Foreground="{DynamicResource BrushTextMuted}" /><TextBlock Text="{Binding LatestCpuPercent}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
                         <TextBlock Text="PSS KB " Foreground="{DynamicResource BrushTextMuted}" /><TextBlock Text="{Binding LatestPssKb}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
                         <TextBlock Text="Thermal " Foreground="{DynamicResource BrushTextMuted}" /><TextBlock Text="{Binding LatestThermalStatus}" Foreground="{DynamicResource BrushTextPrimary}" />
-                    </StackPanel>
+                    </WrapPanel>
 
                     <Border Margin="16,12,16,16" Background="{DynamicResource BrushVoid}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8">
                         <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True"

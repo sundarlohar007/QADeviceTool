@@ -106,10 +106,10 @@
                 <StackPanel>
                     <!-- Page Header -->
                     <StackPanel Margin="0,0,0,24">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="LOGPRO TERMINAL" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource BrushPrimaryLight}" VerticalAlignment="Center" />
                             <TextBlock Text="{Binding AppVersion, StringFormat=v{0}}" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource BrushTextMuted}" Opacity="0.7" VerticalAlignment="Center" Margin="12,4,0,0" />
-                        </StackPanel>
+                        </WrapPanel>
                         <TextBlock Text="System configuration, dependencies, and runtime preferences."
                                    Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
                     </StackPanel>
@@ -127,10 +127,10 @@
                             </Grid>
 
                             <Border Background="{DynamicResource BrushCyanGlow}" BorderBrush="{DynamicResource BrushCyanDim}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,14">
-                                <StackPanel Orientation="Horizontal">
+                                <WrapPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,10,0" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushPrimaryLight}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                </StackPanel>
+                                </WrapPanel>
                             </Border>
 
                             <ItemsControl ItemsSource="{Binding ToolStatuses}">
@@ -145,10 +145,10 @@
                                                 </Grid.ColumnDefinitions>
                                                 <Border Grid.Column="0" Width="10" Height="10" CornerRadius="5" Background="{DynamicResource BrushPrimaryLight}" Margin="0,0,14,0" VerticalAlignment="Center" />
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                    <StackPanel Orientation="Horizontal">
+                                                    <WrapPanel Orientation="Horizontal">
                                                         <TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushTextPrimary}" FontSize="13" FontWeight="SemiBold" />
                                                         <TextBlock Text="{Binding Version}" Foreground="{DynamicResource BrushTextMuted}" FontFamily="{StaticResource FontMono}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" />
-                                                    </StackPanel>
+                                                    </WrapPanel>
                                                     <TextBlock Text="{Binding Path}" Foreground="{DynamicResource BrushTextMuted}" FontFamily="{StaticResource FontMono}" FontSize="10" Margin="0,3,0,0" />
                                                     <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap" />
                                                 </StackPanel>
@@ -185,13 +185,13 @@
                         <StackPanel>
                             <TextBlock Text="LOG RETENTION" Style="{StaticResource SectionLabel}" />
                             <TextBlock Text="Automatically purge old logs and completed LogPro sessions, including their screenshots and recordings." Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" />
-                            <StackPanel Orientation="Horizontal">
+                            <WrapPanel Orientation="Horizontal">
                                 <ComboBox ItemsSource="{Binding LogRetentionOptions}"
                                           SelectedItem="{Binding SelectedLogRetention}"
                                           DisplayMemberPath="Text" SelectedValuePath="Value"
                                           Width="220" />
                                 <Button Style="{StaticResource PrimaryBtn}" Content="Save" Command="{Binding SaveLogRetentionCommand}" Margin="12,0,0,0" />
-                            </StackPanel>
+                            </WrapPanel>
                         </StackPanel>
                     </Border>
 
@@ -278,22 +278,22 @@
                                 <TextBox Style="{StaticResource DarkInput}" Text="{Binding ConnectionIpPort, UpdateSourceTrigger=PropertyChanged}" Width="260" HorizontalAlignment="Left" />
                             </StackPanel>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,10">
                                 <Button Style="{StaticResource GhostBtn}" Content="Discover" Command="{Binding DiscoverPortsCommand}" IsEnabled="{Binding IsWirelessAvailable}" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Content="Connect" Command="{Binding ConnectWirelessDeviceCommand}" IsEnabled="{Binding IsWirelessAvailable}" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource DangerBtn}" Content="Disconnect" Command="{Binding DisconnectWirelessDeviceCommand}" IsEnabled="{Binding IsWirelessAvailable}" />
-                            </StackPanel>
+                            </WrapPanel>
 
                             <Border Background="{DynamicResource BrushBase}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="12,8">
                                 <StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <WrapPanel Orientation="Horizontal" Margin="0,0,0,4">
                                         <TextBlock Text="DISCOVERED " Style="{StaticResource MetaLabel}" VerticalAlignment="Center" />
                                         <TextBlock Text="{Binding DiscoveredPorts}" Foreground="{DynamicResource BrushPrimaryLight}" FontFamily="{StaticResource FontMono}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal">
+                                    </WrapPanel>
+                                    <WrapPanel Orientation="Horizontal">
                                         <TextBlock Text="STATUS " Style="{StaticResource MetaLabel}" VerticalAlignment="Center" />
                                         <TextBlock Text="{Binding WirelessStatus}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" />
-                                    </StackPanel>
+                                    </WrapPanel>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -320,19 +320,22 @@
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <TextBlock Text="UPDATES" Style="{StaticResource SectionLabel}" />
-                            <CheckBox Content="Check GitHub for updates at startup" IsChecked="{Binding CheckForUpdatesOnStartup}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,8" />
+                            <CheckBox Content="Check and download compatible updates automatically" IsChecked="{Binding CheckForUpdatesOnStartup}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,8" />
+                            <WrapPanel Margin="0,4,0,8"><TextBlock Text="Check interval (hours): " Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/><TextBox Text="{Binding UpdateIntervalHours, UpdateSourceTrigger=LostFocus}" Width="60" AutomationProperties.Name="Update check interval in hours"/></WrapPanel>
+                            <TextBlock Text="Downloads are verified. Installation waits for idle devices and may require Windows administrator approval." TextWrapping="Wrap" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,8"/>
                             <Button Style="{StaticResource GhostBtn}" Content="Check Now" Command="{Binding CheckForUpdatesCommand}" HorizontalAlignment="Left" />
                             <TextBlock Text="{Binding UpdateStatus}" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,8,0,8" />
                             <TextBlock Text="{Binding UpdateCheckDetails}" Foreground="{DynamicResource BrushTextMuted}" TextWrapping="Wrap" Margin="0,0,0,8" />
                             <ListBox ItemsSource="{Binding AvailableUpdates}" SelectedItem="{Binding SelectedUpdate}" DisplayMemberPath="ToolName" Height="90" />
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button Style="{StaticResource PrimaryBtn}" Content="Install Selected" Command="{Binding ApplyUpdateCommand}" CommandParameter="{Binding SelectedUpdate}" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Content="Skip Selected Version" Command="{Binding SkipUpdateCommand}" CommandParameter="{Binding SelectedUpdate}" />
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            </WrapPanel>
+                            <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Style="{StaticResource GhostBtn}" Content="Rollback ADB" Command="{Binding RollbackToolCommand}" CommandParameter="adb" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Content="Rollback scrcpy" Command="{Binding RollbackToolCommand}" CommandParameter="scrcpy" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Content="Rollback iOS tool" Command="{Binding RollbackToolCommand}" CommandParameter="pymobiledevice3" />
-                            </StackPanel>
+                            </WrapPanel>
                         </StackPanel>
                     </Border>
 
@@ -341,14 +344,14 @@
                         <StackPanel>
                             <TextBlock Text="ABOUT" Style="{StaticResource SectionLabel}" />
 
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,4">
                                 <TextBlock Text="LogPro" Foreground="{DynamicResource BrushTextPrimary}" FontFamily="{StaticResource FontHeader}" FontSize="20" FontWeight="Bold" />
                                 <Border Background="{DynamicResource BrushCyanGlow}" BorderBrush="{DynamicResource BrushCyanDim}" BorderThickness="1" CornerRadius="4" Padding="8,2" Margin="12,4,0,0" VerticalAlignment="Center">
                                     <TextBlock FontFamily="{StaticResource FontMono}" FontSize="10" Foreground="{DynamicResource BrushPrimaryLight}">
                                         <Run Text="v" /><Run Text="{Binding AppVersion}" />
                                     </TextBlock>
                                 </Border>
-                            </StackPanel>
+                            </WrapPanel>
 
                             <TextBlock Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" TextWrapping="Wrap" LineHeight="20" Margin="0,8,0,18">
                                 Windows LogPro utility for manual game testers. Supports Android &amp; iOS device log capture, session management, screen mirroring, and device snapshots.
@@ -404,10 +407,10 @@
                                 </StackPanel>
                             </Border>
 
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+                            <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
                                 <TextBlock Text="Powered by " Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center" />
                                 <TextBlock Text="AntiGravity" Foreground="{DynamicResource BrushPrimaryLight}" FontFamily="{StaticResource FontHeader}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" />
-                            </StackPanel>
+                            </WrapPanel>
                         </StackPanel>
                     </Border>
                 </StackPanel>

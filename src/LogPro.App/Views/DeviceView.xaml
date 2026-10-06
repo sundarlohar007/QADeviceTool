@@ -64,10 +64,10 @@
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="Devices" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
             <Button Grid.Column="1" Style="{StaticResource ActBtn}" Command="{Binding RefreshDevicesCommand}">
-                <StackPanel Orientation="Horizontal">
+                <WrapPanel Orientation="Horizontal">
                     <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,8,0" />
                     <TextBlock Text="Refresh" VerticalAlignment="Center" />
-                </StackPanel>
+                </WrapPanel>
             </Button>
         </Grid>
         <Grid Grid.Row="1" Margin="24,0,24,24">
@@ -79,10 +79,10 @@
             <Border Grid.Column="0" Style="{StaticResource Card}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE8EA;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="CONNECTED DEVICES" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
                     <TextBlock Text="No devices detected. Connect via USB." Foreground="{DynamicResource BrushTextMuted}" FontSize="12" HorizontalAlignment="Center" Margin="0,24,0,0">
                         <TextBlock.Style>
@@ -162,10 +162,10 @@
             <Border Grid.Column="2" Style="{StaticResource Card}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE7BA;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="DEVICE DETAILS" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
                         <StackPanel>
@@ -197,30 +197,30 @@
                                     </TextBlock.Style>
                                 </TextBlock>
                                 <TextBlock Text="{Binding CapabilityNotice}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,8" />
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <TextBlock Text="Serial: " Foreground="{DynamicResource BrushTextSecondary}" />
                                     <TextBlock Text="{Binding SelectedSerialDisplay}" FontFamily="{StaticResource FontMono}" Foreground="{DynamicResource BrushTextPrimary}" />
                                     <Button Content="{Binding SerialVisibilityActionText}" Command="{Binding ToggleSerialVisibilityCommand}" Margin="12,0,0,0" />
-                                </StackPanel>
+                                </WrapPanel>
                                 <TextBox Text="{Binding DeviceDetails}" FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{DynamicResource BrushTextPrimary}" Background="{DynamicResource BrushBase}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="12" IsReadOnly="True" TextWrapping="NoWrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MinHeight="200" />
                                 <WrapPanel Margin="0,16,0,16">
                                     <Button Style="{StaticResource ActBtn}" Margin="0,0,8,8" Command="{Binding StartMirrorCommand}" IsEnabled="{Binding CanMirror}">
-                                        <StackPanel Orientation="Horizontal">
+                                        <WrapPanel Orientation="Horizontal">
                                             <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,6,0" />
                                             <TextBlock Text="Mirror" VerticalAlignment="Center" />
-                                        </StackPanel>
+                                        </WrapPanel>
                                     </Button>
                                     <Button Style="{StaticResource ActBtn}" Margin="0,0,8,8" Command="{Binding StopMirrorCommand}" IsEnabled="{Binding IsMirroring}">
-                                        <StackPanel Orientation="Horizontal">
+                                        <WrapPanel Orientation="Horizontal">
                                             <TextBlock Text="&#xE71A;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,6,0" />
                                             <TextBlock Text="Stop" VerticalAlignment="Center" />
-                                        </StackPanel>
+                                        </WrapPanel>
                                     </Button>
                                     <Button Style="{StaticResource ActBtn}" Margin="0,0,8,8" Command="{Binding TakeSnapshotCommand}" IsEnabled="{Binding CanTakeSnapshot}">
-                                        <StackPanel Orientation="Horizontal">
+                                        <WrapPanel Orientation="Horizontal">
                                             <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,6,0" />
                                             <TextBlock Text="Snapshot" VerticalAlignment="Center" />
-                                        </StackPanel>
+                                        </WrapPanel>
                                     </Button>
                                     <Button Style="{StaticResource ActBtn}" Margin="0,0,0,8" Command="{Binding OpenSnapshotFolderCommand}" IsEnabled="{Binding HasSnapshotDirectory}" Content="Open Snapshot Folder" />
                                 </WrapPanel>

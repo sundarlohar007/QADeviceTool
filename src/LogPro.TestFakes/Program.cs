@@ -55,6 +55,12 @@ static string? ExtractSerial(string args)
     return rest.Split(' ')[0];
 }
 
+if (joined.EndsWith("get-state", StringComparison.Ordinal))
+{
+    Console.WriteLine("device");
+    return 0;
+}
+
 if (joined.StartsWith("devices", StringComparison.Ordinal))
 {
     Console.WriteLine("List of devices attached");

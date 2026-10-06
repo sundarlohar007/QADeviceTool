@@ -107,36 +107,36 @@
                 <TextBlock Text="Shell" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
                 <TextBlock Text="Read-only ADB and iOS diagnostics" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <WrapPanel Grid.Column="1" Orientation="Horizontal">
                 <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="220" Margin="0,0,8,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ClearOutputCommand}" Content="Clear" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding CopyOutputCommand}" Content="Copy" Margin="8,0,0,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportOutputCommand}" Content="Export" Margin="8,0,0,0" />
-            </StackPanel>
+            </WrapPanel>
         </Grid>
         <Border Grid.Row="1" Style="{StaticResource Card}" Margin="24,0,24,16">
             <DockPanel>
                 <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                         <TextBlock Text="OUTPUT" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                    </StackPanel>
+                    </WrapPanel>
                 </Border>
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,8">
+                <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,8">
                     <TextBox x:Name="SearchTextBox" Style="{StaticResource DarkInput}" Width="180" ToolTip="Search visible output" />
                     <Button Style="{StaticResource GhostBtn}" Content="Find next" Click="FindNext_Click" Margin="8,0,0,0" />
                     <CheckBox Content="Pause display" IsChecked="{Binding IsOutputPaused}" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" Margin="16,0,0,0" />
                     <CheckBox Content="Follow output" IsChecked="{Binding FollowTail}" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" Margin="16,0,0,0" />
                     <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="16,0,0,0" />
-                </StackPanel>
+                </WrapPanel>
                 <TextBox x:Name="OutputTextBox" Style="{StaticResource MonoBlock}" Text="{Binding ShellOutput, Mode=OneWay}" Background="{DynamicResource BrushVoid}" BorderThickness="0" Margin="0" TextChanged="OutputTextBox_TextChanged" />
             </DockPanel>
         </Border>
         <StackPanel Grid.Row="2" Margin="24,0,24,24">
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
                 <ComboBox ItemsSource="{Binding SuggestedCommands}" SelectedItem="{Binding SelectedSuggestion}" Width="230" ToolTip="Suggested commands" />
                 <ComboBox ItemsSource="{Binding CommandHistory}" SelectedItem="{Binding SelectedHistoryCommand}" Width="230" Margin="8,0,0,0" ToolTip="Recent commands (this session)" />
-            </StackPanel>
+            </WrapPanel>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />

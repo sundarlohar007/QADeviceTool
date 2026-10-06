@@ -70,8 +70,25 @@ jobs:
           echo "semver=$ver" >> $env:GITHUB_OUTPUT
           Write-Host "Version: $ver"
 
+      - name: Setup Python runtime builder
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Build complete iOS runtime
+        shell: pwsh
+        run: |
+          python -m pip install -r scripts/requirements-pymobiledevice3-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/build-pymobiledevice3.ps1
+          Invoke-WebRequest -Uri "https://dl.google.com/android/repository/platform-tools-latest-windows.zip" -OutFile "$env:RUNNER_TEMP/platform-tools.zip"
+
       - name: Publish App
         run: dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:Version=${{ steps.version.outputs.semver }} -o publish/app
+
+      - name: Prepare complete Windows tool payload
+        shell: pwsh
+        run: ./scripts/prepare-windows-tools.ps1 -PublishDirectory publish/app -AdbArchive "$env:RUNNER_TEMP/platform-tools.zip"
 
       - name: Validate Windows package entry point
         shell: pwsh
@@ -141,6 +158,10 @@ jobs:
       - name: Publish CLI
         run: dotnet publish ${{ env.CLI_PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.semver }} -o publish/cli
 
+      - name: Prepare complete CLI tool payload
+        shell: pwsh
+        run: ./scripts/prepare-windows-tools.ps1 -PublishDirectory publish/cli -AdbArchive "$env:RUNNER_TEMP/platform-tools.zip"
+
       - name: Prepare Windows CLI package
         shell: pwsh
         run: |
@@ -178,19 +199,36 @@ jobs:
       - name: Remove debug symbols from release payloads
         shell: pwsh
         run: |
-          Get-ChildItem publish/app, publish/cli -File -Recurse -Filter *.pdb | Remove-Item -Force
+          Get-ChildItem publish/app, publish/cli -File -Filter *.pdb | Remove-Item -Force
+
+      - name: Package compatible tool updates
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          foreach ($name in @("adb", "scrcpy", "pymobiledevice3")) {
+            $version = (Get-Content "publish/app/tools/$name/tool-version.txt" -Raw).Trim()
+            Compress-Archive -Path "publish/app/tools/$name" -DestinationPath "dist/LogPro-tool-$name-$version-win-x64.zip"
+          }
+
+      - name: Upload managed Windows tools
+        uses: actions/upload-artifact@v7
+        with:
+          name: managed-windows-tools
+          path: dist/LogPro-tool-*.zip
 
       - name: Upload App
         uses: actions/upload-artifact@v7
         with:
           name: app-published
           path: publish/app/
+          include-hidden-files: true
 
       - name: Upload CLI
         uses: actions/upload-artifact@v7
         with:
           name: cli-published
           path: publish/cli/
+          include-hidden-files: true
 
   installer:
     name: Setup.exe
@@ -232,6 +270,21 @@ jobs:
           if (-not (Test-Path -LiteralPath $expected -PathType Leaf)) {
             throw "Inno Setup did not produce the expected installer: $expected"
           }
+
+      - name: Smoke test installed Windows package
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP "LogPro Installer Smoke"
+          $setup = (Get-ChildItem dist/LogPro_v*.exe | Select-Object -First 1).FullName
+          $installer = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SKIPUPDATECHECK', "/DIR=`"$target`"") -WindowStyle Hidden -Wait -PassThru
+          if ($installer.ExitCode -ne 0) { throw "Installer failed: $($installer.ExitCode)" }
+          $verify = Start-Process -FilePath (Join-Path $target "LogPro.exe") -ArgumentList '--verify-installation' -WindowStyle Hidden -Wait -PassThru
+          if ($verify.ExitCode -ne 0) { throw "Installed payload verification failed" }
+          ./scripts/test-pymobiledevice3.ps1 -Executable (Join-Path $target "tools/pymobiledevice3/pymobiledevice3.exe")
+          & (Join-Path $target "tools/adb/adb.exe") version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & (Join-Path $target "tools/scrcpy/scrcpy.exe") --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Sign Setup.exe
         if: env.SIGN_CERT_PFX != '' && env.SIGN_CERT_PASSWORD != ''
@@ -288,90 +341,10 @@ jobs:
           name: portable-zip
           path: dist/*.zip
 
-  macos:
-    name: macOS.zip
-    needs: build
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          lfs: true
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Publish macOS
-        run: dotnet publish src/LogPro.Avalonia/LogPro.Avalonia.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=false -p:Version=${{ needs.build.outputs.version }} -o publish/mac
-
-      - name: Validate macOS notices
-        shell: bash
-        run: |
-          for file in LogPro-LICENSE.txt LogPro-SECURITY.md LogPro-GPL_COMPLIANCE.md LogPro-THIRD_PARTY_NOTICES.txt SOURCE-OFFER-pymobiledevice3.txt; do
-            test -f "publish/mac/licenses/$file" || { echo "Missing macOS notice: $file"; exit 1; }
-          done
-
-      - name: Create macOS Archive
-        shell: bash
-        run: |
-          mkdir -p dist
-          cd publish/mac
-          zip -r "../../dist/LogPro_v${{ needs.build.outputs.version }}_macos-arm64.zip" . -x "*.pdb"
-          ls ../../dist/
-
-      - name: Upload macOS.zip
-        uses: actions/upload-artifact@v7
-        with:
-          name: macos-zip
-          path: dist/*.zip
-
-  linux:
-    name: Linux.zip
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          lfs: true
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Publish Linux
-        run: dotnet publish src/LogPro.Avalonia/LogPro.Avalonia.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=false -p:Version=${{ needs.build.outputs.version }} -o publish/linux
-
-      - name: Validate Linux notices
-        shell: bash
-        run: |
-          for file in LogPro-LICENSE.txt LogPro-SECURITY.md LogPro-GPL_COMPLIANCE.md LogPro-THIRD_PARTY_NOTICES.txt SOURCE-OFFER-pymobiledevice3.txt; do
-            test -f "publish/linux/licenses/$file" || { echo "Missing Linux notice: $file"; exit 1; }
-          done
-
-      - name: Create Linux Archive
-        shell: bash
-        run: |
-          mkdir -p dist
-          cd publish/linux
-          tar --exclude='*.pdb' -czf "../../dist/LogPro_v${{ needs.build.outputs.version }}_linux-x64.tar.gz" .
-          ls ../../dist/
-
-      - name: Upload Linux Archive
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-zip
-          path: dist/*.tar.gz
-
   release:
     name: GitHub Release
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
-    needs: [build, installer, portable, macos, linux]
+    needs: [build, installer, portable]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -391,16 +364,10 @@ jobs:
           name: portable-zip
           path: dist/
 
-      - name: Download macOS.zip
+      - name: Download managed Windows tools
         uses: actions/download-artifact@v8
         with:
-          name: macos-zip
-          path: dist/
-
-      - name: Download Linux Archive
-        uses: actions/download-artifact@v8
-        with:
-          name: linux-zip
+          name: managed-windows-tools
           path: dist/
 
       - name: List Assets

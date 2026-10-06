@@ -47,7 +47,7 @@
        collects it transitively through urllib3/cryptography in some builds). -->
   <ItemGroup>
     <Content Include="tools\**\*"
-             Exclude="tools\pymobiledevice3\build\**;tools\pymobiledevice3\*.spec;tools\pymobiledevice3\*.py;tools\pymobiledevice3\**\*.dist-info\**;tools\pymobiledevice3\**\__pycache__\**;tools\pymobiledevice3\pymobiledevice3\_internal\numpy\**;tools\pymobiledevice3\pymobiledevice3\_internal\**\numpy\**">
+             Exclude="tools\.gitkeep;tools\pymobiledevice3\build\**;tools\pymobiledevice3\*.spec;tools\pymobiledevice3\*.py;tools\pymobiledevice3\**\*.dist-info\**;tools\pymobiledevice3\**\__pycache__\**;tools\pymobiledevice3\pymobiledevice3\_internal\numpy\**;tools\pymobiledevice3\pymobiledevice3\_internal\**\numpy\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>

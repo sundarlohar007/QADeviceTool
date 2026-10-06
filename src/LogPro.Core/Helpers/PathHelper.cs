@@ -14,7 +14,9 @@ public static class PathHelper
     /// Root application-data directory under %LOCALAPPDATA% (single source of truth for branding).
     /// </summary>
     public static string GetAppDataDirectory()
-        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDataFolderName);
+        => Environment.GetEnvironmentVariable("LOGPRO_DATA_DIRECTORY") is { Length: > 0 } root
+            ? Path.GetFullPath(root)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDataFolderName);
 
     /// <summary>
     /// One-time migration of the legacy %LOCALAPPDATA%\QAQCDeviceTool folder to LogPro
@@ -22,6 +24,7 @@ public static class PathHelper
     /// </summary>
     public static bool MigrateLegacyAppData(string? localAppData = null)
     {
+        if (localAppData == null && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("LOGPRO_DATA_DIRECTORY"))) return true;
         var root = localAppData ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var legacy = Path.Combine(root, LegacyAppDataFolderName);
         var target = Path.Combine(root, AppDataFolderName);

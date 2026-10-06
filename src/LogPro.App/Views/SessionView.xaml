@@ -117,17 +117,17 @@
                 <TextBlock Text="Sessions" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
                 <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <WrapPanel Grid.Column="1" Orientation="Horizontal">
                 <Border Background="{DynamicResource BrushCyanGlow}" CornerRadius="6" Padding="8,4" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="{Binding IsScreenRecording, Converter={StaticResource BoolToVis}}">
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel Orientation="Horizontal">
                         <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushRed}" Margin="0,0,6,0" />
                         <TextBlock Text="REC" Foreground="{DynamicResource BrushRed}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" />
-                    </StackPanel>
+                    </WrapPanel>
                 </Border>
                 <Button Style="{StaticResource GhostBtn}" Margin="0,0,8,0" Command="{Binding TakeSnapshotCommand}" Content="Snapshot" />
                 <Button Style="{StaticResource GhostBtn}" Margin="0,0,8,0" Command="{Binding ToggleScreenRecordCommand}" Content="Rec Screen" />
                 <Button Style="{StaticResource GhostBtn}" Margin="0,0,8,0" Command="{Binding TogglePauseCommand}" IsEnabled="{Binding IsCapturing}">
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel Orientation="Horizontal">
                         <TextBlock VerticalAlignment="Center" Margin="0,0,6,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -154,25 +154,26 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                    </StackPanel>
+                    </WrapPanel>
                 </Button>
                 <Button Style="{StaticResource DangerBtn}" Margin="0,0,8,0" Command="{Binding StopCaptureCommand}" IsEnabled="{Binding IsCapturing}" Content="Stop" />
                 <Button Style="{StaticResource GreenBtn}" Command="{Binding StartCaptureCommand}" IsEnabled="{Binding IsCapturing, Converter={x:Static conv:InverseBoolConverter.Instance}}" Content="Start Capture" />
-            </StackPanel>
+            </WrapPanel>
         </Grid>
         <Grid Grid.Row="1" Margin="24,0,24,24">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="300" />
+                <ColumnDefinition Width="300" MinWidth="220" MaxWidth="480" />
                 <ColumnDefinition Width="16" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="{DynamicResource BrushBorder}" ResizeBehavior="PreviousAndNext" AutomationProperties.Name="Resize side panel" />
             <Border Grid.Column="0" Style="{StaticResource Card}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="SESSIONS" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
                     <StackPanel DockPanel.Dock="Top" Margin="12">
                         <TextBlock Text="DEVICE" FontFamily="{StaticResource FontHeader}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
@@ -185,10 +186,10 @@
                         <ComboBox ItemsSource="{Binding LogcatFormats}" SelectedItem="{Binding SelectedLogFormat}" Margin="0,0,0,8" />
                         <Button Style="{StaticResource GreenBtn}" Command="{Binding CreateSessionCommand}" Content="+ New Session" HorizontalAlignment="Stretch" />
                         <TextBlock Text="{Binding SelectedSessionDetails}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextMuted}" FontSize="10" Margin="0,8,0,0" />
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
                             <Button Style="{StaticResource GhostBtn}" Command="{Binding OpenSessionFolderCommand}" Content="Folder" Margin="0,0,6,0" />
                             <Button Style="{StaticResource GhostBtn}" Command="{Binding DeleteSessionCommand}" Content="Delete" />
-                        </StackPanel>
+                        </WrapPanel>
                     </StackPanel>
                     <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}" Background="Transparent" BorderThickness="0" Padding="8">
                         <ListBox.ItemContainerStyle>
@@ -226,14 +227,14 @@
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <WrapPanel Grid.Column="0" Orientation="Horizontal">
                                 <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                                 <TextBlock Text="LIVE OUTPUT" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            </WrapPanel>
+                            <WrapPanel Grid.Column="1" Orientation="Horizontal">
                                 <TextBox Style="{StaticResource DarkInput}" Width="200" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
                                 <ToggleButton Style="{DynamicResource FilterPill}" Content=".*" ToolTip="Regex search" IsChecked="{Binding IsRegexSearch}" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ClearLogCommand}" Content="Clear" Margin="0,0,8,0" />
@@ -242,23 +243,23 @@
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportJsonCommand}" Content="JSON" />
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding SearchEntireSessionCommand}" Content="Search all" Margin="8,0,0,0" />
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ReturnToLiveTailCommand}" Content="Tail" Margin="8,0,0,0" />
-                            </StackPanel>
+                            </WrapPanel>
                         </Grid>
                     </Border>
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8,4">
+                    <WrapPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8,4">
                         <TextBlock Text="{Binding CaptureHealthText}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,12,0" />
                         <CheckBox Content="Raw" IsChecked="{Binding IsRawMode}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
                         <CheckBox Content="Auto-scroll" IsChecked="{Binding IsAutoScrollEnabled}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
                         <Button Style="{StaticResource GhostBtn}" Command="{Binding CopyToClipboardCommand}" Content="Copy visible" Margin="0,0,8,0" />
                         <Button Style="{StaticResource GhostBtn}" Command="{Binding GenerateBugReportCommand}" Content="Bug report" />
-                    </StackPanel>
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8,4">
+                    </WrapPanel>
+                    <WrapPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8,4">
                         <ItemsControl ItemsSource="{Binding LogLevelFilters}">
-                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate><DataTemplate><CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,8,0" /></DataTemplate></ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <CheckBox Content="Bookmarks only" IsChecked="{Binding ShowBookmarksOnly}" Foreground="{DynamicResource BrushTextPrimary}" />
-                    </StackPanel>
+                    </WrapPanel>
                     <ListBox x:Name="LogList" ItemsSource="{Binding LogEntriesView}" Background="{DynamicResource BrushVoid}" BorderThickness="0" Foreground="{DynamicResource BrushTextPrimary}" FontFamily="{StaticResource FontMono}" FontSize="11" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AlternationCount="2147483647" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">

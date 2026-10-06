@@ -70,23 +70,23 @@
                 <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
                 <TextBlock Text="{Binding PlatformNotice}" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" Margin="0,2,0,0" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <WrapPanel Grid.Column="1" Orientation="Horizontal">
                 <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice, Mode=TwoWay}" DisplayMemberPath="DisplayName" Width="180" Margin="0,0,8,0" ToolTip="Target device" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding RefreshAppsCommand}" IsEnabled="{Binding CanRefresh}" Content="Refresh" Margin="0,0,8,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding InstallAppCommand}" IsEnabled="{Binding CanInstall}" Content="Install" />
-            </StackPanel>
+            </WrapPanel>
         </Grid>
 
         <!-- Filter Bar -->
         <Border Grid.Row="1" Margin="24,0,24,12" Padding="0">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <ComboBox ItemsSource="{Binding FilterOptions}" SelectedItem="{Binding SelectedFilter, Mode=TwoWay}" Width="110" Margin="0,0,8,0" ToolTip="App type filter" />
                 <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Width="180" Margin="0,0,8,0" ToolTip="Search app name or package ID" />
                 <CheckBox Content="Test APK (-t)" IsChecked="{Binding AllowTestApk}" IsEnabled="{Binding IsAndroid}" VerticalAlignment="Center" Margin="0,0,12,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding SnapshotInventoryCommand}" IsEnabled="{Binding CanExport}" Content="Snapshot" Margin="0,0,6,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding CompareSnapshotCommand}" IsEnabled="{Binding CanCompare}" Content="Compare" Margin="0,0,6,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportInventoryCommand}" IsEnabled="{Binding CanExport}" Content="Export CSV" />
-            </StackPanel>
+            </WrapPanel>
         </Border>
 
         <Grid Grid.Row="2" Margin="24,0,24,24">
@@ -98,13 +98,13 @@
             <Border Grid.Column="0" Style="{StaticResource Card}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="&#xECAA;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="INSTALLED APPLICATIONS" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                             <TextBlock FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="8,0,0,0" VerticalAlignment="Center">
                               <Run Text="(" /><Run Text="{Binding FilteredApps.Count, Mode=OneWay, FallbackValue=0}" /><Run Text=" apps)" />
                             </TextBlock>
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
                     <ProgressBar DockPanel.Dock="Top" IsIndeterminate="True" Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" Height="3" Foreground="{DynamicResource BrushPrimaryLight}" />
                     <DataGrid ItemsSource="{Binding FilteredApps}" SelectedItem="{Binding SelectedApp}"
@@ -193,25 +193,25 @@
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <WrapPanel Grid.Column="0" Orientation="Horizontal">
                                 <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                                 <TextBlock Text="CONSOLE OUTPUT" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            </WrapPanel>
+                            <WrapPanel Grid.Column="1" Orientation="Horizontal">
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ViewAppDetailsCommand}" IsEnabled="{Binding SelectedApp, Converter={x:Static conv:NullToBoolConverter.Instance}}" Content="Details" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding CancelInstallCommand}" IsEnabled="{Binding IsInstalling}" Content="Cancel install" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ClearConsoleCommand}" Content="Clear" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource DangerBtn}" Command="{Binding UninstallAppCommand}" IsEnabled="{Binding CanUninstall}" Content="Uninstall" ToolTip="User apps only; system and hidden apps are protected" />
-                            </StackPanel>
+                            </WrapPanel>
                         </Grid>
                     </Border>
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8,4,8,8">
+                    <WrapPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8,4,8,8">
                         <Button Style="{StaticResource GhostBtn}" Command="{Binding ForceStopAppCommand}" IsEnabled="{Binding CanAndroidAction}" Content="Force Stop" Margin="0,0,8,0" ToolTip="Android user apps only" />
                         <Button Style="{StaticResource DangerBtn}" Command="{Binding ClearAppDataCommand}" IsEnabled="{Binding CanAndroidAction}" Content="Clear Data" ToolTip="Android user apps only" />
-                    </StackPanel>
+                    </WrapPanel>
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <TextBox Grid.Row="0" Text="{Binding ConsoleOutput, Mode=OneWay}" Background="{DynamicResource BrushVoid}" Foreground="{DynamicResource BrushTextPrimary}" BorderThickness="0" FontFamily="{StaticResource FontMono}" FontSize="11" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Padding="12" />

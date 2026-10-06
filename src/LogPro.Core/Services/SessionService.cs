@@ -27,6 +27,8 @@ public class SessionService : ISessionService
     private readonly object _flushTimerLock = new();
     private readonly object _bufferLock = new();
     private string _sessionsRootDirectory;
+    private int _shutdownGeneration;
+    private const int DisplayQueueLimit = 10000;
 
     /// <summary>
     /// Fired with batched log lines (every 200ms) instead of per-line.
@@ -96,6 +98,10 @@ public class SessionService : ISessionService
     /// </summary>
     public async Task<bool> StartCaptureAsync(LogSession session, LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime)
     {
+        var generation = Volatile.Read(ref _shutdownGeneration);
+        session.CaptureError = string.Empty;
+        session.CaptureNotice = string.Empty;
+        await AwaitCaptureStopAsync(session.Id).ConfigureAwait(false);
         if (_activeCaptures.Values.Any(ctx => ctx.Session.DeviceSerial.Equals(session.DeviceSerial, StringComparison.OrdinalIgnoreCase)))
             return false;
         if (!_startingDevices.TryAdd(session.DeviceSerial, 0)) return false;
@@ -113,18 +119,23 @@ public class SessionService : ISessionService
         catch (Exception ex)
         {
             _startingDevices.TryRemove(session.DeviceSerial, out _);
+            session.CaptureError = SecurityHelper.RedactSensitiveText(ex.Message);
             AppLogger.Log.Error(ex, "[SessionService] Failed to start capture process");
             return false;
         }
 
         if (process == null)
         {
+            session.CaptureError = "The logging tool could not start. Check dependency health, USB authorization and device trust.";
             _startingDevices.TryRemove(session.DeviceSerial, out _);
             return false;
         }
         await Task.Delay(250).ConfigureAwait(false);
-        if (process.HasExited)
+        if (process.HasExited || generation != Volatile.Read(ref _shutdownGeneration))
         {
+            session.CaptureError = ToolLauncher.GetProcessError(process);
+            if (string.IsNullOrWhiteSpace(session.CaptureError)) session.CaptureError = "Capture stopped during startup. Reconnect and authorize the device, then retry.";
+            try { if (!process.HasExited) process.Kill(true); } catch { }
             try { process.Dispose(); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Process dispose error"); }
             _startingDevices.TryRemove(session.DeviceSerial, out _);
             return false;
@@ -142,7 +153,11 @@ public class SessionService : ISessionService
             {
                 writer.WriteLine("--- SESSION RESTARTED ---");
             }
-            if (session.Platform == DevicePlatform.Android && !string.IsNullOrWhiteSpace(targetPackageName))
+            if (session.Platform == DevicePlatform.Android && !string.IsNullOrWhiteSpace(targetPackageName) &&
+                format is (LogcatFormat.Raw or LogcatFormat.Tag or LogcatFormat.Long))
+                session.CaptureNotice = "Full logs are captured. App-only filtering requires ThreadTime, Time, Brief, Thread or Process format.";
+            if (session.Platform == DevicePlatform.Android && !string.IsNullOrWhiteSpace(targetPackageName) &&
+                string.IsNullOrEmpty(session.CaptureNotice))
             {
                 session.AppLogFilePath = Path.Combine(session.SessionDirectory, $"{session.Platform}_{session.DeviceId}_app_log.txt");
                 appWriter = new StreamWriter(session.AppLogFilePath, append: true);
@@ -150,6 +165,7 @@ public class SessionService : ISessionService
         }
         catch (Exception ex)
         {
+            session.CaptureError = $"Cannot write session logs: {SecurityHelper.RedactSensitiveText(ex.Message)}";
             AppLogger.Log.Error(ex, "Failed to create log writers");
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
             process.Dispose();
@@ -175,6 +191,7 @@ public class SessionService : ISessionService
         }
         _startingDevices.TryRemove(session.DeviceSerial, out _);
 
+        session.EndTime = null;
         session.Status = SessionStatus.Capturing;
         session.StartTime = DateTime.Now;
         SaveSessionMetadata(session);
@@ -191,7 +208,7 @@ public class SessionService : ISessionService
                 {
                     await Task.Delay(2000, cts.Token).ConfigureAwait(false);
                     try { lock (ctx.WriterLock) { if (!ctx.WritersClosed) { writer.Flush(); appWriter?.Flush(); } } }
-                    catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
+                    catch (Exception ex) { FailCapture(session, ex); }
                 }
             }
             catch (OperationCanceledException) { }
@@ -209,9 +226,9 @@ public class SessionService : ISessionService
                         try
                         {
                             var pid = await _adbService.GetPidFromPackageNameAsync(session.DeviceSerial, targetPackageName).ConfigureAwait(false);
-                            if (!string.IsNullOrWhiteSpace(pid) && currentTargetPid != pid)
+                            if (currentTargetPid != (pid ?? string.Empty))
                             {
-                                currentTargetPid = pid;
+                                Volatile.Write(ref currentTargetPid, pid ?? string.Empty);
                                 // Write PID resolution notice only to app-specific log, NOT to main log buffer.
                                 var notice = $"[{DateTime.Now:HH:mm:ss.fff}] PID:{targetPackageName}={pid}";
                                 try { lock (ctx.WriterLock) { if (!ctx.WritersClosed) appWriter.WriteLine(notice); } }
@@ -244,18 +261,20 @@ public class SessionService : ISessionService
                     {
                         writer.WriteLine(line);
                         if (appWriter != null && !string.IsNullOrWhiteSpace(currentTargetPid) &&
-                            Regex.IsMatch(line, $@"\b{Regex.Escape(currentTargetPid)}\b"))
+                            MatchesLogcatPid(line, Volatile.Read(ref currentTargetPid), format))
                             appWriter.WriteLine(line);
                     }
                 }
 
                 session.LogLineCount++;
                 ctx.Buffer.Enqueue(line);
+                while (ctx.Buffer.Count > DisplayQueueLimit && ctx.Buffer.TryDequeue(out var discardedLine))
+                    Interlocked.Increment(ref ctx.DroppedLines);
             }
             catch (Exception ex)
             {
                 Interlocked.Increment(ref ctx.DroppedLines);
-                AppLogger.Log.Error(ex, "Error processing log output line");
+                FailCapture(session, ex);
             }
         };
         PublishCaptureEvent(CaptureStarted, session);
@@ -263,13 +282,50 @@ public class SessionService : ISessionService
         // cannot leave a capture permanently marked as active.
         process.Exited += (_, _) =>
         {
-            _ = Task.Run(() => StopCapture(session));
+            _ = Task.Run(() =>
+            {
+                if (_activeCaptures.ContainsKey(session.Id))
+                {
+                    var error = ToolLauncher.GetProcessError(process);
+                    session.CaptureError = string.IsNullOrWhiteSpace(error)
+                        ? "Device log stream ended unexpectedly. Check the USB connection and reconnect." : error;
+                    StopCapture(session);
+                }
+            });
         };
         process.EnableRaisingEvents = true;
-        process.BeginOutputReadLine();
+        try { process.BeginOutputReadLine(); }
+        catch (Exception ex) { FailCapture(session, ex); return false; }
+        if (generation != Volatile.Read(ref _shutdownGeneration)) { StopCapture(session); return false; }
+        try { if (process.HasExited) { StopCapture(session); return false; } }
+        catch (InvalidOperationException) { return false; }
 
         AppLogger.Log.Info($"Capture started for device {session.DeviceId}");
         return true;
+    }
+
+    private void FailCapture(LogSession session, Exception ex)
+    {
+        session.CaptureError = $"Log capture failed: {SecurityHelper.RedactSensitiveText(ex.Message)}";
+        AppLogger.Log.Error(ex, "Log capture failed");
+        StopCapture(session);
+    }
+
+    internal static bool MatchesLogcatPid(string line, string pid, LogcatFormat format)
+    {
+        if (string.IsNullOrWhiteSpace(pid)) return false;
+        var pattern = format switch
+        {
+            LogcatFormat.ThreadTime => @"^\s*\d{2}-\d{2}\s+\S+\s+(?<pid>\d+)\s+\d+\s",
+            LogcatFormat.Brief => @"^[VDIWEFAS]/.*?\(\s*(?<pid>\d+)\):",
+            LogcatFormat.Time => @"^\d{2}-\d{2}\s+\S+\s+[VDIWEFAS]/.*?\(\s*(?<pid>\d+)\):",
+            LogcatFormat.Process => @"^[VDIWEFAS]\(\s*(?<pid>\d+)\)",
+            LogcatFormat.Thread => @"^[VDIWEFAS]\(\s*(?<pid>\d+):\s*\d+\)",
+            _ => null
+        };
+        if (pattern == null) return false; // Raw/tag formats do not carry a reliable process identity.
+        var match = Regex.Match(line, pattern, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+        return match.Success && pid.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(match.Groups["pid"].Value);
     }
 
     private void EnsureFlushTimer()
@@ -302,15 +358,9 @@ public class SessionService : ISessionService
         if (ctx.Buffer.IsEmpty) return;
 
         // Drain everything, fire in 2000-line chunks to keep UI batches manageable
-        while (!ctx.Buffer.IsEmpty)
+        for (var batches = 0; batches < 5 && !ctx.Buffer.IsEmpty; batches++)
         {
-            var batch = new System.Text.StringBuilder();
-            int count = 0;
-            while (ctx.Buffer.TryDequeue(out var line) && count < 2000)
-            {
-                batch.AppendLine(line);
-                count++;
-            }
+            var batch = DrainDisplayBatch(ctx.Buffer, 2000);
 
             if (batch.Length > 0)
             {
@@ -324,6 +374,13 @@ public class SessionService : ISessionService
                 }
             }
         }
+    }
+
+    internal static System.Text.StringBuilder DrainDisplayBatch(ConcurrentQueue<string> queue, int limit)
+    {
+        var batch = new System.Text.StringBuilder();
+        for (var count = 0; count < limit && queue.TryDequeue(out var line); count++) batch.AppendLine(line);
+        return batch;
     }
 
     public void StopCapture(LogSession session)
@@ -390,6 +447,7 @@ public class SessionService : ISessionService
 
     public void StopAllCaptures()
     {
+        Interlocked.Increment(ref _shutdownGeneration);
         foreach (var session in _activeCaptures.Values.Select(c => c.Session).ToList())
             StopCapture(session);
 

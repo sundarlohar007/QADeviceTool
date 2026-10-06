@@ -87,20 +87,20 @@
                 <TextBlock Text="File Explorer" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
                 <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <WrapPanel Grid.Column="1" Orientation="Horizontal">
                 <ComboBox ItemsSource="{Binding AvailableDevices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="200" Margin="0,0,8,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding RefreshCommand}" Content="Refresh" Margin="0,0,8,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding UploadFileCommand}" IsEnabled="{Binding CanTransfer}" Content="Upload" Margin="0,0,8,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding DownloadFileCommand}" IsEnabled="{Binding CanUseSelectedFile}" Content="Download" Margin="0,0,8,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding DeleteFileCommand}" IsEnabled="{Binding CanUseSelectedFile}" Content="Delete" />
-            </StackPanel>
+            </WrapPanel>
         </Grid>
         <Border Grid.Row="1" Style="{StaticResource Card}" Margin="24,0,24,24">
             <DockPanel>
                 <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
                     <StackPanel>
                     <ItemsControl ItemsSource="{Binding Breadcrumbs}" Margin="0,0,0,8">
-                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Name}" Command="{Binding DataContext.NavigateBreadcrumbCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="5,2" Margin="0,0,3,0" /></DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <Grid>
@@ -116,11 +116,11 @@
                         <Button Grid.Column="2" Style="{StaticResource GhostBtn}" Command="{Binding NavigateToPathCommand}" Margin="8,0,0,0" Content="Go" />
                     </Grid>
                     <TextBox Style="{StaticResource DarkInput}" Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" Margin="0,8,0,0" ToolTip="Filter files in this folder" />
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
                         <TextBlock Text="Loading..." Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,12,0" />
                         <TextBlock Text="Transfer in progress..." Visibility="{Binding IsTransferring, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,8,0" />
                         <Button Content="Cancel transfer" Command="{Binding CancelTransferCommand}" IsEnabled="{Binding IsTransferring}" />
-                    </StackPanel>
+                    </WrapPanel>
                     <ScrollViewer MaxHeight="64" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0">
                         <ItemsControl ItemsSource="{Binding Transfers}">
                             <ItemsControl.ItemTemplate><DataTemplate><TextBlock><Run Text="{Binding Description}" /><Run Text=" — " /><Run Text="{Binding State}" /></TextBlock></DataTemplate></ItemsControl.ItemTemplate>
@@ -129,15 +129,15 @@
                     <StackPanel Visibility="{Binding IsIosDevice, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,10,0,0">
                         <TextBlock Text="iOS app documents" FontWeight="Bold" />
                         <TextBlock Text="{Binding AppAccessNotice}" TextWrapping="Wrap" Margin="0,3,0,6" />
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <Button Content="Load apps" Command="{Binding LoadIosAppsCommand}" Margin="0,0,8,0" />
                             <ComboBox ItemsSource="{Binding AvailableApps}" SelectedItem="{Binding SelectedApp}" DisplayMemberPath="Name" Width="240" />
-                        </StackPanel>
+                        </WrapPanel>
                         <TextBox Text="{Binding AppRemotePath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkInput}" Margin="0,6,0,0" ToolTip="Remote path under /Documents/" />
-                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <WrapPanel Orientation="Horizontal" Margin="0,6,0,0">
                             <Button Content="Download document" Command="{Binding DownloadAppDocumentCommand}" Margin="0,0,8,0" />
                             <Button Content="Upload document" Command="{Binding UploadAppDocumentCommand}" />
-                        </StackPanel>
+                        </WrapPanel>
                     </StackPanel>
                     </StackPanel>
                 </Border>

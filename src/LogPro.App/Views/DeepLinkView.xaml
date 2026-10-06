@@ -99,7 +99,7 @@
         <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsEnabled="{Binding IsRouting, Converter={x:Static conv:InverseBoolConverter.Instance}}" HorizontalAlignment="Left" MinWidth="300" Margin="0,8">
           <ComboBox.ItemTemplate><DataTemplate><StackPanel>
             <TextBlock Text="{Binding DisplayName}"/>
-            <StackPanel Orientation="Horizontal"><TextBlock Text="{Binding PlatformIcon}" Margin="0,0,8,0"/><TextBlock Text="{Binding MaskedSerial}" Margin="0,0,8,0"/><TextBlock Text="{Binding StatusText}"/></StackPanel>
+            <WrapPanel Orientation="Horizontal"><TextBlock Text="{Binding PlatformIcon}" Margin="0,0,8,0"/><TextBlock Text="{Binding MaskedSerial}" Margin="0,0,8,0"/><TextBlock Text="{Binding StatusText}"/></WrapPanel>
           </StackPanel></DataTemplate></ComboBox.ItemTemplate>
         </ComboBox>
         <TextBlock Text="{Binding CapabilityMessage}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}"/>
@@ -148,7 +148,7 @@
             <StackPanel>
               <WrapPanel Margin="0,8"><Button Content="Export sanitized results" Command="{Binding ExportHistoryCommand}" Padding="12,6" Margin="0,0,8,0"/><Button Content="Clear history" Command="{Binding ClearHistoryCommand}" Padding="12,6"/></WrapPanel>
               <ListBox ItemsSource="{Binding History}" Height="180" AutomationProperties.Name="Launch history">
-                <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Summary}" TextWrapping="Wrap"/><TextBlock Text="{Binding Result.Activity}"/><StackPanel Orientation="Horizontal"><TextBlock Text="Total / wait (ms): "/><TextBlock Text="{Binding Result.TotalTimeMs}"/><TextBlock Text=" / "/><TextBlock Text="{Binding Result.WaitTimeMs}"/></StackPanel></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Summary}" TextWrapping="Wrap"/><TextBlock Text="{Binding Result.Activity}"/><WrapPanel Orientation="Horizontal"><TextBlock Text="Total / wait (ms): "/><TextBlock Text="{Binding Result.TotalTimeMs}"/><TextBlock Text=" / "/><TextBlock Text="{Binding Result.WaitTimeMs}"/></WrapPanel></StackPanel></DataTemplate></ListBox.ItemTemplate>
               </ListBox>
             </StackPanel>
           </Expander>

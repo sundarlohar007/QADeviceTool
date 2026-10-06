@@ -41,7 +41,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isSidebarCollapsed;
 
-    public double SidebarWidth => IsSidebarCollapsed ? 48 : 220;
+    public double SidebarWidth => IsSidebarCollapsed ? 64 : 220;
 
     public IReadOnlyList<DeviceInfo> Devices => _deviceStore.Devices;
 
@@ -234,7 +234,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         foreach (var child in new IDisposable[]
         {
             DashboardVM, SessionVM, DeviceVM, AppManagementVM, ShellVM,
-            DeepLinkVM, VitalsVM, FileExplorerVM, MacroVM, StressTestVM, ProfilerVM
+            DeepLinkVM, VitalsVM, FileExplorerVM, MacroVM, StressTestVM, ProfilerVM, SettingsVM
         })
         {
             child?.Dispose();

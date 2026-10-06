@@ -17,7 +17,7 @@
   <!-- The Windows CLI release is standalone too: use the same tested native tools as the app. -->
   <ItemGroup>
     <Content Include="..\LogPro.App\tools\**\*"
-             Exclude="..\LogPro.App\tools\pymobiledevice3\build\**;..\LogPro.App\tools\pymobiledevice3\*.spec;..\LogPro.App\tools\pymobiledevice3\*.py;..\LogPro.App\tools\pymobiledevice3\**\*.dist-info\**;..\LogPro.App\tools\pymobiledevice3\**\__pycache__\**;..\LogPro.App\tools\pymobiledevice3\pymobiledevice3\_internal\numpy\**;..\LogPro.App\tools\pymobiledevice3\pymobiledevice3\_internal\**\numpy\**">
+             Exclude="..\LogPro.App\tools\.gitkeep;..\LogPro.App\tools\pymobiledevice3\build\**;..\LogPro.App\tools\pymobiledevice3\*.spec;..\LogPro.App\tools\pymobiledevice3\*.py;..\LogPro.App\tools\pymobiledevice3\**\*.dist-info\**;..\LogPro.App\tools\pymobiledevice3\**\__pycache__\**;..\LogPro.App\tools\pymobiledevice3\pymobiledevice3\_internal\numpy\**;..\LogPro.App\tools\pymobiledevice3\pymobiledevice3\_internal\**\numpy\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>

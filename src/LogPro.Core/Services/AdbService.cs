@@ -16,7 +16,8 @@ namespace LogPro.Services;
 /// </summary>
 public class AdbService : IAdbService
 {
-    private readonly string _adb;
+    private readonly string? _executableOverride;
+    private string _adb => _executableOverride ?? ToolResolver.Resolve("adb");
 
     public async Task<bool> BroadcastIntentAsync(string serial, string uri)
     {
@@ -83,10 +84,10 @@ public class AdbService : IAdbService
 
     public AdbService()
     {
-        _adb = ToolResolver.Resolve("adb");
+
     }
 
-    internal AdbService(string executablePath) => _adb = executablePath;
+    internal AdbService(string executablePath) => _executableOverride = executablePath;
 
     // ─── Semaphore-guarded ADB execution ─────────────────────────
     // All adb calls go through these to prevent concurrent USB transport access.
@@ -170,7 +171,7 @@ public class AdbService : IAdbService
         {
             AppLogger.Log.Warn($"[AdbService] CheckAvailabilityAsync failed. Error: {SecurityHelper.RedactSensitiveText(result.Error)}, Output: {SecurityHelper.RedactSensitiveText(result.Output)}");
             status.IsInstalled = false;
-            status.StatusMessage = "ADB not found. Place platform-tools in the tools/ folder.";
+            status.StatusMessage = $"ADB could not run: {SecurityHelper.RedactSensitiveText(result.Error)}";
         }
 
         return status;
@@ -334,6 +335,10 @@ public class AdbService : IAdbService
         if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !PathHelper.IsSafeLocalPath(outputFilePath))
             return null;
 
+        var readiness = await RunAdbAsync($"-s {serial} get-state").ConfigureAwait(false);
+        if (!readiness.Success || readiness.Output.Trim() != "device")
+            throw new InvalidOperationException($"Android is not ready for logging: {SecurityHelper.RedactSensitiveText(readiness.Error + " " + readiness.Output)}. Enable USB debugging and accept the authorization prompt.");
+
         var bufferArg = buffer switch
         {
             LogcatBuffer.Main => "-b main",
@@ -358,7 +363,7 @@ public class AdbService : IAdbService
         };
 
         // drainStdout: false — SessionService attaches its own OutputDataReceived + BeginOutputReadLine (BUG-01 fix-completion)
-        return await StartAdbLongRunning($"-s {serial} logcat {bufferArg} -v {formatArg}", drainStdout: false).ConfigureAwait(false);
+        return ToolLauncher.StartLongRunning(_adb, $"-s {serial} logcat {bufferArg} -v {formatArg}", drainStdout: false);
     }
 
     public async Task<bool> CaptureScreenshotAsync(string serial, string outputPath)

@@ -58,10 +58,10 @@
                     <TextBlock Text="Performance" FontFamily="{StaticResource FontHeader}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
                     <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,4,0,0" />
                 </StackPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <WrapPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Style="{StaticResource PrimaryBtn}" Content="Start" Command="{Binding StartProfilingCommand}" Margin="0,0,8,0" />
                     <Button Style="{StaticResource DangerBtn}" Content="Stop" Command="{Binding StopProfilingCommand}" />
-                </StackPanel>
+                </WrapPanel>
             </DockPanel>
         </Border>
 
