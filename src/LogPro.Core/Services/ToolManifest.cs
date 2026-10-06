@@ -51,8 +51,7 @@ public static class ToolManifest
     private static string GetCacheDirectory()
     {
         // Store cache in app data directory (outside tools) to avoid being seen as "unexpected"
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var cacheDir = Path.Combine(appData, "LogPro", "cache");
+        var cacheDir = Path.Combine(LogPro.Helpers.PathHelper.GetAppDataDirectory(), "cache");
         if (!Directory.Exists(cacheDir)) Directory.CreateDirectory(cacheDir);
         return cacheDir;
     }
@@ -74,6 +73,7 @@ public static class ToolManifest
         foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
         {
             if (string.Equals(Path.GetFullPath(file), manifestFullPath, StringComparison.OrdinalIgnoreCase)) continue;
+            if (Path.GetFileName(file) == ".gitkeep") continue;
             var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
             var sha = await Sha256Async(file);
             entries.Add(new ToolManifestEntry { Path = relative, Sha256 = sha });
@@ -81,7 +81,13 @@ public static class ToolManifest
 
         entries.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
         var json = JsonSerializer.Serialize(entries, LogProJsonContext.Default.IReadOnlyListToolManifestEntry);
-        await File.WriteAllTextAsync(manifestPath, json);
+        var temporary = manifestPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporary, json);
+            File.Move(temporary, manifestPath, overwrite: true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
 
         // Invalidate cache after writing new manifest
         InvalidateCache(toolsRoot);
@@ -142,6 +148,7 @@ public static class ToolManifest
 
         foreach (var entry in manifest)
         {
+            if (entry.Path == ".gitkeep") continue;
             if (string.IsNullOrWhiteSpace(entry.Path) ||
                 !Regex.IsMatch(entry.Sha256 ?? string.Empty, "^[0-9a-fA-F]{64}$") ||
                 Path.IsPathRooted(entry.Path))
@@ -168,6 +175,7 @@ public static class ToolManifest
         foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
         {
             if (string.Equals(Path.GetFullPath(file), manifestFullPath, StringComparison.OrdinalIgnoreCase)) continue;
+            if (Path.GetFileName(file) == ".gitkeep") continue;
             var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
             if (!manifestPaths.Contains(relative)) unexpected.Add(relative);
         }
@@ -206,6 +214,10 @@ public static class ToolManifest
                     return null;
             }
 
+            var actualPaths = Directory.EnumerateFiles(toolsRoot, "*", SearchOption.AllDirectories)
+                .Where(p => Path.GetFileName(p) != ".gitkeep" && Path.GetFullPath(p) != Path.GetFullPath(manifestPath))
+                .Select(p => Path.GetRelativePath(toolsRoot, p).Replace('\\', '/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!actualPaths.SetEquals(cache.FileMetadata.Keys)) return null;
             return cache;
         }
         catch { return null; }
@@ -276,7 +288,7 @@ public static class ToolManifest
     {
         try
         {
-            var path = Path.Combine(Path.GetTempPath(), "LogPro_startup-debug.log");
+            var path = Path.Combine(LogPro.Helpers.PathHelper.GetAppDataDirectory(), "tool-verification.log");
             File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}\n");
         }
         catch { }

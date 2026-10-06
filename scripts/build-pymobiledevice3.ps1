@@ -1,14 +1,17 @@
 param(
-    [string]$Python = "python"
+    [string]$Python = "python",
+    [string]$Destination = "publish/pymobiledevice3"
 )
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $entrypoint = Join-Path $PSScriptRoot "pymobiledevice3_entrypoint.py"
-$target = Join-Path $repoRoot "src\LogPro.App\tools\pymobiledevice3\pymobiledevice3.exe"
+$target = [IO.Path]::GetFullPath((Join-Path $repoRoot $Destination))
 $buildRoot = Join-Path $env:TEMP ("logpro-pymd3-build-" + [guid]::NewGuid().ToString("N"))
 
-$version = (& $Python -m pymobiledevice3 version).Trim()
+& $Python -c "import win32security, win32api, pywintypes"
+if ($LASTEXITCODE -ne 0) { throw "Windows iOS runtime dependencies are missing. Install scripts/requirements-pymobiledevice3-build.txt with the selected Python interpreter." }
+$version = ((& $Python -m pymobiledevice3 version) -join "`n").Trim()
 if ($LASTEXITCODE -ne 0 -or $version -ne "9.12.0") {
     throw "Expected pymobiledevice3 9.12.0; found '$version'."
 }
@@ -17,7 +20,7 @@ New-Item -ItemType Directory -Path $buildRoot | Out-Null
 $previousPyInstallerConfig = $env:PYINSTALLER_CONFIG_DIR
 $env:PYINSTALLER_CONFIG_DIR = Join-Path $buildRoot "config"
 try {
-    & $Python -m PyInstaller --onefile --clean --noconfirm `
+    & $Python -m PyInstaller --onedir --clean --noconfirm `
         --name pymobiledevice3 `
         --collect-all pymobiledevice3 `
         --collect-all rich `
@@ -46,11 +49,16 @@ try {
         $entrypoint
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed." }
 
-    $builtExe = Join-Path $buildRoot "dist\pymobiledevice3.exe"
+    $builtExe = Join-Path $buildRoot "dist\pymobiledevice3\pymobiledevice3.exe"
     & (Join-Path $PSScriptRoot "test-pymobiledevice3.ps1") -Executable $builtExe
     if ($LASTEXITCODE -ne 0) { throw "Bundled CLI smoke test failed." }
 
-    Copy-Item -LiteralPath $builtExe -Destination $target -Force
+    $publishRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot "publish")) + [IO.Path]::DirectorySeparatorChar
+    if (-not $target.StartsWith($publishRoot, [StringComparison]::OrdinalIgnoreCase)) { throw "Runtime destination must be a subdirectory of publish." }
+    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+    New-Item -ItemType Directory -Path $target -Force | Out-Null
+    Copy-Item -Path (Join-Path $buildRoot "dist\pymobiledevice3\*") -Destination $target -Recurse -Force
+    Set-Content -LiteralPath (Join-Path $target "tool-version.txt") -Value $version -Encoding utf8NoBOM
 }
 finally {
     $env:PYINSTALLER_CONFIG_DIR = $previousPyInstallerConfig

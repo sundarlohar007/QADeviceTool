@@ -49,13 +49,10 @@ Grab the latest from the **[Releases page](https://github.com/sundarlohar007/QAD
 | `LogPro_vX.exe` | Windows installer (Inno Setup `.exe` — install once, run) |
 | `LogPro_vX_portable.zip` | Portable build — unzip and run, no installation |
 | `logpro-cli_vX_win-x64.zip` | Headless CLI for CI/scripting |
-| `LogPro_vX_macos-arm64.zip` | macOS build (Avalonia) |
-| `LogPro_vX_linux-x64.tar.gz` | Linux build (Avalonia) |
 
 The Windows installer, portable ZIP, and Windows CLI ZIP contain the tested `adb`, `scrcpy`,
 and `pymobiledevice3` tools. Android USB drivers are supplied by Windows/OEMs and are **not**
-redistributed by LogPro. The macOS/Linux Avalonia archives do not contain Windows binaries;
-install the platform-appropriate device tooling on those platforms before using devices.
+redistributed by LogPro. Windows is the only supported host platform; Android and iOS USB devices remain supported.
 For iOS USB devices on Windows, install the classic iTunes package to provide Apple Mobile
 Device Service, then trust the computer on the device. The bundled pymobiledevice3 executable
 does not replace that Windows service.
@@ -63,7 +60,18 @@ does not replace that Windows service.
 To rebuild the Windows iOS executable, install the packages in
 `scripts/requirements-pymobiledevice3-build.txt` with Python 3.13, then run
 `pwsh -File scripts/build-pymobiledevice3.ps1`. Run
-`pwsh -File scripts/test-pymobiledevice3.ps1` to check the bundled commands.
+`pwsh -File scripts/test-pymobiledevice3.ps1 -Executable publish/pymobiledevice3/pymobiledevice3.exe` to check the complete runtime.
+Run `scripts/prepare-windows-tools.ps1 -PublishDirectory publish/app` after publishing; it installs the complete iOS runtime and Google platform-tools into the payload and generates its exact integrity manifest.
+
+## Windows installation and updates
+
+The installer includes the self-contained .NET application, ADB, scrcpy, and a complete Python/iOS runtime. It checks for newer compatible LogPro packages after copying the bundled baseline. Offline installs retain the bundled tools. `/SKIPUPDATECHECK` disables the installer network check for managed/offline deployments.
+
+The application checks and downloads verified updates at startup and every six hours by default (configurable in Settings). Checks begin only after the local-data notice is accepted. Existing update preferences are preserved. Install Selected defers while device operations are active; tool installation into Program Files opens an elevated Windows updater and closes LogPro gracefully. Start LogPro again after the updater finishes. Rollback is available for each managed tool. Application and embedded .NET updates use the full Windows installer.
+
+Tool updates are complete `LogPro-tool-NAME-VERSION-win-x64.zip` assets from this repository's releases, validated before replacing the previous version. A newer upstream release is not installed until its commands and runtime are validated and published as a compatible package. No system Python installation is required.
+
+USB readiness distinguishes transport discovery, device authorization/trust, service availability, and tool integrity. For Android, enable USB debugging and accept the RSA prompt. For iOS, unlock the device, accept Trust This Computer, and ensure Apple Mobile Device Service is running. Driver/service installation must use the appropriate manufacturer package.
 
 ## Build from source
 
@@ -100,7 +108,7 @@ Performance runs use an online Android device and a selected app for app FPS, CP
 ## Architecture
 
 ```
-LogPro.App (WPF, Windows — shipping UI)   LogPro.Avalonia (cross-platform UI)
+LogPro.App (WPF, Windows)              LogPro.Cli (Windows)
                  \                              /
                   LogPro.ViewModels (shared, UI-agnostic)
                             |
@@ -111,7 +119,6 @@ LogPro.App (WPF, Windows — shipping UI)   LogPro.Avalonia (cross-platform UI)
 - Built on **[.NET 10 LTS](https://dotnet.microsoft.com/download/dotnet/10.0)** (supported to Nov 2028).
 - MVVM via [CommunityToolkit.Mvvm](https://www.nuget.org/packages/CommunityToolkit.Mvvm); DI via
   [Microsoft.Extensions.DependencyInjection](https://www.nuget.org/packages/Microsoft.Extensions.DependencyInjection).
-- Cross-platform UI: [Avalonia](https://avaloniaui.net/) 12.x.
 - Android tooling: [platform-tools (adb)](https://developer.android.com/tools/releases/platform-tools),
   [scrcpy](https://github.com/Genymobile/scrcpy) · iOS: [pymobiledevice3](https://github.com/doronz88/pymobiledevice3)
   (process-isolated, see [GPL_COMPLIANCE.md](GPL_COMPLIANCE.md)).
@@ -122,7 +129,7 @@ LogPro.App (WPF, Windows — shipping UI)   LogPro.Avalonia (cross-platform UI)
 
 Testing unreleased titles means **data minimization is non-negotiable**:
 
-- **Zero automatic outbound network calls** — no telemetry, no crash upload, no cloud sync
+- **No telemetry, crash upload, or cloud sync** — update checks and verified binary downloads contact GitHub (and the release build downloads Android platform-tools from Google)
   (hard gate). Wireless ADB, network device discovery, URL/file schemes, port forwarding,
   and arbitrary shell composition are blocked by the engine.
 - Exported text and issue bundles are always redacted; device identifiers in evidence are hashed.

@@ -11,14 +11,14 @@ namespace LogPro.Services;
 public class ScrcpyService : IScrcpyService
 {
     public event Action? StateChanged;
-    private readonly string _scrcpy;
+    private string _scrcpy => ToolResolver.Resolve("scrcpy");
     private readonly object _lifecycleLock = new();
     private System.Diagnostics.Process? _mirrorProcess;
     private long _mirrorGeneration;
 
     public ScrcpyService()
     {
-        _scrcpy = ToolResolver.Resolve("scrcpy");
+
     }
 
     public async Task<ToolStatus> CheckAvailabilityAsync()
@@ -42,7 +42,7 @@ public class ScrcpyService : IScrcpyService
         {
             AppLogger.Log.Warn($"[ScrcpyService] CheckAvailabilityAsync failed. Error: {SecurityHelper.RedactSensitiveText(result.Error)}, Output: {SecurityHelper.RedactSensitiveText(result.Output)}");
             status.IsInstalled = false;
-            status.StatusMessage = "scrcpy not found. Place in the tools/ folder.";
+            status.StatusMessage = $"scrcpy could not run: {SecurityHelper.RedactSensitiveText(result.Error)}";
         }
 
         return status;
@@ -137,9 +137,8 @@ public class ScrcpyService : IScrcpyService
 
         if (options != null)
         {
-            if (!string.IsNullOrEmpty(options.BitRate) && options.BitRate != "2M"
-                && System.Text.RegularExpressions.Regex.IsMatch(options.BitRate, @"^\d+(\.\d+)?[KMG]?$"))
-                args += $" --bit-rate={options.BitRate}";
+            if (!string.IsNullOrEmpty(options.BitRate) && System.Text.RegularExpressions.Regex.IsMatch(options.BitRate, @"^\d+(\.\d+)?[KMG]?$"))
+                args += $" --video-bit-rate={options.BitRate}";
 
             if (options.MaxFps > 0 && options.MaxFps <= 120)
                 args += $" --max-fps={options.MaxFps}";
@@ -153,10 +152,12 @@ public class ScrcpyService : IScrcpyService
                 switch (options.WindowPreset)
                 {
                     case "Top-Left":
-                        args += " --window-x=0 --window-y=0 --window-width=1080 --window-height=1920";
+                        var top = WindowsScreenLayout.MirrorBounds(false);
+                        args += $" --window-x={top.X} --window-y={top.Y} --window-width={top.Width} --window-height={top.Height}";
                         break;
                     case "Bottom-Right":
-                        args += " --window-x=960 --window-y=540 --window-width=960 --window-height=1080";
+                        var bottom = WindowsScreenLayout.MirrorBounds(true);
+                        args += $" --window-x={bottom.X} --window-y={bottom.Y} --window-width={bottom.Width} --window-height={bottom.Height}";
                         break;
                     default:
                         if (options.WindowW > 0 && options.WindowH > 0)

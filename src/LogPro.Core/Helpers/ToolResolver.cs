@@ -38,8 +38,6 @@ public static class ToolResolver
     {
         if (!Directory.Exists(_toolsDir))
             return toolName;
-        if (_bundledToolsUntrusted)
-            return Path.Combine(_toolsDir, "__untrusted_tool__");
 
         try
         {
@@ -47,7 +45,9 @@ public static class ToolResolver
                 ? toolName
                 : toolName + ".exe";
 
-            foreach (var subDir in Directory.GetDirectories(_toolsDir))
+            var preferred = Path.Combine(_toolsDir, Path.GetFileNameWithoutExtension(exeName), exeName);
+            if (File.Exists(preferred)) return preferred;
+            foreach (var subDir in Directory.GetDirectories(_toolsDir).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
                 var exePath = Path.Combine(subDir, exeName);
                 if (File.Exists(exePath)) return exePath;
@@ -88,8 +88,10 @@ public static class ToolResolver
             return !_bundledToolsUntrusted;
         }
 
+        _bundledToolsUntrusted = true;
         var result = await Services.ToolManifest.VerifyAsync(_toolsDir, manifestPath).ConfigureAwait(false);
         _bundledToolsUntrusted = !result.IsHealthy;
+        ClearCache();
         return result.IsHealthy;
     }
 
@@ -111,7 +113,7 @@ public static class ToolResolver
         try
         {
             return Path.IsPathRooted(resolvedPath) &&
-                   resolvedPath.StartsWith(_toolsDir, StringComparison.OrdinalIgnoreCase);
+                   Path.GetFullPath(resolvedPath).StartsWith(_toolsDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[ToolResolver] Check failed"); return false; }
     }
@@ -153,5 +155,6 @@ public static class ToolResolver
     public static void ClearCache()
     {
         _cache.Clear();
+        Services.IosService.ResetToolSelection();
     }
 }

@@ -25,6 +25,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private readonly IDeviceMonitorService _deviceMonitor;
     private readonly IUiDispatcher _dispatcher;
     private readonly BugReportService _bugReportService;
+    private int _pendingLogUiUpdates;
+    private long _displaySkipped;
 
     // ── Log Viewer Properties ──
     public BulkObservableCollection<LogEntry> LogEntries { get; } = new();
@@ -51,8 +53,9 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             var stats = _sessionService.GetCaptureStatistics(SelectedSession.Id);
             return $"Captured {SelectedSession.LogLineCount:N0} | showing {LogEntriesView.Count:N0}" +
                 (SelectedSession.Status == SessionStatus.Capturing
-                    ? $" | pending {stats.PendingLines:N0} | dropped {stats.DroppedLines:N0}" : string.Empty) +
-                (IsPaused ? " | display paused" : string.Empty);
+                    ? $" | pending {stats.PendingLines:N0} | display skipped {stats.DroppedLines + Interlocked.Read(ref _displaySkipped):N0}" : string.Empty) +
+                (IsPaused ? " | display paused" : string.Empty) +
+                (string.IsNullOrEmpty(SelectedSession.CaptureNotice) ? "" : " | " + SelectedSession.CaptureNotice);
         }
     }
     public string SelectedSessionDetails => SelectedSession == null ? "Select a session to see its details." :
@@ -368,7 +371,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         {
             if (Volatile.Read(ref _disposed) != 0) return;
             if (SelectedSession?.Id == session.Id)
+            {
                 IsCapturing = false;
+                if (!string.IsNullOrWhiteSpace(session.CaptureError)) StatusMessage = session.CaptureError;
+            }
             OnPropertyChanged(nameof(CaptureHealthText));
             OnPropertyChanged(nameof(SelectedSessionDetails));
         });
@@ -393,7 +399,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                     return;
                 }
             }
-            if (device.ConnectionState != DeviceConnectionState.Online)
+            if (device.ConnectionState != DeviceConnectionState.Online || device.IsTemporarilyUnavailable)
             {
                 StatusMessage = $"[!] {device.DisplayName} is {device.StatusText}. Connect and authorize it before capture.";
                 return;
@@ -431,7 +437,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
             else
             {
-                StatusMessage = "[!] Failed to start capture. Check if ADB/iOS tools are available.";
+                StatusMessage = "[!] " + captureSession.CaptureError;
             }
         }
         catch (Exception ex)
@@ -460,36 +466,42 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     private void OnLogBatchReceived(string sessionId, string batch)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
-        _dispatcher.Post(() =>
+        if (Volatile.Read(ref _disposed) != 0 || SelectedSession?.Id != sessionId) return;
+        var lines = batch.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        if (Interlocked.Increment(ref _pendingLogUiUpdates) > 4)
         {
-            if (Volatile.Read(ref _disposed) != 0) return;
-            if (SelectedSession == null || SelectedSession.Id != sessionId) return;
-
-            var platform = SelectedSession.Platform;
-            var lines = batch.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-
-            // Bulk-parse all lines then AddRange to avoid per-line CollectionChanged events
-            var entries = new List<LogEntry>(lines.Length);
-            foreach (var line in lines)
+            Interlocked.Decrement(ref _pendingLogUiUpdates);
+            Interlocked.Add(ref _displaySkipped, lines.Length);
+            return; // The full capture remains on disk; never let UI work grow without bound.
+        }
+        // SessionService delivers on its background flush thread. Parse before dispatching.
+        var rawMode = IsRawMode;
+        var dispatched = false;
+        try
+        {
+            var entries = lines.Select(line => ParseLogLine(line, rawMode)).ToList();
+            _dispatcher.Post(() =>
             {
-                var entry = ParseLogLine(line);
-                entries.Add(entry);
-                _crashDetector.ScanLine(line, LogEntries.Count + entries.Count - 1, platform);
-            }
-
-            LogEntries.AddRange(entries);
-
-            // Incremental filtering: append only entries matching the active filter
-            if (!IsPaused)
-                LogEntriesView.AddRange(entries.Where(FilterLogEntry).ToList());
-
-            if (LogEntries.Count > 200000)
-                TrimLogEntries(150000);
-
-            if (!IsPaused) ScrollToEndRequested?.Invoke();
-            OnPropertyChanged(nameof(CaptureHealthText));
-        });
+                dispatched = true;
+                try
+                {
+                    if (Volatile.Read(ref _disposed) != 0 || SelectedSession?.Id != sessionId) return;
+                    for (var i = 0; i < lines.Length; i++)
+                        _crashDetector.ScanLine(lines[i], LogEntries.Count + i, SelectedSession.Platform);
+                    LogEntries.AddRange(entries);
+                    if (!IsPaused) LogEntriesView.AddRange(entries.Where(FilterLogEntry));
+                    if (LogEntries.Count > 200000) TrimLogEntries(150000);
+                    if (!IsPaused) ScrollToEndRequested?.Invoke();
+                    OnPropertyChanged(nameof(CaptureHealthText));
+                }
+                finally { Interlocked.Decrement(ref _pendingLogUiUpdates); }
+            });
+        }
+        catch
+        {
+            if (!dispatched) Interlocked.Decrement(ref _pendingLogUiUpdates);
+            throw;
+        }
     }
 
     private LogEntry ParseLogLine(string rawLine, bool? rawMode = null)

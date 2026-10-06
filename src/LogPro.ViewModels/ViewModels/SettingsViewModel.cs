@@ -28,6 +28,20 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly UpdateService _updateService = new();
     private readonly CancellationTokenSource _cts = new();
     private int _disposed;
+    private readonly SemaphoreSlim _updateGate = new(1, 1);
+    public event Action<string>? ElevatedUpdateRequested;
+    public event Action? RestartForUpdateRequested;
+    private readonly PeriodicTimer _updateTimer = new(TimeSpan.FromMinutes(5));
+    public int UpdateIntervalHours
+    {
+        get => PreferencesService.Current.UpdatePreferences.CheckIntervalHours;
+        set
+        {
+            PreferencesService.Current.UpdatePreferences.CheckIntervalHours = Math.Clamp(value, 1, 720);
+            PreferencesService.Save();
+            OnPropertyChanged();
+        }
+    }
 
     [ObservableProperty]
     private ObservableCollection<ToolStatus> _toolStatuses = new();
@@ -129,20 +143,30 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
                 if (_cts.Token.IsCancellationRequested) return;
                 // Start dependency checks
                 await CheckDependenciesAsync();
-                // Auto-check for updates if enabled
-                if (CheckForUpdatesOnStartup)
-                {
-                    var prefs = PreferencesService.Current.UpdatePreferences;
-                    var hoursSinceLastCheck = (DateTime.UtcNow - prefs.LastCheckUtc).TotalHours;
-                    if (hoursSinceLastCheck >= prefs.CheckIntervalHours)
-                        await CheckForUpdatesAsync();
-                }
+
             }
             catch (Exception ex)
             {
                 Services.AppLogger.Log.Error(ex, "[SettingsViewModel] Initialization task failed");
             }
         }, _cts.Token);
+        _ = RunUpdateSchedulerAsync();
+    }
+
+    private async Task RunUpdateSchedulerAsync()
+    {
+        try
+        {
+            do
+            {
+                var prefs = PreferencesService.Current;
+                if (prefs.PrivacyNoticeAccepted && prefs.UpdatePreferences.CheckOnStartup &&
+                    DateTime.UtcNow - prefs.UpdatePreferences.LastCheckUtc >= TimeSpan.FromHours(prefs.UpdatePreferences.CheckIntervalHours))
+                    await CheckForUpdatesAsync();
+            } while (await _updateTimer.WaitForNextTickAsync(_cts.Token));
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "Update scheduler stopped"); }
     }
 
     private void InitializeLogRetentionOptions()
@@ -505,7 +529,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task CheckForUpdatesAsync()
     {
-        if (IsCheckingUpdates || _disposed != 0) return;
+        if (_disposed != 0 || !await _updateGate.WaitAsync(0)) return;
         _dispatcher.Post(() =>
         {
             IsCheckingUpdates = true;
@@ -529,6 +553,11 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
                 .Where(u => u.IsInstallable && !suppressed.Contains($"{u.ToolName}:{u.LatestVersion}"))
                 .ToList();
 
+            foreach (var update in available)
+            {
+                try { await _updateService.PrepareUpdateAsync(update, _cts.Token); }
+                catch (Exception ex) { AppLogger.Log.Warn(ex, "Background update download deferred"); }
+            }
             _dispatcher.Post(() =>
             {
                 AvailableUpdates.Clear();
@@ -559,12 +588,23 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
                 IsCheckingUpdates = false;
             });
         }
+        finally { _updateGate.Release(); }
     }
 
     [RelayCommand]
     private async Task ApplyUpdateAsync(UpdateInfo update)
     {
         if (update == null || IsCheckingUpdates || _disposed != 0) return;
+        if (_sessionService.ActiveSessions.Count > 0 || ToolLauncher.HasRunningTools)
+        {
+            UpdateStatus = "Update downloaded. Stop device operations before installation.";
+            return;
+        }
+        if (update.ToolName != "logpro")
+        {
+            ElevatedUpdateRequested?.Invoke(update.ToolName);
+            return;
+        }
         IsCheckingUpdates = true;
         _dispatcher.Post(() => UpdateStatus = $"Updating {update.ToolName}...");
         try
@@ -580,6 +620,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
                 }
             });
 
+            if (success && update.ToolName == "logpro") RestartForUpdateRequested?.Invoke();
             // Refresh dependency status after a tool update
             if (success && !string.Equals(update.ToolName, "logpro", StringComparison.OrdinalIgnoreCase))
                 await CheckDependenciesAsync();
@@ -608,6 +649,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private async Task RollbackToolAsync(string toolName)
     {
         if (IsCheckingUpdates || _disposed != 0) return;
+        if (ElevatedUpdateRequested != null) { ElevatedUpdateRequested.Invoke("rollback:" + toolName); return; }
         IsCheckingUpdates = true;
         try
         {
@@ -635,6 +677,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _updateTimer.Dispose();
         _cts.Cancel();
         _cts.Dispose();
         GC.SuppressFinalize(this);

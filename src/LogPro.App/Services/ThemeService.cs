@@ -52,36 +52,6 @@ public static class ThemeService
         PreferencesService.Current.ThemePreference = themeName;
         PreferencesService.Save();
 
-        var oldWindow = Application.Current.MainWindow;
-        if (oldWindow is MainWindow mw)
-            mw.IsThemeSwitching = true;
-        var dataContext = oldWindow?.DataContext;
-        var oldState = oldWindow?.WindowState ?? WindowState.Normal;
-        var oldLeft = oldWindow?.Left ?? 0;
-        var oldTop = oldWindow?.Top ?? 0;
-        var oldWidth = oldWindow?.Width ?? 1280;
-        var oldHeight = oldWindow?.Height ?? 800;
-
-        var newWindow = new MainWindow();
-        if (dataContext != null)
-            newWindow.DataContext = dataContext;
-        newWindow.WindowState = oldState;
-        if (oldState == WindowState.Normal)
-        {
-            newWindow.Left = oldLeft;
-            newWindow.Top = oldTop;
-            newWindow.Width = oldWidth;
-            newWindow.Height = oldHeight;
-        }
-        Application.Current.MainWindow = newWindow;
-
-        newWindow.Show();
-        if (oldWindow != null)
-        {
-            oldWindow.DataContext = null;
-            oldWindow.Close();
-        }
-
         CurrentTheme = themeName;
     }
 
@@ -128,8 +98,8 @@ public static class ThemeService
     {
         try
         {
-            var path = Path.Combine(Path.GetTempPath(), "LogPro_startup-debug.log");
-            File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [ThemeService]\n{message}\n\n");
+            var path = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "theme-debug.log");
+            File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [ThemeService]\n{Helpers.SecurityHelper.RedactSensitiveText(message, redactIdentifiers: false)}\n\n");
         }
         catch { /* cannot log the logging failure */ }
     }

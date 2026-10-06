@@ -72,6 +72,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         : string.Empty;
     public string MirrorActionText => _scrcpyService.IsRunning && _scrcpyService.MirroredDeviceSerial == SelectedDevice?.Serial
         ? "Stop Mirroring" : "Mirror Screen";
+    public string ToolHealthColor => ToolStatuses.Count > 0 && ToolStatuses.All(s => s.IsInstalled) ? "#4ADE80" : "#FBBF24";
     public string ToolHealthSummary => !string.IsNullOrEmpty(ToolCheckError)
         ? "Check failed" : ToolStatuses.Count == 0
             ? "Checking…" : $"{ToolStatuses.Count(s => s.IsInstalled)}/{ToolStatuses.Count} ready";
@@ -178,7 +179,11 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasDiscoveryError));
         OnPropertyChanged(nameof(DeviceCountSubtitle));
     }
-    partial void OnToolCheckErrorChanged(string value) => OnPropertyChanged(nameof(ToolHealthSummary));
+    partial void OnToolCheckErrorChanged(string value)
+    {
+        OnPropertyChanged(nameof(ToolHealthSummary));
+        OnPropertyChanged(nameof(ToolHealthColor));
+    }
 
     private void OnDevicesChanged(List<DeviceInfo> devices)
     {
@@ -296,6 +301,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
                 ToolStatuses.Clear();
                 foreach (var status in statuses) ToolStatuses.Add(status);
                 OnPropertyChanged(nameof(ToolHealthSummary));
+                OnPropertyChanged(nameof(ToolHealthColor));
             });
         }
         catch (Exception ex)
@@ -338,7 +344,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
             var started = await _sessionService.StartCaptureAsync(session);
             WelcomeMessage = started
                 ? $"Session started for {device.DisplayName}. Open Sessions to view or stop it."
-                : "Failed to start session. Check device authorization and tool availability.";
+                : $"Failed to start session: {session.CaptureError}";
             if (!started) CleanupFailedSessionDirectory(session);
         }
         catch (Exception ex)

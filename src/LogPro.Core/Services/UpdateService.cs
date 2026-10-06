@@ -27,31 +27,36 @@ public sealed class UpdateService : IDisposable
     /// <summary>Known upstream sources for each tool.</summary>
     private static readonly Dictionary<string, ToolSource> _sources = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["scrcpy"] = new ToolSource
-        {
-            GitHubOwner = "Genymobile",
-            GitHubRepo = "scrcpy",
-            AssetPattern = @"scrcpy-win64-v[\d.]+\.zip",
-            VersionPattern = @"v([\d.]+)",
-            SubDirectory = "scrcpy-win64-*"
-        },
-        ["pymobiledevice3"] = new ToolSource
-        {
-            GitHubOwner = "doronz88",
-            GitHubRepo = "pymobiledevice3",
-            AssetPattern = @"pymobiledevice3.*\.exe",
-            VersionPattern = @"([\d.]+)",
-            SubDirectory = "pymobiledevice3"
-        },
+        ["adb"] = ManagedSource("adb"),
+        ["scrcpy"] = ManagedSource("scrcpy"),
+        ["pymobiledevice3"] = ManagedSource("pymobiledevice3"),
         ["logpro"] = new ToolSource
         {
             GitHubOwner = "sundarlohar007",
             GitHubRepo = "QADeviceTool",
-            AssetPattern = @"Setup\.exe",
-            VersionPattern = @"v?([\d.]+)",
-            SubDirectory = null // self-update, not a tool subdirectory
+            AssetPattern = @"^LogPro_v[\d.]+\.exe$",
+            VersionPattern = @"v?([\d.]+)"
         }
     };
+
+    private static ToolSource ManagedSource(string name) => new()
+    {
+        GitHubOwner = "sundarlohar007",
+        GitHubRepo = "QADeviceTool",
+        AssetPattern = $@"^LogPro-tool-{name}-([\d.]+)-win-x64\.zip$",
+        VersionPattern = @"v?([\d.]+)",
+        SubDirectory = name
+    };
+
+    public static bool RequiresElevation
+    {
+        get
+        {
+            if (!OperatingSystem.IsWindows()) return false;
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            return !new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
+    }
 
     public UpdateService(string? toolsDir = null, string? appDir = null)
     {
@@ -88,6 +93,29 @@ public sealed class UpdateService : IDisposable
         return (await Task.WhenAll(checks).ConfigureAwait(false)).ToList();
     }
 
+    public async Task<string> PrepareUpdateAsync(UpdateInfo update, CancellationToken ct = default)
+    {
+        if (!update.IsInstallable || !Uri.TryCreate(update.DownloadUrl, UriKind.Absolute, out var uri) ||
+            uri.Scheme != "https" || uri.Host != "github.com" ||
+            !uri.AbsolutePath.StartsWith("/sundarlohar007/QADeviceTool/releases/download/", StringComparison.Ordinal))
+            throw new InvalidDataException("No compatible verified LogPro release package is available.");
+        var cache = Path.Combine(LogPro.Helpers.PathHelper.GetAppDataDirectory(), "updates");
+        Directory.CreateDirectory(cache);
+        if (!PathHelper.RestrictDirectoryAccess(cache)) throw new IOException("Cannot secure update cache.");
+        var target = Path.Combine(cache, update.Sha256.ToLowerInvariant() + ".download");
+        if (File.Exists(target) && string.Equals(await ComputeSha256Async(target), update.Sha256, StringComparison.OrdinalIgnoreCase)) return target;
+        var partial = target + "." + Guid.NewGuid().ToString("N") + ".partial";
+        try
+        {
+            await DownloadFileAsync(update.DownloadUrl, partial, null, ct).ConfigureAwait(false);
+            if (!string.Equals(await ComputeSha256Async(partial), update.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Update checksum verification failed.");
+            File.Move(partial, target, true);
+            return target;
+        }
+        finally { if (File.Exists(partial)) File.Delete(partial); }
+    }
+
     /// <summary>
     /// Downloads and installs an update for a specific tool. Returns true on success.
     /// The download is SHA-256 verified before it can be installed.
@@ -105,6 +133,11 @@ public sealed class UpdateService : IDisposable
             downloadUri.Scheme != Uri.UriSchemeHttps || downloadUri.Host != "github.com")
             return (false, "Update asset must be served from GitHub over HTTPS.");
 
+        if (ToolLauncher.HasRunningTools)
+            return (false, "Update deferred: stop active device operations before installing tools.");
+        if (update.ToolName != "logpro" && RequiresElevation &&
+            Path.GetFullPath(_appDir).StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase))
+            return (false, "Administrator access is required. Use Install Selected to open the Windows updater.");
         try
         {
             var tempDir = Path.Combine(Path.GetTempPath(), $"logpro_update_{Guid.NewGuid():N}");
@@ -121,7 +154,9 @@ public sealed class UpdateService : IDisposable
                 var downloadPath = Path.Combine(tempDir, fileName);
 
                 AppLogger.Log.Info($"[UpdateService] Downloading {update.ToolName} v{update.LatestVersion} from {update.DownloadUrl}");
-                await DownloadFileAsync(update.DownloadUrl, downloadPath, progress, ct).ConfigureAwait(false);
+                var prepared = await PrepareUpdateAsync(update, ct).ConfigureAwait(false);
+                File.Copy(prepared, downloadPath);
+                progress?.Report(100);
 
                 // 2. Verify the upstream SHA-256 digest before installation.
                 {
@@ -143,7 +178,7 @@ public sealed class UpdateService : IDisposable
                 if (!_sources.TryGetValue(update.ToolName, out var source))
                     return (false, $"Unknown tool: {update.ToolName}");
 
-                await InstallToolAsync(downloadPath, source, update.ToolName, ct).ConfigureAwait(false);
+                await InstallToolAsync(downloadPath, update.ToolName, update.LatestVersion, ct).ConfigureAwait(false);
 
                 AppLogger.Log.Info($"[UpdateService] Successfully updated {update.ToolName} to v{update.LatestVersion}");
                 return (true, $"{update.ToolName} updated to v{update.LatestVersion}");
@@ -173,7 +208,10 @@ public sealed class UpdateService : IDisposable
         var currentVersion = GetCurrentVersion(toolName);
         var releaseUrl = $"https://api.github.com/repos/{source.GitHubOwner}/{source.GitHubRepo}/releases/latest";
 
-        var response = await _http.GetAsync(releaseUrl, ct).ConfigureAwait(false);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        ct = timeout.Token;
+        using var response = await _http.GetAsync(releaseUrl, ct).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
@@ -192,10 +230,11 @@ public sealed class UpdateService : IDisposable
             foreach (var asset in assets.EnumerateArray())
             {
                 var name = asset.GetProperty("name").GetString() ?? "";
-                if (Regex.IsMatch(name, source.AssetPattern, RegexOptions.IgnoreCase))
+                if (IsCompatibleAsset(toolName, name))
                 {
                     downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
                     fileName = name;
+                    if (toolName != "logpro") latestVersion = Regex.Match(name, source.AssetPattern).Groups[1].Value;
                     if (asset.TryGetProperty("digest", out var digest))
                     {
                         var value = digest.GetString() ?? "";
@@ -207,6 +246,7 @@ public sealed class UpdateService : IDisposable
             }
         }
 
+        if (toolName != "logpro" && string.IsNullOrEmpty(fileName)) latestVersion = "";
         return new UpdateInfo
         {
             ToolName = toolName,
@@ -214,15 +254,20 @@ public sealed class UpdateService : IDisposable
             LatestVersion = latestVersion,
             DownloadUrl = downloadUrl,
             Sha256 = sha256,
-            ReleaseNotes = TruncateReleaseNotes(releaseNotes),
+            ReleaseNotes = string.IsNullOrEmpty(fileName) ? "Check failed: no compatible Windows package was published for this component." : TruncateReleaseNotes(releaseNotes),
             FileName = fileName
         };
     }
+
+    internal static bool IsCompatibleAsset(string toolName, string assetName) =>
+        _sources.TryGetValue(toolName, out var source) && Regex.IsMatch(assetName, source.AssetPattern, RegexOptions.IgnoreCase);
 
     private string GetCurrentVersion(string toolName)
     {
         try
         {
+            var versionFile = Path.Combine(_toolsDir, toolName, "tool-version.txt");
+            if (File.Exists(versionFile)) return File.ReadAllText(versionFile).Trim();
             if (string.Equals(toolName, "logpro", StringComparison.OrdinalIgnoreCase))
             {
                 return System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "unknown";
@@ -259,10 +304,13 @@ public sealed class UpdateService : IDisposable
         return "unknown";
     }
 
-    private async Task InstallToolAsync(string downloadPath, ToolSource source, string toolName, CancellationToken ct)
+    internal async Task InstallToolAsync(string downloadPath, string toolName, string expectedVersion, CancellationToken ct)
     {
+        if (toolName is not ("adb" or "scrcpy" or "pymobiledevice3")) throw new ArgumentException("Unknown managed tool.", nameof(toolName));
+        var integrity = await ToolManifest.VerifyAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false);
+        if (!integrity.IsHealthy) throw new InvalidDataException("Repair the existing installation before updating tools. Its integrity check failed.");
         Directory.CreateDirectory(_toolsDir);
-        var staging = Path.Combine(_toolsDir, $".update_{Guid.NewGuid():N}");
+        var staging = Path.Combine(_appDir, $".update_{Guid.NewGuid():N}");
         var backup = BackupPath(toolName);
         string? installed = null;
         string? previous = null;
@@ -272,45 +320,36 @@ public sealed class UpdateService : IDisposable
         try
         {
             ct.ThrowIfCancellationRequested();
-            if (downloadPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            if (!downloadPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Managed tool updates must contain a complete Windows runtime bundle.");
+            ZipFile.ExtractToDirectory(downloadPath, staging);
+            var staged = Path.Combine(staging, toolName);
+            if (!File.Exists(Path.Combine(staged, toolName + ".exe")) ||
+                !File.Exists(Path.Combine(staged, "tool-version.txt")))
+                throw new InvalidDataException("Update archive is missing its executable or version metadata.");
+            if (!string.Equals(File.ReadAllText(Path.Combine(staged, "tool-version.txt")).Trim(), expectedVersion, StringComparison.Ordinal))
+                throw new InvalidDataException("Package version does not match the release metadata.");
+            // Validate the CLI contract before touching the working installation.
+            var args = toolName == "scrcpy" ? "--version" : "version";
+            var probe = await ToolLauncher.RunAsync(Path.Combine(staged, toolName + ".exe"), args, 60000, cancellationToken: ct).ConfigureAwait(false);
+            if (!probe.Success) throw new InvalidDataException("Updated tool health check failed: " + probe.Error);
+            installed = Path.Combine(_toolsDir, toolName);
+            previous = Directory.Exists(installed) ? installed : toolName == "scrcpy"
+                ? Directory.GetDirectories(_toolsDir, "scrcpy-win64-*").FirstOrDefault() : null;
+            if (previous != null)
             {
-                ZipFile.ExtractToDirectory(downloadPath, staging);
-                var staged = Directory.GetDirectories(staging, source.SubDirectory ?? "*");
-                if (staged.Length != 1 || !File.Exists(Path.Combine(staged[0], "scrcpy.exe")))
-                    throw new InvalidDataException("Update archive does not contain a valid scrcpy installation.");
-                installed = Path.Combine(_toolsDir, Path.GetFileName(staged[0]));
-                previous = Directory.Exists(installed) ? installed :
-                    Directory.GetDirectories(_toolsDir, source.SubDirectory ?? "*").FirstOrDefault();
-                if (previous != null)
-                {
-                    if (Directory.Exists(backup)) Directory.Delete(backup, true);
-                    Directory.Move(previous, backup);
-                    backupCreated = true;
-                }
-                Directory.Move(staged[0], installed);
-                installedNew = true;
+                if (Directory.Exists(backup)) Directory.Delete(backup, true);
+                Directory.Move(previous, backup);
+                backupCreated = true;
             }
-            else if (downloadPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-            {
-                if (source.SubDirectory == null) throw new InvalidDataException("Missing tool directory.");
-                installed = Path.Combine(_toolsDir, source.SubDirectory);
-                var staged = Path.Combine(staging, source.SubDirectory);
-                Directory.CreateDirectory(staged);
-                File.Copy(downloadPath, Path.Combine(staged, "pymobiledevice3.exe"));
-                if (Directory.Exists(installed))
-                {
-                    previous = installed;
-                    if (Directory.Exists(backup)) Directory.Delete(backup, true);
-                    Directory.Move(installed, backup);
-                    backupCreated = true;
-                }
-                Directory.Move(staged, installed);
-                installedNew = true;
-            }
-            else throw new InvalidDataException("Unsupported tool update asset.");
+            Directory.Move(staged, installed);
+            installedNew = true;
+            Directory.Delete(staging, true);
 
             ct.ThrowIfCancellationRequested();
             await ToolManifest.WriteAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false);
+            if (!(await ToolManifest.VerifyAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false)).IsHealthy)
+                throw new InvalidDataException("Installed update failed verification.");
             ToolResolver.ClearCache();
             if (previous != null) File.WriteAllText(backup + ".name", Path.GetFileName(previous));
             else
@@ -344,18 +383,20 @@ public sealed class UpdateService : IDisposable
 
     public async Task<(bool Success, string Message)> RollbackLastUpdateAsync(string toolName)
     {
-        if (toolName is not ("scrcpy" or "pymobiledevice3")) return (false, "Unknown tool.");
+        if (ToolLauncher.HasRunningTools) return (false, "Stop device operations before rolling back tools.");
+        if (toolName is not ("adb" or "scrcpy" or "pymobiledevice3")) return (false, "Unknown tool.");
         var backup = BackupPath(toolName);
         var marker = backup + ".name";
         if (!Directory.Exists(backup) || !File.Exists(marker)) return (false, "No previous installation is available.");
         var previousName = File.ReadAllText(marker).Trim();
         if (previousName != Path.GetFileName(previousName) ||
-            (toolName == "scrcpy" && !previousName.StartsWith("scrcpy-win64-", StringComparison.OrdinalIgnoreCase)) ||
-            (toolName == "pymobiledevice3" && previousName != "pymobiledevice3"))
+            (toolName == "scrcpy" && previousName != "scrcpy" && !previousName.StartsWith("scrcpy-win64-", StringComparison.OrdinalIgnoreCase)) ||
+            (toolName == "pymobiledevice3" && previousName != "pymobiledevice3") ||
+            (toolName == "adb" && previousName != "adb"))
             return (false, "Rollback metadata is invalid.");
-        var current = toolName == "scrcpy"
-            ? Directory.GetDirectories(_toolsDir, "scrcpy-win64-*").FirstOrDefault()
-            : Path.Combine(_toolsDir, "pymobiledevice3");
+        var current = Path.Combine(_toolsDir, toolName);
+        if (toolName == "scrcpy" && !Directory.Exists(current))
+            current = Directory.GetDirectories(_toolsDir, "scrcpy-win64-*").FirstOrDefault();
         if (current == null || !Directory.Exists(current)) return (false, "Current installation is unavailable.");
         var restored = Path.Combine(_toolsDir, previousName);
         if (restored != current && Directory.Exists(restored)) return (false, "Rollback target already exists.");
@@ -451,7 +492,7 @@ public sealed class UpdateService : IDisposable
     {
         var client = new HttpClient();
         client.DefaultRequestHeaders.UserAgent.ParseAdd("LogPro-UpdateChecker/1.0");
-        client.Timeout = TimeSpan.FromSeconds(30);
+        client.Timeout = TimeSpan.FromMinutes(10);
         return client;
     }
 

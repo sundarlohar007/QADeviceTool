@@ -36,6 +36,11 @@ public static class ToolLauncher
         return quoted.ToString();
     }
 
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Process, ProcessDiagnostic> Diagnostics = new();
+    private sealed class ProcessDiagnostic { public string LastError = ""; }
+    public static string GetProcessError(Process process) => Diagnostics.TryGetValue(process, out var diagnostic)
+        ? Volatile.Read(ref diagnostic.LastError) : "";
+    public static bool HasRunningTools => Services.ProcessManager.Instance.HasRunningProcesses;
     private static readonly string _toolsDir;
     private static readonly string _pymobileDeviceDir;
 
@@ -43,8 +48,8 @@ public static class ToolLauncher
     // parallel across devices, bounded subprocess count. Long-running processes
     // (StartLongRunning) intentionally bypass the gate — they'd hold it for hours.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _deviceLocks = new(StringComparer.Ordinal);
-    private static readonly SemaphoreSlim _globalCap = new(Environment.ProcessorCount);
-    private static readonly SemaphoreSlim _longRunningCap = new(Math.Max(1, Environment.ProcessorCount));
+    private static readonly SemaphoreSlim _globalCap = new(Math.Max(4, Environment.ProcessorCount));
+    private static readonly SemaphoreSlim _longRunningCap = new(64);
     private static readonly System.Text.RegularExpressions.Regex _deviceKeyRegex =
         new(@"(?:-s|--udid)\s+(\S+)", System.Text.RegularExpressions.RegexOptions.Compiled);
     private static readonly System.Text.RegularExpressions.Regex _deviceArgumentRegex = new(
@@ -63,15 +68,15 @@ public static class ToolLauncher
             return new GateRelease(_globalCap, null);
         }
 
-        var deviceLock = _deviceLocks.GetOrAdd(m.Groups[1].Value, _ => new SemaphoreSlim(1, 1));
-        await _globalCap.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var deviceLock = _deviceLocks.GetOrAdd(m.Groups[1].Value.Trim('"'), _ => new SemaphoreSlim(1, 1));
+        await deviceLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await deviceLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _globalCap.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
         {
-            _globalCap.Release();
+            deviceLock.Release();
             throw;
         }
         return new GateRelease(_globalCap, deviceLock);
@@ -94,28 +99,10 @@ public static class ToolLauncher
     /// <summary>Test hook: acquire the gate without launching a process. null = timed out.</summary>
     internal static async Task<IDisposable?> TestAcquireAsync(string arguments, int waitMs = 0)
     {
-        var m = _deviceKeyRegex.Match(arguments);
-        if (!m.Success)
-        {
-            if (waitMs > 0)
-                return await _globalCap.WaitAsync(waitMs).ConfigureAwait(false)
-                    ? new GateRelease(_globalCap, null) : null;
-            await _globalCap.WaitAsync().ConfigureAwait(false);
-            return new GateRelease(_globalCap, null);
-        }
-
-        var deviceLock = _deviceLocks.GetOrAdd(m.Groups[1].Value, _ => new SemaphoreSlim(1, 1));
-        if (waitMs > 0)
-        {
-            var ok = await _globalCap.WaitAsync(waitMs).ConfigureAwait(false);
-            var deviceOk = ok && await deviceLock.WaitAsync(waitMs).ConfigureAwait(false);
-            if (ok && !deviceOk) _globalCap.Release(); // don't leak the global slot
-            return (ok && deviceOk) ? new GateRelease(_globalCap, deviceLock) : null;
-        }
-
-        await _globalCap.WaitAsync().ConfigureAwait(false);
-        await deviceLock.WaitAsync().ConfigureAwait(false);
-        return new GateRelease(_globalCap, deviceLock);
+        using var deadline = new CancellationTokenSource();
+        if (waitMs > 0) deadline.CancelAfter(waitMs);
+        try { return await EnterDeviceGateAsync(arguments, deadline.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return null; }
     }
 
     static ToolLauncher()
@@ -164,6 +151,8 @@ public static class ToolLauncher
         var result = new ToolLauncherResult();
         var fullExePath = ResolveExecutablePath(exeName);
 
+        if (ToolResolver.IsBundled(fullExePath) && !ToolResolver.BundledToolsTrusted)
+            return new ToolLauncherResult { Error = "Bundled tool verification failed. Repair LogPro using a verified Windows installer." };
         var selector = _deviceArgumentRegex.Match(arguments);
         if (selector.Success && !SecurityHelper.IsValidOfflineDeviceSelector(selector.Groups["selector"].Value))
         {
@@ -180,10 +169,10 @@ public static class ToolLauncher
         }
 
         using var gateCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (gateTimeoutMs is { } gateLimit) gateCts.CancelAfter(Math.Max(1, gateLimit));
+        gateCts.CancelAfter(Math.Max(1, gateTimeoutMs ?? timeoutMs));
         IDisposable gate;
         try { gate = await EnterDeviceGateAsync(arguments, gateCts.Token).ConfigureAwait(false); }
-        catch (OperationCanceledException) when (gateTimeoutMs.HasValue && gateCts.IsCancellationRequested)
+        catch (OperationCanceledException) when (gateCts.IsCancellationRequested)
         {
             result.Error = cancellationToken.IsCancellationRequested ? "Process cancelled." : "Device queue timed out.";
             return result;
@@ -213,6 +202,8 @@ public static class ToolLauncher
                 CreateNoWindow = true
             };
             ConfigureOfflineEnvironment(process.StartInfo);
+            if (Path.GetFileNameWithoutExtension(fullExePath).Equals("scrcpy", StringComparison.OrdinalIgnoreCase))
+                process.StartInfo.Environment["ADB"] = ToolResolver.Resolve("adb");
 
             process.Start();
             Services.ProcessManager.Instance.TrackProcess(process);
@@ -297,6 +288,8 @@ public static class ToolLauncher
     {
         var fullExePath = ResolveExecutablePath(exeName);
 
+        if (ToolResolver.IsBundled(fullExePath) && !ToolResolver.BundledToolsTrusted)
+            throw new InvalidOperationException("Bundled tool verification failed. Repair LogPro using a verified Windows installer.");
         var selector = _deviceArgumentRegex.Match(arguments);
         if (selector.Success && !SecurityHelper.IsValidOfflineDeviceSelector(selector.Groups["selector"].Value))
         {
@@ -314,7 +307,7 @@ public static class ToolLauncher
         if (!_longRunningCap.Wait(0))
         {
             AppLogger.Log.Warn("[ToolLauncher] Long-running process cap reached; launch rejected");
-            return null;
+            throw new InvalidOperationException("The limit of 64 concurrent device streams has been reached. Stop an unused capture or mirror.");
         }
         var longRunningSlotReleased = 0;
 
@@ -340,6 +333,8 @@ public static class ToolLauncher
             };
 
             ConfigureOfflineEnvironment(process.StartInfo);
+            if (Path.GetFileNameWithoutExtension(fullExePath).Equals("scrcpy", StringComparison.OrdinalIgnoreCase))
+                process.StartInfo.Environment["ADB"] = ToolResolver.Resolve("adb");
             process.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
             process.EnableRaisingEvents = true;
             process.Exited += (_, _) =>
@@ -350,6 +345,7 @@ public static class ToolLauncher
             process.Start();
             Services.ProcessManager.Instance.TrackProcess(process);
 
+            var diagnostic = Diagnostics.GetOrCreateValue(process);
             // Drain stdout in background to prevent pipe buffer deadlock (4KB on Windows).
             // Callers that attach own OutputDataReceived handler (SessionService) pass drainStdout: false.
             if (drainStdout)
@@ -365,6 +361,7 @@ public static class ToolLauncher
                     while (await process.StandardError.ReadLineAsync() is { } line)
                     {
                         var safeLine = SecurityHelper.RedactSensitiveText(line);
+                        Volatile.Write(ref diagnostic.LastError, safeLine.Length > 2000 ? safeLine[..2000] : safeLine);
                         errorCallback?.Invoke(safeLine);
                         logger.Warn($"[ToolLauncher] STDERR(long): {safeLine}");
                     }

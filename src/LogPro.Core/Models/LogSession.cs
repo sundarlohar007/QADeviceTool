@@ -24,6 +24,11 @@ public partial class LogSession : ObservableObject
     [NotifyPropertyChangedFor(nameof(DurationText))]
     private SessionStatus _status = SessionStatus.Idle;
 
+    [ObservableProperty]
+    private string _captureError = string.Empty;
+
+    public string CaptureNotice { get; set; } = string.Empty;
+
     public long LogLineCount { get; set; }
 
     public string DurationText

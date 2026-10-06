@@ -23,8 +23,8 @@ public sealed class UpdateInfo
 /// <summary>Preferences for the auto-update subsystem.</summary>
 public sealed class UpdatePreferences
 {
-    public bool CheckOnStartup { get; set; } = false;
-    public int CheckIntervalHours { get; set; } = 24;
+    public bool CheckOnStartup { get; set; } = true;
+    public int CheckIntervalHours { get; set; } = 6;
     public DateTime LastCheckUtc { get; set; } = DateTime.MinValue;
     public List<string> SuppressedVersions { get; set; } = new(); // e.g. "scrcpy:3.4.0"
 }

@@ -121,7 +121,7 @@
                 <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushPrimaryLight}" FontSize="12" Margin="0,4,0,0" />
                 <TextBlock Text="{Binding CapabilityMessage}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <WrapPanel Grid.Column="1" Orientation="Horizontal">
                 <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="DisplayName" Width="200" Margin="0,0,8,0" />
                 <Button Style="{StaticResource PrimaryBtn}" Command="{Binding NewSequenceCommand}" Margin="0,0,6,0" Content="+ NEW SEQUENCE" />
                 <Button Style="{StaticResource RecBtn}" Command="{Binding ToggleRecordingCommand}" Margin="0,0,6,0">
@@ -148,15 +148,15 @@
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ExportMacroCommand}" Content="Export" Margin="0,0,6,0" />
                 <Button Style="{StaticResource GhostBtn}" Command="{Binding EditSelectedSequenceCommand}" Content="Edit Copy" Margin="0,0,6,0" />
                 <Button Style="{StaticResource DangerBtn}" Command="{Binding DeleteMacroCommand}" IsEnabled="{Binding SelectedMacro, Converter={x:Static conv:NullToBoolConverter.Instance}}" Content="Delete" />
-            </StackPanel>
+            </WrapPanel>
         </Grid>
 
         <!-- Filter Bar -->
         <Border Grid.Row="1" Margin="24,0,24,12" Padding="0">
-            <StackPanel Orientation="Horizontal">
+            <WrapPanel Orientation="Horizontal">
                 <TextBlock Text="FILTER" Style="{StaticResource MetaLabel}" VerticalAlignment="Center" Margin="0,0,10,0" />
                 <ComboBox ItemsSource="{Binding Filters}" SelectedItem="{Binding SelectedFilter}" Width="150" />
-            </StackPanel>
+            </WrapPanel>
         </Border>
 
         <!-- Main Split -->
@@ -171,10 +171,10 @@
             <Border Grid.Column="0" Style="{StaticResource Card}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="MACRO LIBRARY" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
                     <ListBox ItemsSource="{Binding FilteredMacros}" SelectedItem="{Binding SelectedMacro}" Background="Transparent" BorderThickness="0" Padding="8">
                         <ListBox.ItemContainerStyle>
@@ -226,10 +226,10 @@
             <Border Grid.Column="2" Style="{StaticResource Card}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="PLAYBACK CONFIG" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
 
                     <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="16">
@@ -247,8 +247,8 @@
                         <!-- Speed -->
                         <Grid Margin="0,0,0,16">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="SPEED" Style="{StaticResource MetaLabel}" />
                             <TextBlock Grid.Column="1" Text="{Binding PlaybackSpeed, StringFormat={}{0:F1}x}"

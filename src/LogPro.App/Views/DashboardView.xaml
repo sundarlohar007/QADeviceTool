@@ -117,7 +117,7 @@
                 <TextBlock Text="{Binding PlatformNotice}" Foreground="{DynamicResource BrushTextSecondary}"
                            FontSize="12" TextWrapping="Wrap" Visibility="{Binding HasPlatformNotice, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <WrapPanel Grid.Column="1" Orientation="Horizontal">
                 <Button Width="40" Height="40" Margin="0,0,12,0"
                         Background="{DynamicResource BrushSurface}" Foreground="{DynamicResource BrushTextSecondary}"
                         BorderThickness="1" BorderBrush="{DynamicResource BrushBorder}"
@@ -137,15 +137,15 @@
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border CornerRadius="8" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
-                                <StackPanel Orientation="Horizontal">
+                                <WrapPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
                                     <TextBlock Text="New Session" VerticalAlignment="Center" />
-                                </StackPanel>
+                                </WrapPanel>
                             </Border>
                         </ControlTemplate>
                     </Button.Template>
                 </Button>
-            </StackPanel>
+            </WrapPanel>
         </Grid>
 
         <Grid Grid.Row="1" Margin="24,0,24,16">
@@ -194,9 +194,9 @@
                 <StackPanel>
                     <Grid>
                         <TextBlock Text="Tool Health" Style="{StaticResource StatLabel}" />
-                        <TextBlock Text="&#xE74A;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#4ADE80" HorizontalAlignment="Right" />
+                        <TextBlock Text="&#xE74A;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{Binding ToolHealthColor}" HorizontalAlignment="Right" />
                     </Grid>
-                    <TextBlock Text="{Binding ToolHealthSummary}" Style="{StaticResource StatValue}" FontSize="22" Foreground="#4ADE80" />
+                    <TextBlock Text="{Binding ToolHealthSummary}" Style="{StaticResource StatValue}" FontSize="22" Foreground="{Binding ToolHealthColor}" />
                     <TextBlock Text="ADB, scrcpy, iOS &amp; drivers" Style="{StaticResource StatSubtitle}" />
                 </StackPanel>
             </Border>
@@ -218,10 +218,10 @@
             <ContentControl Grid.Column="0" Style="{DynamicResource FrostedGlass}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE839;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="DETECTED DEVICES" Style="{StaticResource CardHeaderText}" VerticalAlignment="Center" />
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
                         <StackPanel>
@@ -259,7 +259,7 @@
                                                         <Run Text="SN: " /><Run Text="{Binding Serial, Mode=OneWay}" />
                                                     </TextBlock>
                                                 </StackPanel>
-                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <WrapPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                                     <StackPanel Margin="0,0,12,0">
                                                         <TextBlock Text="{Binding OsVersion}" FontFamily="{StaticResource FontHeader}" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource BrushPrimaryLight}" />
                                                         <TextBlock Text="{Binding StatusText}" FontSize="10" Foreground="{DynamicResource BrushTextMuted}" />
@@ -282,7 +282,7 @@
                                                             </Style>
                                                         </Ellipse.Style>
                                                     </Ellipse>
-                                                </StackPanel>
+                                                </WrapPanel>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -295,10 +295,10 @@
             <ContentControl Grid.Column="2" Style="{DynamicResource FrostedGlass}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE823;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="RECENT ACTIVITY" Style="{StaticResource CardHeaderText}" VerticalAlignment="Center" />
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
                         <StackPanel>
@@ -337,35 +337,35 @@
         </Grid>
 
         <ContentControl Grid.Row="3" Margin="24,0,24,24" Style="{DynamicResource FrostedGlass}">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="8">
+            <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="8">
                 <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickMirrorCommand}" IsEnabled="{Binding CanMirrorSelectedDevice}">
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="{Binding MirrorActionText}" VerticalAlignment="Center" />
-                    </StackPanel>
+                    </WrapPanel>
                 </Button>
                 <Border Width="1" Height="24" Background="{DynamicResource BrushBorder}" Margin="8,0" VerticalAlignment="Center" />
                 <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickSnapshotCommand}" IsEnabled="{Binding CanUseSelectedDevice}">
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Snapshot" VerticalAlignment="Center" />
-                    </StackPanel>
+                    </WrapPanel>
                 </Button>
                 <Border Width="1" Height="24" Background="{DynamicResource BrushBorder}" Margin="8,0" VerticalAlignment="Center" />
                 <Button Style="{StaticResource QuickActionBtn}" Command="{Binding QuickStartSessionCommand}" IsEnabled="{Binding CanUseSelectedDevice}">
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7B5;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Start Session" VerticalAlignment="Center" />
-                    </StackPanel>
+                    </WrapPanel>
                 </Button>
                 <Border Width="1" Height="24" Background="{DynamicResource BrushBorder}" Margin="8,0" VerticalAlignment="Center" />
                 <Button Style="{StaticResource QuickActionBtn}" Command="{Binding RefreshDevicesCommand}">
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,8,0" />
                         <TextBlock Text="Refresh" VerticalAlignment="Center" />
-                    </StackPanel>
+                    </WrapPanel>
                 </Button>
-            </StackPanel>
+            </WrapPanel>
         </ContentControl>
     </Grid>
 </UserControl>

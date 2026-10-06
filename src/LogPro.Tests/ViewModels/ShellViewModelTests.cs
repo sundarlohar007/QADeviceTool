@@ -18,11 +18,15 @@ public class ShellViewModelTests
 
     private static (ShellViewModel Vm, Mock<IDeviceMonitorService> Monitor, Mock<IIosService> Ios)
         Create(params DeviceInfo[] devices)
+        => Create(new ImmediateUiDispatcher(), devices);
+
+    private static (ShellViewModel Vm, Mock<IDeviceMonitorService> Monitor, Mock<IIosService> Ios)
+        Create(IUiDispatcher dispatcher, params DeviceInfo[] devices)
     {
         var monitor = new Mock<IDeviceMonitorService>();
         monitor.Setup(x => x.CurrentDevices).Returns(devices);
         var ios = new Mock<IIosService>();
-        return (new ShellViewModel(monitor.Object, ios.Object, new ImmediateUiDispatcher()), monitor, ios);
+        return (new ShellViewModel(monitor.Object, ios.Object, dispatcher), monitor, ios);
     }
 
     [Fact]
@@ -150,7 +154,14 @@ public class ShellViewModelTests
     [Fact]
     public async Task LiveLogCanBePausedResumedAndStopped()
     {
-        var context = Create(Device("A"));
+        TaskCompletionSource? postCompleted = null;
+        var dispatcher = new Mock<IUiDispatcher>();
+        dispatcher.Setup(x => x.Post(It.IsAny<Action>())).Callback<Action>(action =>
+        {
+            action();
+            postCompleted?.TrySetResult();
+        });
+        var context = Create(dispatcher.Object, Device("A"));
         using var vm = context.Vm;
         Action<string>? stream = null;
         var running = new TaskCompletionSource<ToolLauncherResult>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -166,13 +177,20 @@ public class ShellViewModelTests
         vm.CommandInput = "syslog live";
         var execution = vm.ExecuteCommandCommand.ExecuteAsync(null);
         stream.Should().NotBeNull();
-        stream!("line from device");
-        await Task.Delay(250);
-        vm.ShellOutput.Should().NotContain("line from device");
-        vm.IsOutputPaused = false;
-        vm.ShellOutput.Should().Contain("line from device");
-        vm.StopCommandCommand.Execute(null);
-        await execution;
+        try
+        {
+            postCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            stream!("line from device");
+            await postCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            vm.ShellOutput.Should().NotContain("line from device");
+            vm.IsOutputPaused = false;
+            vm.ShellOutput.Should().Contain("line from device");
+        }
+        finally
+        {
+            vm.StopCommandCommand.Execute(null);
+            await execution.WaitAsync(TimeSpan.FromSeconds(10));
+        }
         vm.StatusMessage.Should().Be("Stopped");
     }
 }

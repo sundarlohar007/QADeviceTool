@@ -10,6 +10,7 @@ namespace LogPro;
 public partial class App : Application
 {
     private static readonly string EarlyLogPath = Path.Combine(Helpers.PathHelper.GetAppDataDirectory(), "startup-debug.log");
+    private Mutex? _runningMutex;
     private const long EarlyLogMaxBytes = 1024 * 1024; // 1 MiB cap; truncate-on-roll instead of unbounded growth.
 
     static App()
@@ -46,17 +47,27 @@ public partial class App : Application
             if (ex != null)
             {
                 logLine += $"EXCEPTION: {ex.GetType().Name}\nMESSAGE: {SecurityHelper.RedactSensitiveText(ex.Message)}\n" +
-                           $"STACK TRACE:\n{SecurityHelper.RedactSensitiveText(ex.StackTrace)}\n\n";
+                           $"STACK TRACE:\n{SecurityHelper.RedactSensitiveText(ex.StackTrace, redactIdentifiers: false)}\n\n";
             }
             File.AppendAllText(EarlyLogPath, logLine);
         }
         catch { /* Cannot log the logging failure */ }
     }
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         EarlyLog("========================================");
         EarlyLog("APP STARTUP ENTERED");
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        if (await Services.UpdateBootstrap.RunAsync(e.Args)) return;
+        if (Mutex.TryOpenExisting("LogProUpdating", out var updating))
+        {
+            updating.Dispose();
+            MessageBox.Show("LogPro is installing updates. Start it again when the update finishes.", "LogPro");
+            Shutdown();
+            return;
+        }
+        _runningMutex = new Mutex(false, "LogProRunning");
 
         // Register global exception handlers BEFORE any window/ViewModel creation
         DispatcherUnhandledException += App_DispatcherUnhandledException;
@@ -81,47 +92,17 @@ public partial class App : Application
         // Ensure native DLL paths are initialized for iOS tools
         ToolResolver.InitializeNativePaths();
 
-        // Start tool verification in background (non-blocking).
-        // Verification uses cached results when files haven't changed (§7.1).
-        // If verification fails, we log a warning and fall back to system-PATH tools
-        // instead of crashing — auto-updates may have legitimately changed tool files.
-        _ = Task.Run(async () =>
+        // Verify the installed payload before services resolve any executable.
+        // Never regenerate trust metadata from an unverified installation.
+        try
         {
-            try
-            {
-                var ok = await ToolResolver.VerifyBundledToolsAsync(requireManifest: false, requireTools: false).ConfigureAwait(false);
-                if (!ok)
-                {
-                    EarlyLog("WARNING: bundled tool integrity verification failed; falling back to system PATH tools");
-                    // Attempt to regenerate the manifest from the current tools on disk
-                    try
-                    {
-                        var toolsDir = ToolResolver.ToolsDirectory;
-                        var manifestPath = System.IO.Path.Combine(AppContext.BaseDirectory, LogPro.Services.ToolManifest.DefaultFileName);
-                        if (System.IO.Directory.Exists(toolsDir))
-                        {
-                            await LogPro.Services.ToolManifest.WriteAsync(toolsDir, manifestPath).ConfigureAwait(false);
-                            // Re-verify with the freshly written manifest
-                            ok = await ToolResolver.VerifyBundledToolsAsync(requireManifest: false, requireTools: false).ConfigureAwait(false);
-                            if (ok) EarlyLog("Manifest regenerated and verification passed");
-                            else EarlyLog("WARNING: verification still failed after manifest regeneration");
-                        }
-                    }
-                    catch (Exception regenEx)
-                    {
-                        EarlyLog("Manifest regeneration failed (may lack write permission to app directory)", regenEx);
-                    }
-                }
-                else
-                {
-                    EarlyLog("Bundled tool integrity verification passed");
-                }
-            }
-            catch (Exception ex)
-            {
-                EarlyLog("WARNING: tool verification threw an exception; continuing with system PATH tools", ex);
-            }
-        });
+            if (!await ToolResolver.VerifyBundledToolsAsync(requireManifest: true, requireTools: false))
+                EarlyLog("Bundled tool verification failed. A verified installer repair is required.");
+        }
+        catch (Exception ex)
+        {
+            EarlyLog("Bundled tool verification failed", ex);
+        }
 
         // One-time branding migration: %LOCALAPPDATA%\QAQCDeviceTool -> LogPro.
         // Must precede PreferencesService static init (below) so settings load from the new path.
@@ -153,6 +134,7 @@ public partial class App : Application
             try { Services.AppLogger.Log.Fatal(vmEx, "MainViewModel creation failed"); } catch { /* logger may not be ready */ }
         }
         mainWindow.Show();
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
 
         EarlyLog("Base OnStartup completed, initializing services...");
 
@@ -266,6 +248,7 @@ public partial class App : Application
             try { disposable.Dispose(); } catch (Exception ex) { EarlyLog("MainViewModel cleanup failed", ex); }
         }
         Services.ProcessManager.Instance.KillAllTrackedProcesses();
+        _runningMutex?.Dispose();
         NLog.LogManager.Shutdown();
         base.OnExit(e);
     }
@@ -295,7 +278,7 @@ public partial class App : Application
             while (current != null && depth < 5)
             {
                 sb.AppendLine($"[{depth}] {current.GetType().FullName}: {SecurityHelper.RedactSensitiveText(current.Message)}");
-                sb.AppendLine(SecurityHelper.RedactSensitiveText(current.StackTrace));
+                sb.AppendLine(SecurityHelper.RedactSensitiveText(current.StackTrace, redactIdentifiers: false));
                 sb.AppendLine();
                 current = current.InnerException;
                 depth++;

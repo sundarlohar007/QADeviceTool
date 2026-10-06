@@ -6,6 +6,7 @@ namespace LogPro.Services;
 /// <summary>Tracks spawned tool processes and kills them on exit (de-static slice, A7).</summary>
 public interface IProcessManager
 {
+    bool HasRunningProcesses => true;
     void TrackProcess(Process process);
     void KillAllTrackedProcesses();
 }
@@ -19,6 +20,8 @@ public sealed class ProcessManager : IProcessManager
     public static IProcessManager Instance { get; set; } = new ProcessManager();
 
     private readonly ConcurrentDictionary<int, Process> _trackedProcesses = new();
+
+    public bool HasRunningProcesses => !_trackedProcesses.IsEmpty;
 
     public void TrackProcess(Process process)
     {

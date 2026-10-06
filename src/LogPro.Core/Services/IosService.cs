@@ -21,15 +21,41 @@ namespace LogPro.Services;
 public class IosService : IIosService
 {
     private sealed record ToolSelection(string Exe, bool IsModuleInvocation, string ToolKind, ToolLauncherResult ProbeResult);
-    private static readonly Lazy<Task<ToolSelection>> SelectedTool = new(SelectToolAsync);
+    private static readonly object SelectionLock = new();
+    private static Task<ToolSelection>? _selection;
+    private static DateTime _selectionAttempt;
 
-    private const int DefaultTimeoutMs = 15000;
-    private const int InfoTimeoutMs = 10000;
+    internal static void ResetToolSelection()
+    {
+        lock (SelectionLock) _selection = null;
+    }
+
+    private static Task<ToolSelection> GetToolAsync()
+    {
+        lock (SelectionLock)
+        {
+            if (_selection == null || (_selection.IsCompleted &&
+                (!_selection.IsCompletedSuccessfully || !_selection.Result.ProbeResult.Success) &&
+                DateTime.UtcNow - _selectionAttempt > TimeSpan.FromSeconds(30)))
+            {
+                _selectionAttempt = DateTime.UtcNow;
+                _selection = SelectToolAsync();
+            }
+            return _selection;
+        }
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Checked, DeviceInfo Device)> _readiness = new();
+    private const int DefaultTimeoutMs = 45000;
+    private const int InfoTimeoutMs = 45000;
     private const int InstallTimeoutMs = 600000;
     private const int CliProbeTimeoutMs = 45000;
 
     private static async Task<ToolSelection> SelectToolAsync()
     {
+        if (!ToolResolver.BundledToolsTrusted)
+            return new ToolSelection("", false, "blocked", new ToolLauncherResult
+            { Error = "Bundled iOS tool failed verification. Repair LogPro using a verified installer." });
         var bundled = ResolveBundledExe();
         var systemPython = ResolveSystemPython();
         ToolLauncherResult? bundledProbe = null;
@@ -86,7 +112,8 @@ public class IosService : IIosService
             return new ToolLauncherResult { Success = false, Error = "Blocked by LogPro offline security policy." };
         if (string.IsNullOrWhiteSpace(subcommand) || subcommand.Any(c => c is '\r' or '\n'))
             return new ToolLauncherResult { Success = false, Error = "Invalid iOS command." };
-        var tool = await SelectedTool.Value.ConfigureAwait(false);
+        var tool = await GetToolAsync().ConfigureAwait(false);
+        if (!tool.ProbeResult.Success) return tool.ProbeResult;
         return await ToolLauncher.RunAsync(tool.Exe, BuildCommandArgs(tool.IsModuleInvocation, udid, subcommand), timeoutMs, outputCallback, cancellationToken, forwardErrorToCallback).ConfigureAwait(false);
     }
 
@@ -99,7 +126,8 @@ public class IosService : IIosService
 
     private async Task<System.Diagnostics.Process?> StartLongAsync(string? udid, string subcommand, bool drainStdout = true)
     {
-        var tool = await SelectedTool.Value.ConfigureAwait(false);
+        var tool = await GetToolAsync().ConfigureAwait(false);
+        if (!tool.ProbeResult.Success) throw new InvalidOperationException(tool.ProbeResult.Error);
         return ToolLauncher.StartLongRunning(tool.Exe, BuildCommandArgs(tool.IsModuleInvocation, udid, subcommand), drainStdout: drainStdout);
     }
 
@@ -111,7 +139,7 @@ public class IosService : IIosService
     {
         try
         {
-            var tool = await SelectedTool.Value.ConfigureAwait(false);
+            var tool = await GetToolAsync().ConfigureAwait(false);
             var version = tool.ProbeResult.Success ? await RunAsync(null, "version", CliProbeTimeoutMs).ConfigureAwait(false) : tool.ProbeResult;
             var statusMsg = tool.ProbeResult.Success && version.Success
                 ? $"Ready — {tool.ToolKind}"
@@ -182,6 +210,21 @@ public class IosService : IIosService
             AppLogger.Log.Error(ex, "[IosService] GetConnectedDevicesAsync failed");
             return (false, devices);
         }
+        var present = devices.Select(d => d.Serial).ToHashSet();
+        foreach (var serial in _readiness.Keys.Where(k => !present.Contains(k))) _readiness.TryRemove(serial, out _);
+        await Task.WhenAll(devices.Select(async device =>
+        {
+            if (_readiness.TryGetValue(device.Serial, out var cached) &&
+                DateTime.UtcNow - cached.Checked < TimeSpan.FromSeconds(cached.Device.ConnectionState == DeviceConnectionState.Online ? 60 : 10))
+            {
+                device.ConnectionState = cached.Device.ConnectionState;
+                device.Name = cached.Device.Name;
+                device.OsVersion = cached.Device.OsVersion;
+                return;
+            }
+            await GetDeviceDetailsAsync(device).ConfigureAwait(false);
+            _readiness[device.Serial] = (DateTime.UtcNow, device.WithTemporaryUnavailable(false));
+        })).ConfigureAwait(false);
         return (true, devices);
     }
 
@@ -192,12 +235,14 @@ public class IosService : IIosService
             var result = await RunAsync(device.Serial, "lockdown info", InfoTimeoutMs).ConfigureAwait(false);
             if (!result.Success)
             {
+                device.ConnectionState = DeviceConnectionState.Offline;
                 if ((result.Error ?? "").Contains("trust", StringComparison.OrdinalIgnoreCase) ||
                     (result.Error ?? "").Contains("paired", StringComparison.OrdinalIgnoreCase))
                     device.ConnectionState = DeviceConnectionState.PendingTrust;
                 return device;
             }
 
+            device.ConnectionState = DeviceConnectionState.Online;
             ParseLockdownInfo(result.Output ?? "", device);
             if (string.IsNullOrEmpty(device.Name)) device.Name = device.Model ?? "iOS Device";
         }
@@ -257,11 +302,13 @@ public class IosService : IIosService
             return null;
         try
         {
+            var ready = await RunAsync(udid, "lockdown info", InfoTimeoutMs).ConfigureAwait(false);
+            if (!ready.Success) throw new InvalidOperationException($"iOS is not ready for logging: {GetFailureMessage(ready)}. Unlock the device and accept Trust This Computer.");
             // syslog live streams to stdout by default; SessionService reads stdout and
             // writes the file itself. Using --out would bypass the capture pipeline entirely.
             return await StartLongAsync(udid, "syslog live", drainStdout: false).ConfigureAwait(false);
         }
-        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] StartLogCapture failed"); return null; }
+        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] StartLogCapture failed"); throw; }
     }
 
     public async Task<bool> CaptureScreenshotAsync(string udid, string outputPath)

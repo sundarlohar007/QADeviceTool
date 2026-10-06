@@ -1,0 +1,20 @@
+LogPro for Windows
+
+ADB, scrcpy, the complete pymobiledevice3 runtime, and .NET are included.
+Setup checks compatible verified LogPro release packages when online. If offline,
+the included tools remain available. A newer LogPro installer is downloaded for
+installation from Settings after setup finishes; setup never runs two installers
+against the same directory at once.
+
+Android USB: enable Developer options and USB debugging, unlock the device, and
+accept the RSA authorization prompt. Some manufacturers require their own Windows
+USB driver. See https://developer.android.com/studio/run/oem-usb .
+
+iOS USB: Apple Mobile Device Service and Apple's USB driver must be installed and
+running. Install Apple's iTunes package if these are missing. Unlock the device
+and choose Trust This Computer. LogPro cannot bypass device trust or install an
+arbitrary OEM/Apple driver for you. Dashboard shows dependency and transport status.
+
+Update checks run periodically when enabled in Settings. Compatible packages are
+downloaded and checked by SHA-256. An Updates ready button opens Settings. Finish
+device operations before installing; Windows may request administrator access.
