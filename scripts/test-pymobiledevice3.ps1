@@ -12,7 +12,9 @@ function Assert-CommandHelp([string[]]$Arguments, [string]$ExpectedText) {
     if ($LASTEXITCODE -ne 0) {
         throw "pymobiledevice3 $($Arguments -join ' ') failed: $output"
     }
-    if ($ExpectedText -and -not $output.Contains($ExpectedText)) {
+    # Typer versions vary the casing of argument metavars (REMOTE_FILE/remote_file).
+    # Assert the command/argument exists without coupling the test to presentation.
+    if ($ExpectedText -and $output.IndexOf($ExpectedText, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
         throw "pymobiledevice3 $($Arguments -join ' ') is missing '$ExpectedText' in its help output."
     }
 }
