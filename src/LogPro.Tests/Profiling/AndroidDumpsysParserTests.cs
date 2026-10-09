@@ -9,7 +9,7 @@ public class SurfaceFlingerLatencyParserTests
         var sb = new System.Text.StringBuilder();
         sb.AppendLine(refreshNs.ToString(System.Globalization.CultureInfo.InvariantCulture));
         foreach (var (a, s, p) in frames)
-            sb.AppendLine($"{a}\t{s}\t{p}");
+            sb.AppendLine($"{a}\t{p}\t{s}");
         return sb.ToString();
     }
 

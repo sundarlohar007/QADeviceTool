@@ -7,6 +7,33 @@ namespace LogPro.Tests.ViewModels;
 
 public class DeviceViewModelTests
 {
+    [Fact]
+    public async Task HiddenTab_DefersDetails_AndCancelsQueryWhenLeaving()
+    {
+        var monitor = new Mock<IDeviceMonitorService>();
+        monitor.Setup(x => x.CurrentDevices).Returns(new List<DeviceInfo> { Device("A") });
+        var adb = new Mock<IAdbService>();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        adb.As<ICancellableDeviceQueries>().Setup(x => x.GetDeviceDetailsAsync(It.IsAny<DeviceInfo>(), It.IsAny<CancellationToken>()))
+            .Returns(async (DeviceInfo device, CancellationToken token) =>
+            {
+                entered.TrySetResult();
+                try { await Task.Delay(Timeout.Infinite, token); }
+                catch (OperationCanceledException) { cancelled.TrySetResult(); throw; }
+                return device;
+            });
+        using var isolated = new IsolatedPreferences();
+        using var vm = new DeviceViewModel(adb.Object, new Mock<IIosService>().Object, new Mock<IScrcpyService>().Object,
+            monitor.Object, new Mock<ISessionService>().Object, new ImmediateUiDispatcher(), isActive: false);
+        vm.SelectedDevice = vm.Devices[0];
+        entered.Task.IsCompleted.Should().BeFalse();
+        vm.SetActive(true);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        vm.SetActive(false);
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
     private static DeviceInfo Device(string serial, DevicePlatform platform = DevicePlatform.Android) =>
         new() { Serial = serial, Name = serial, Platform = platform, ConnectionState = DeviceConnectionState.Online };
 

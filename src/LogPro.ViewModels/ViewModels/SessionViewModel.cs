@@ -27,6 +27,14 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private readonly BugReportService _bugReportService;
     private int _pendingLogUiUpdates;
     private long _displaySkipped;
+    private readonly CancellationTokenSource _recoveryCts = new();
+    private readonly Dictionary<string, int> _recoveryAttempts = new();
+    private readonly HashSet<string> _manualStops = new();
+    private readonly HashSet<string> _recovering = new();
+    private readonly SemaphoreSlim _recordingGate = new(1, 1);
+    private readonly System.Threading.Timer _healthTimer;
+    private int _healthUiPending;
+    private bool _recordingShuttingDown;
 
     // ── Log Viewer Properties ──
     public BulkObservableCollection<LogEntry> LogEntries { get; } = new();
@@ -51,9 +59,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         {
             if (SelectedSession == null) return "No session selected";
             var stats = _sessionService.GetCaptureStatistics(SelectedSession.Id);
-            return $"Captured {SelectedSession.LogLineCount:N0} | showing {LogEntriesView.Count:N0}" +
+            return (IsScreenRecording ? "Screen recording | " : "Screen recording off | ") + $"Saved {SelectedSession.LogLineCount:N0} | showing {LogEntriesView.Count:N0}" +
                 (SelectedSession.Status == SessionStatus.Capturing
                     ? $" | pending {stats.PendingLines:N0} | display skipped {stats.DroppedLines + Interlocked.Read(ref _displaySkipped):N0}" : string.Empty) +
+                (SelectedSession.Status == SessionStatus.Stopped ? (SelectedSession.CaptureComplete ? " | saved completely" : " | incomplete: " + SelectedSession.CaptureError) : string.Empty) +
+                (SelectedSession.LastLogUtc is { } last ? $" | last line {(DateTime.UtcNow - last).TotalSeconds:N0}s ago" : string.Empty) +
+                (!string.IsNullOrEmpty(SelectedSession.StopReason) ? " | stopped: " + SelectedSession.StopReason : "") +
+                (SelectedSession.InterruptionCount > 0 ? $" | interruptions {SelectedSession.InterruptionCount} (possible gaps)" : "") +
                 (IsPaused ? " | display paused" : string.Empty) +
                 (string.IsNullOrEmpty(SelectedSession.CaptureNotice) ? "" : " | " + SelectedSession.CaptureNotice);
         }
@@ -157,12 +169,27 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _dispatcher = dispatcher ?? UiServices.Dispatcher;
 
         InitializeLogLevelFilters();
+        _filter = CreateFilter();
 
         _deviceMonitor.DevicesChanged += OnDevicesChanged;
         _deviceMonitor.DeviceConnected += OnDeviceConnected;
         _deviceMonitor.DeviceDisconnected += OnDeviceDisconnected;
         _sessionService.CaptureStarted += OnCaptureStarted;
         _sessionService.CaptureStopped += OnCaptureStopped;
+        _healthTimer = new System.Threading.Timer(_ =>
+        {
+            if (Volatile.Read(ref _disposed) != 0 || Interlocked.Exchange(ref _healthUiPending, 1) != 0) return;
+            _dispatcher.Post(() =>
+            {
+                try
+                {
+                    if (Volatile.Read(ref _disposed) != 0) return;
+                    SelectedSession?.RefreshDuration();
+                    OnPropertyChanged(nameof(CaptureHealthText));
+                }
+                finally { Interlocked.Exchange(ref _healthUiPending, 0); }
+            });
+        }, null, 1000, 1000);
 
         // Populate device list from current state (devices may already be connected)
         var currentDevices = _deviceMonitor.CurrentDevices;
@@ -174,6 +201,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         try { LoadSessions(); } catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionVM] LoadSessions failed"); }
 
         _crashDetector.CrashDetected += OnCrashDetected;
+        if (_sessionService is SessionService core) core.CaptureBatchReceived += OnCaptureBatch;
     }
 
     private void OnCrashDetected(CrashDetector.CrashEvent crash)
@@ -240,10 +268,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// </summary>
     private void OnDeviceConnected(DeviceInfo device)
     {
-        if (!AutoCapture || device.ConnectionState != DeviceConnectionState.Online) return;
+        if (!AutoCapture || !device.IsReady || Volatile.Read(ref _disposed) != 0) return;
 
         _dispatcher.Post(async () =>
         {
+            if (Volatile.Read(ref _disposed) != 0 || !AutoCapture || _manualStops.Contains(device.Serial)) return;
+            var interrupted = Sessions.FirstOrDefault(s => s.DeviceSerial == device.Serial && s.Platform == device.Platform && s.StopReason is "stream-exit" or "connection-lost");
+            if (interrupted != null) { await RecoverCaptureAsync(interrupted); return; }
             // Prevent re-entrant auto-capture from rapid DeviceConnected events
             lock (_autoCaptureLock)
             {
@@ -308,6 +339,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 var stoppedSession = _sessionService.GetActiveSessionForDevice(device.Serial);
                 if (stoppedSession != null)
                 {
+                    stoppedSession.StopReason = "connection-lost";
                     _sessionService.StopCapture(stoppedSession);
                     if (SelectedSession?.Id == stoppedSession.Id)
                         IsCapturing = false;
@@ -373,11 +405,37 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             if (SelectedSession?.Id == session.Id)
             {
                 IsCapturing = false;
-                if (!string.IsNullOrWhiteSpace(session.CaptureError)) StatusMessage = session.CaptureError;
+                StatusMessage = session.CaptureComplete ? $"Stopped. {session.LogLineCount:N0} lines saved." : session.CaptureError;
             }
             OnPropertyChanged(nameof(CaptureHealthText));
             OnPropertyChanged(nameof(SelectedSessionDetails));
+            if (AutoCapture && session.StopReason is "stream-exit" or "connection-lost") _ = RecoverCaptureAsync(session);
         });
+    }
+
+    private async Task RecoverCaptureAsync(LogSession session)
+    {
+        if (_manualStops.Contains(session.DeviceSerial) || !_recovering.Add(session.DeviceSerial)) return;
+        var revision = Interlocked.Read(ref session.StopRevision);
+        try
+        {
+            while (_recoveryAttempts.GetValueOrDefault(session.DeviceSerial) < 3)
+            {
+                var attempt = _recoveryAttempts.GetValueOrDefault(session.DeviceSerial) + 1;
+                _recoveryAttempts[session.DeviceSerial] = attempt;
+                StatusMessage = $"Log stream interrupted. Recovery attempt {attempt}/3 pending.";
+                await Task.Delay(TimeSpan.FromSeconds(2 * attempt), _recoveryCts.Token);
+                await _sessionService.WaitForCaptureStopAsync(session);
+                if (!AutoCapture || Volatile.Read(ref _disposed) != 0 || _manualStops.Contains(session.DeviceSerial) || revision != Interlocked.Read(ref session.StopRevision)) return;
+                if (!_deviceMonitor.CurrentDevices.Any(d => d.Serial == session.DeviceSerial && d.Platform == session.Platform && d.IsReady)) continue;
+                if (await _sessionService.StartCaptureAsync(session, session.Buffer, session.Format))
+                { StatusMessage = "Capture resumed. The interruption is recorded in the session; device logs may contain a gap."; return; }
+            }
+            StatusMessage = "Recovery paused after 3 attempts. Check USB/trust, then start capture manually.";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "Capture auto-recovery failed"); }
+        finally { _recovering.Remove(session.DeviceSerial); }
     }
 
     [RelayCommand]
@@ -414,6 +472,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 NewSessionName = string.Empty;
             }
 
+            _recoveryAttempts.Remove(device.Serial);
+            _manualStops.Remove(device.Serial);
             var captureSession = SelectedSession!;
             var started = await _sessionService.StartCaptureAsync(captureSession, SelectedLogBuffer, SelectedLogFormat);
             if (started)
@@ -464,181 +524,74 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CaptureHealthText));
     }
 
+    private long _lastDisplayedSequence;
+    private void OnCaptureBatch(CaptureBatch batch)
+        => ReceiveLogBatch(batch.SessionId, batch.Lines.Select(l => l.Text).ToArray(), batch.Lines.Select(l => l.Sequence).ToArray());
+
     private void OnLogBatchReceived(string sessionId, string batch)
     {
+        if (_sessionService is SessionService) return; // The concrete service supplies sequence-aware batches.
+        ReceiveLogBatch(sessionId, SplitLogLines(batch), null);
+    }
+
+    private void ReceiveLogBatch(string sessionId, string[] lines, long[]? sequences)
+    {
         if (Volatile.Read(ref _disposed) != 0 || SelectedSession?.Id != sessionId) return;
-        var lines = batch.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         if (Interlocked.Increment(ref _pendingLogUiUpdates) > 4)
         {
             Interlocked.Decrement(ref _pendingLogUiUpdates);
             Interlocked.Add(ref _displaySkipped, lines.Length);
-            return; // The full capture remains on disk; never let UI work grow without bound.
+            return;
         }
-        // SessionService delivers on its background flush thread. Parse before dispatching.
-        var rawMode = IsRawMode;
-        var dispatched = false;
         try
         {
-            var entries = lines.Select(line => ParseLogLine(line, rawMode)).ToList();
+            var entries = lines.Select((line, i) =>
+            {
+                LogEntry entry;
+                lock (_parserLock) entry = _liveParser.Parse(line);
+                entry.Sequence = sequences?[i] ?? 0;
+                return entry;
+            }).ToList();
+            var filter = Volatile.Read(ref _filter);
+            var accepted = entries.Where(e => filter.Matches(e, e.IsBookmarked)).ToHashSet();
             _dispatcher.Post(() =>
             {
-                dispatched = true;
                 try
                 {
                     if (Volatile.Read(ref _disposed) != 0 || SelectedSession?.Id != sessionId) return;
-                    for (var i = 0; i < lines.Length; i++)
-                        _crashDetector.ScanLine(lines[i], LogEntries.Count + i, SelectedSession.Platform);
+                    if (sequences != null) entries = entries.Where(e => e.Sequence > _lastDisplayedSequence).ToList();
+                    if (entries.Count > 0 && sequences != null) _lastDisplayedSequence = entries[^1].Sequence;
                     LogEntries.AddRange(entries);
-                    if (!IsPaused) LogEntriesView.AddRange(entries.Where(FilterLogEntry));
-                    if (LogEntries.Count > 200000) TrimLogEntries(150000);
-                    if (!IsPaused) ScrollToEndRequested?.Invoke();
+                    if (!IsPaused)
+                    {
+                        if (ReferenceEquals(filter, _filter))
+                        {
+                            var matching = entries.Where(accepted.Contains).ToArray();
+                            LogEntriesView.AddRange(matching);
+                            if (_filterPending) _filterArrivals.AddRange(matching);
+                            if (filter.Error != null) StatusMessage = filter.Error;
+                        }
+                        else RebuildFilteredView();
+                    }
+                    if (LogEntries.Count > 20000) TrimLogEntries(15000);
+                    CrashCount = SelectedSession.Crashes.CrashCount;
+                    HasCrashAlert = CrashCount > 0;
+                    SelectedSession.RefreshDuration();
+                    if (!IsPaused && entries.Count > 0) ScrollToEndRequested?.Invoke();
                     OnPropertyChanged(nameof(CaptureHealthText));
                 }
                 finally { Interlocked.Decrement(ref _pendingLogUiUpdates); }
             });
         }
-        catch
-        {
-            if (!dispatched) Interlocked.Decrement(ref _pendingLogUiUpdates);
-            throw;
-        }
+        catch { Interlocked.Decrement(ref _pendingLogUiUpdates); throw; }
     }
 
-    private LogEntry ParseLogLine(string rawLine, bool? rawMode = null)
+    private static string[] SplitLogLines(string text)
     {
-        var entry = new LogEntry { RawLine = rawLine, Message = rawLine, Level = LogLevel.Unknown };
-        entry.Level = DetectLogLevel(rawLine);
-
-        if (!(rawMode ?? IsRawMode))
-        {
-            try
-            {
-                var android = _logcatStructuredRx.Match(rawLine);
-                if (android.Success)
-                {
-                    entry.Timestamp = android.Groups["timestamp"].Value;
-                    entry.Tag = android.Groups["tag"].Value.Trim();
-                    entry.Message = android.Groups["message"].Value;
-                }
-                else if (rawLine.StartsWith("["))
-                {
-                    int closeBracket = rawLine.IndexOf(']');
-                    if (closeBracket > 1)
-                    {
-                        entry.Timestamp = rawLine.Substring(1, closeBracket - 1);
-                        entry.Message = rawLine.Substring(closeBracket + 1).TrimStart();
-                    }
-                }
-            }
-            catch (Exception ex) { Services.AppLogger.Log.Debug(ex, "[SessionViewModel] Parse failed, keeping raw message"); }
-        }
-        return entry;
-    }
-
-    private static readonly Regex _logcatStructuredRx = new(
-        @"^(?<timestamp>\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+\d+\s+\d+\s+[VDIWEFA]\s+(?<tag>[^:]+):\s*(?<message>.*)$",
-        RegexOptions.Compiled);
-
-    // Android threadtime format: "MM-DD HH:MM:SS.mmm  PID  TID L Tag: msg"
-    //   level letter sits between TID and Tag, separated by single spaces.
-    private static readonly System.Text.RegularExpressions.Regex _logcatThreadtimeRx =
-        new(@"^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+([VDIWEFA])\s",
-            System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    // Android brief/tag format: "L/Tag(pid): msg"  — level letter at index 0, slash at index 1.
-    private static readonly System.Text.RegularExpressions.Regex _logcatBriefRx =
-        new(@"^([VDIWEFA])/[A-Za-z0-9_\.\-]+",
-            System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    // iOS syslog (pymobiledevice3) emits Apple os_log style:
-    //   "<TS> <host> <process>[<pid>] <<Level>>: msg"   — level inside angle brackets
-    //   "<TS> ... <Level>: msg"                         — bare bracket-less level token
-    private static readonly System.Text.RegularExpressions.Regex _iosSyslogAngleRx =
-        new(@"<(Default|Info|Notice|Debug|Error|Fault|Warning)>",
-            System.Text.RegularExpressions.RegexOptions.Compiled |
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-    // Bracketed leading level: "[ERROR] msg" / "[E] msg".
-    private static readonly System.Text.RegularExpressions.Regex _bracketedLevelRx =
-        new(@"^\s*\[(?<lvl>FATAL|FTL|ERROR|ERR|WARNING|WARN|INFO|DEBUG|DBG|TRACE|VERBOSE|VRB|F|E|W|I|D|V)\]",
-            System.Text.RegularExpressions.RegexOptions.Compiled |
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-    private static LogLevel DetectLogLevel(string rawLine)
-    {
-        if (string.IsNullOrEmpty(rawLine))
-            return LogLevel.Unknown;
-
-        var trimmed = rawLine.TrimStart();
-
-        // 1. Android logcat threadtime — most common live-capture format.
-        var m = _logcatThreadtimeRx.Match(trimmed);
-        if (m.Success) return LetterToLevel(m.Groups[1].Value[0]);
-
-        // 2. Android logcat brief/tag — "E/MyTag(123): msg".
-        m = _logcatBriefRx.Match(trimmed);
-        if (m.Success) return LetterToLevel(m.Groups[1].Value[0]);
-
-        // 3. iOS syslog with <Level> tag.
-        m = _iosSyslogAngleRx.Match(trimmed);
-        if (m.Success) return AppleOsLogToLevel(m.Groups[1].Value);
-
-        // 4. Bracketed leading level.
-        m = _bracketedLevelRx.Match(trimmed);
-        if (m.Success) return TokenToLevel(m.Groups["lvl"].Value);
-
-        // 5. Anchored token at line start (avoid scanning the whole payload — that
-        //    misclassifies messages that merely *contain* the word "info" / "error").
-        var prefix = trimmed.Length > 16 ? trimmed.Substring(0, 16).ToUpperInvariant() : trimmed.ToUpperInvariant();
-        if (StartsWithToken(prefix, "FATAL") || StartsWithToken(prefix, "FTL")) return LogLevel.Fatal;
-        if (StartsWithToken(prefix, "ERROR") || StartsWithToken(prefix, "ERR")) return LogLevel.Error;
-        if (StartsWithToken(prefix, "WARNING") || StartsWithToken(prefix, "WARN")) return LogLevel.Warning;
-        if (StartsWithToken(prefix, "INFO")) return LogLevel.Info;
-        if (StartsWithToken(prefix, "DEBUG") || StartsWithToken(prefix, "DBG")) return LogLevel.Debug;
-        if (StartsWithToken(prefix, "TRACE") || StartsWithToken(prefix, "VERBOSE") || StartsWithToken(prefix, "VRB")) return LogLevel.Verbose;
-
-        return LogLevel.Unknown;
-    }
-
-    private static LogLevel LetterToLevel(char c) => c switch
-    {
-        'F' or 'A' => LogLevel.Fatal, // 'A' = Assert in some Android logcat builds
-        'E' => LogLevel.Error,
-        'W' => LogLevel.Warning,
-        'I' => LogLevel.Info,
-        'D' => LogLevel.Debug,
-        'V' => LogLevel.Verbose,
-        _ => LogLevel.Unknown
-    };
-
-    private static LogLevel AppleOsLogToLevel(string token) => token.ToUpperInvariant() switch
-    {
-        "FAULT" => LogLevel.Fatal,
-        "ERROR" => LogLevel.Error,
-        "WARNING" => LogLevel.Warning,
-        "NOTICE" or "DEFAULT" or "INFO" => LogLevel.Info,
-        "DEBUG" => LogLevel.Debug,
-        _ => LogLevel.Unknown
-    };
-
-    private static LogLevel TokenToLevel(string token) => token.ToUpperInvariant() switch
-    {
-        "FATAL" or "FTL" or "F" => LogLevel.Fatal,
-        "ERROR" or "ERR" or "E" => LogLevel.Error,
-        "WARNING" or "WARN" or "W" => LogLevel.Warning,
-        "INFO" or "I" => LogLevel.Info,
-        "DEBUG" or "DBG" or "D" => LogLevel.Debug,
-        "TRACE" or "VERBOSE" or "VRB" or "V" => LogLevel.Verbose,
-        _ => LogLevel.Unknown
-    };
-
-    private static bool StartsWithToken(string upper, string token)
-    {
-        if (!upper.StartsWith(token)) return false;
-        // ensure it's a token boundary (next char is non-alpha or end of string)
-        if (upper.Length == token.Length) return true;
-        var next = upper[token.Length];
-        return !(char.IsLetter(next) || next == '_');
+        using var reader = new StringReader(text);
+        var lines = new List<string>();
+        while (reader.ReadLine() is { } line) lines.Add(line);
+        return lines.ToArray();
     }
 
     [RelayCommand]
@@ -648,9 +601,11 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         {
             if (SelectedSession == null) return;
 
+            _manualStops.Add(SelectedSession.DeviceSerial);
+            SelectedSession.StopReason = "requested";
             _sessionService.StopCapture(SelectedSession);
             IsCapturing = false;
-            StatusMessage = $"[STOP] Stopped. {SelectedSession.LogLineCount} lines captured > {Path.GetFileName(SelectedSession.LogFilePath)}";
+            StatusMessage = "Stopping capture and saving remaining output...";
             OnPropertyChanged(nameof(SelectedSession));
             OnPropertyChanged(nameof(CaptureHealthText));
             OnPropertyChanged(nameof(SelectedSessionDetails));
@@ -820,7 +775,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
             var recording = _lastRecordingSerial == device.Serial &&
                 _lastRecordingSessionId == session?.Id ? _lastRecordingPath : null;
-            var crashes = _crashDetector.DetectedCrashes;
+            var crashes = SelectedSession?.Crashes.DetectedCrashes ?? _crashDetector.DetectedCrashes;
             if (!UiServices.Dialogs.Confirm("Bug Report Preview",
                 $"Device: {device.DisplayName}\nSession: {session?.Name ?? "None"}\n" +
                 $"Includes screenshot, recent logs, crash alerts, device diagnostics" +
@@ -996,8 +951,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     private async Task StartScreenRecordAsync()
     {
+        await _recordingGate.WaitAsync();
         try
         {
+            if (_recordingShuttingDown || Volatile.Read(ref _disposed) != 0) return;
             var session = SelectedSession;
             var device = ResolveArtifactDevice();
             if (device == null)
@@ -1053,6 +1010,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             AppLogger.Log.Error(ex, "[Session] StartScreenRecordAsync failed");
             StatusMessage = $"[!] Screen record error: {ex.Message}";
         }
+        finally { _recordingGate.Release(); }
     }
 
     private async Task MonitorScreenRecordingAsync(string serial)
@@ -1072,8 +1030,17 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         catch (Exception ex) { AppLogger.Log.Debug(ex, "[Session] Recording monitor failed"); }
     }
 
+    public Task FinalizeRecordingAsync()
+    {
+        _recordingShuttingDown = true;
+        AutoCapture = false;
+        _recoveryCts.Cancel();
+        return StopScreenRecordAsync();
+    }
+
     private async Task StopScreenRecordAsync()
     {
+        await _recordingGate.WaitAsync();
         try
         {
             var serial = _screenRecordSerial;
@@ -1109,6 +1076,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             ScreenRecordStatus = string.Empty;
             StatusMessage = $"[!] Screen record stop error: {ex.Message}";
         }
+        finally { _recordingGate.Release(); }
     }
 
     private string? _lastRecordingPath;
@@ -1206,86 +1174,24 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         RebuildFilteredView();
     }
 
-    private bool FilterLogEntry(object obj)
-    {
-        if (obj is not LogEntry entry) return false;
-        if (ShowBookmarksOnly && !entry.IsBookmarked) return false;
-
-        var selectedLevels = SelectedLevels;
-
-        if (selectedLevels.Count > 0 && !selectedLevels.Contains(entry.Level))
-            return false;
-
-        if (!string.IsNullOrWhiteSpace(SearchText))
-        {
-            if (IsRegexSearch)
-            {
-                try
-                {
-                    if (_cachedSearchPattern != SearchText)
-                    {
-                        _cachedSearchPattern = SearchText;
-                        _searchRegexTimedOut = false;
-                        _searchRegexInvalid = false;
-                        _cachedSearchRegex = null;
-                        _cachedSearchRegex = new Regex(SearchText,
-                            RegexOptions.IgnoreCase | RegexOptions.Compiled,
-                            TimeSpan.FromMilliseconds(25));
-                    }
-                    return !_searchRegexTimedOut && !_searchRegexInvalid &&
-                        _cachedSearchRegex?.IsMatch(entry.RawLine) == true;
-                }
-                catch (RegexMatchTimeoutException)
-                {
-                    _searchRegexTimedOut = true;
-                    StatusMessage = "[!] Regex search timed out. Use a simpler expression.";
-                    return false;
-                }
-                catch (ArgumentException)
-                {
-                    _searchRegexInvalid = true;
-                    return false;
-                }
-            }
-
-            return entry.Message.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-                   entry.Tag.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-                   entry.RawLine.Contains(SearchText, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return true;
-    }
-
-    partial void OnIsRegexSearchChanged(bool value)
-    {
-        _cachedSearchPattern = null;
-        RebuildFilteredView();
-    }
-
+    private readonly object _parserLock = new();
+    private LogStreamParser _liveParser = new(LogcatFormat.ThreadTime);
+    private LogFilterSnapshot _filter = new(Enum.GetValues<LogLevel>(), "", false, false);
+    private CancellationTokenSource? _filterCts;
+    private int _filterGeneration;
+    private bool _filterPending;
+    private readonly List<LogEntry> _filterArrivals = new();
+    public Task FilteringTask { get; private set; } = Task.CompletedTask;
+    private LogFilterSnapshot CreateFilter() => new(SelectedLevels, SearchText, IsRegexSearch, ShowBookmarksOnly);
+    partial void OnIsRegexSearchChanged(bool value) => RebuildFilteredView();
     partial void OnShowBookmarksOnlyChanged(bool value) => RebuildFilteredView();
+    // Raw mode changes only the visible row template; no reparsing of retained history.
+    partial void OnIsRawModeChanged(bool value) { }
 
-    partial void OnIsRawModeChanged(bool value)
-    {
-        foreach (var entry in LogEntries)
-        {
-            var parsed = ParseLogLine(entry.RawLine);
-            entry.Timestamp = parsed.Timestamp;
-            entry.Level = parsed.Level;
-            entry.Tag = parsed.Tag;
-            entry.Message = parsed.Message;
-        }
-        RebuildFilteredView();
-    }
-
-    private Regex? _cachedSearchRegex;
-    private string? _cachedSearchPattern;
-    private bool _searchRegexTimedOut;
-    private bool _searchRegexInvalid;
     private CancellationTokenSource? _searchDebounceCts;
 
     partial void OnSearchTextChanged(string value)
     {
-        _cachedSearchPattern = null;
         // FEAT-03: debounce 300ms — avoid re-filtering 100k+ entries on every keystroke
         var oldCts = _searchDebounceCts;
         _searchDebounceCts = new CancellationTokenSource();
@@ -1315,14 +1221,17 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         _fullSearchCts?.Cancel();
         IsShowingFullFileSearch = false;
+        lock (_parserLock) _liveParser = new(value?.Format ?? LogcatFormat.ThreadTime);
+        _lastDisplayedSequence = 0;
+        Interlocked.Exchange(ref _displaySkipped, 0);
         Interlocked.Increment(ref _loadGeneration);
         IsCapturing = value?.Status == SessionStatus.Capturing;
         OnPropertyChanged(nameof(SelectedSessionDetails));
         OnPropertyChanged(nameof(CaptureHealthText));
         IsPaused = false;
         _crashDetector.Clear();
-        CrashCount = 0;
-        HasCrashAlert = false;
+        CrashCount = value?.Crashes.CrashCount ?? 0;
+        HasCrashAlert = CrashCount > 0;
         if (value != null)
         {
             _ = LoadSessionLogSafeAsync(value, Volatile.Read(ref _loadGeneration));
@@ -1388,24 +1297,33 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 if (generation == Volatile.Read(ref _loadGeneration)) StatusMessage = "Loading log...";
             });
             if (Volatile.Read(ref _disposed) != 0) return;
-            var content = await _sessionService.ReadLogContentAsync(session, maxLines: 200000);
+            var snapshot = (_sessionService as SessionService)?.GetLiveSnapshot(session.Id);
+            var content = snapshot == null ? await _sessionService.ReadLogContentAsync(session, maxLines: 20000) : "";
 
             if (Volatile.Read(ref _disposed) != 0 || generation != Volatile.Read(ref _loadGeneration)) return;
-            var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var rawMode = IsRawMode;
-            var parsed = await Task.Run(() => lines.Select(line => ParseLogLine(line, rawMode)).ToList());
+            var lines = snapshot?.Select(l => l.Text).ToArray() ?? SplitLogLines(content);
+            var parser = new LogStreamParser(session.Format);
+            var parsed = await Task.Run(() => lines.Select((line, index) =>
+            {
+                var entry = parser.Parse(line);
+                entry.Sequence = snapshot?[index].Sequence ?? 0;
+                return entry;
+            }).ToList());
 
             await _dispatcher.InvokeAsync(() =>
             {
                 if (generation != Volatile.Read(ref _loadGeneration) || SelectedSession?.Id != session.Id) return;
+                var watermark = snapshot?.LastOrDefault()?.Sequence ?? 0;
+                var newer = snapshot == null ? new List<LogEntry>() : LogEntries.Where(e => e.Sequence > watermark).ToList();
                 LogEntries.Clear();
-                LogEntries.AddRange(parsed);
+                LogEntries.AddRange(parsed.Concat(newer));
+                _lastDisplayedSequence = Math.Max(watermark, newer.LastOrDefault()?.Sequence ?? 0);
                 RebuildFilteredView();
 
-                if (LogEntries.Count > 200000)
-                    TrimLogEntries(150000);
+                if (LogEntries.Count > 20000)
+                    TrimLogEntries(15000);
 
-                StatusMessage = $"Loaded {LogEntries.Count} log entries.";
+                StatusMessage = session.Status == SessionStatus.Capturing ? $"[REC] Live tail: {LogEntries.Count} displayed; full capture remains on disk." : $"Loaded {LogEntries.Count} log entries.";
             });
         }
         catch (Exception ex)
@@ -1432,15 +1350,44 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// <summary>Re-applies the active filter over the whole base collection (used on filter changes).</summary>
     private void RebuildFilteredView()
     {
-        var filtered = new List<LogEntry>();
-        foreach (var entry in LogEntries)
+        _filterCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _filterCts = cts;
+        var generation = ++_filterGeneration;
+        var filter = CreateFilter();
+        Volatile.Write(ref _filter, filter);
+        var snapshot = LogEntries.Select(e => (Entry: e, Bookmarked: e.IsBookmarked)).ToArray();
+        _filterPending = true;
+        _filterArrivals.Clear();
+        FilteringTask = ApplyFilterAsync();
+        async Task ApplyFilterAsync()
         {
-            if (FilterLogEntry(entry))
-                filtered.Add(entry);
+            try
+            {
+                var filtered = await Task.Run(() =>
+                {
+                    var result = new List<LogEntry>();
+                    foreach (var row in snapshot)
+                    {
+                        cts.Token.ThrowIfCancellationRequested();
+                        if (filter.Matches(row.Entry, row.Bookmarked)) result.Add(row.Entry);
+                    }
+                    return result;
+                }, cts.Token).ConfigureAwait(false);
+                await _dispatcher.InvokeAsync(() =>
+                {
+                    if (_disposed != 0 || cts.IsCancellationRequested || generation != _filterGeneration) return;
+                    var retained = LogEntries.ToHashSet();
+                    LogEntriesView.ReplaceAll(filtered.Concat(_filterArrivals).Where(retained.Contains).Distinct());
+                    _filterPending = false;
+                    _filterArrivals.Clear();
+                    if (filter.Error != null) StatusMessage = filter.Error;
+                    OnPropertyChanged(nameof(CaptureHealthText));
+                });
+            }
+            catch (OperationCanceledException) { }
+            finally { await _dispatcher.InvokeAsync(() => { if (ReferenceEquals(_filterCts, cts)) _filterCts = null; }); cts.Dispose(); }
         }
-        LogEntriesView.Clear();
-        LogEntriesView.AddRange(filtered);
-        OnPropertyChanged(nameof(CaptureHealthText));
     }
 
     [RelayCommand]
@@ -1467,15 +1414,17 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             StatusMessage = "Searching complete session file...";
             var matches = await Task.Run(async () =>
             {
-                var results = new List<string>();
+                var results = new List<LogEntry>();
+                var parser = new LogStreamParser(session.Format);
                 await using var stream = new FileStream(session.LogFilePath, FileMode.Open, FileAccess.Read,
                     FileShare.ReadWrite, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
                 using var reader = new StreamReader(stream);
                 while (await reader.ReadLineAsync(token) is { } line)
                 {
+                    var entry = parser.Parse(line);
                     if (regex?.IsMatch(line) ?? line.Contains(query, StringComparison.OrdinalIgnoreCase))
                     {
-                        results.Add(line);
+                        results.Add(entry);
                         if (results.Count == 5000) break;
                     }
                 }
@@ -1485,7 +1434,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 generation != Volatile.Read(ref _loadGeneration)) return;
             IsShowingFullFileSearch = true;
             LogEntries.Clear();
-            LogEntries.AddRange(matches.Select(line => ParseLogLine(line)).ToList());
+            LogEntries.AddRange(matches);
             RebuildFilteredView();
             StatusMessage = matches.Count == 5000
                 ? "Showing first 5,000 file matches. Narrow the search to see more."
@@ -1509,6 +1458,9 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _filterCts?.Cancel();
+        _healthTimer.Dispose();
+        _recoveryCts.Cancel();
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceMonitor.DeviceConnected -= OnDeviceConnected;
@@ -1516,6 +1468,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _sessionService.CaptureStarted -= OnCaptureStarted;
         _sessionService.CaptureStopped -= OnCaptureStopped;
         _crashDetector.CrashDetected -= OnCrashDetected;
+        if (_sessionService is SessionService core) core.CaptureBatchReceived -= OnCaptureBatch;
         if (_isSubscribedToLogBatch)
         {
             _sessionService.LogBatchReceived -= OnLogBatchReceived;

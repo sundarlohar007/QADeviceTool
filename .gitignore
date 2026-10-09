@@ -28,6 +28,7 @@ Thumbs.db
 *.zip
 *.msi
 BenchmarkDotNet.Artifacts/
+**/TestResults/
 
 # Knowledge-graph cache (generated locally)
 graphify-out/

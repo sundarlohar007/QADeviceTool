@@ -37,7 +37,7 @@ public class TierMatrixTests
         for (var i = 0; i < 120 + extraFrames; i++)
         {
             present += ns;
-            sb.AppendLine($"{i * ns:D14}\t{i * ns + 2_000_000:D14}\t{present:D14}");
+            sb.AppendLine($"{i * ns:D14}\t{present:D14}\t{i * ns + 2_000_000:D14}");
         }
         return sb.ToString();
     }

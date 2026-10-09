@@ -148,6 +148,10 @@ public static class SecurityHelper
         if (string.IsNullOrEmpty(text)) return text ?? string.Empty;
 
         var result = text;
+        // Quoted JSON values must be handled before unquoted key=value forms.
+        result = Regex.Replace(result, "(?i)(\"(?:password|passwd|token|access_token|refresh_token|secret|api[_-]?key|authorization)\"\\s*:\\s*)\"(?:\\\\.|[^\"\\\\])*\"", "$1\"[REDACTED]\"", RegexOptions.None, TimeSpan.FromMilliseconds(100));
+        result = Regex.Replace(result, @"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{16}\b", "[DEVICE_ID]");
+
         result = Regex.Replace(result, @"(?i)\b(authorization\s*[:=]\s*bearer\s+|bearer\s+)[^\s,;]+", "$1[REDACTED]");
         result = Regex.Replace(result, @"(?i)\b(password|passwd|token|secret|api[_-]?key|pairing[_ -]?code)\s*[:=]\s*[^\s,;]+", "$1=[REDACTED]");
         result = Regex.Replace(result, @"(?i)([?&](?:token|code|key|password|secret|sig|signature)=)[^&\s]+", "$1[REDACTED]");

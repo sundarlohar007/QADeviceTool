@@ -47,10 +47,8 @@ Grab the latest from the **[Releases page](https://github.com/sundarlohar007/QAD
 | Asset | What it is |
 |---|---|
 | `LogPro_vX.exe` | Windows installer (Inno Setup `.exe` — install once, run) |
-| `LogPro_vX_portable.zip` | Portable build — unzip and run, no installation |
-| `logpro-cli_vX_win-x64.zip` | Headless CLI for CI/scripting |
 
-The Windows installer, portable ZIP, and Windows CLI ZIP contain the tested `adb`, `scrcpy`,
+The Windows installer contains the tested `adb`, `scrcpy`,
 and `pymobiledevice3` tools. Android USB drivers are supplied by Windows/OEMs and are **not**
 redistributed by LogPro. Windows is the only supported host platform; Android and iOS USB devices remain supported.
 For iOS USB devices on Windows, install the classic iTunes package to provide Apple Mobile
@@ -65,11 +63,13 @@ Run `scripts/prepare-windows-tools.ps1 -PublishDirectory publish/app` after publ
 
 ## Windows installation and updates
 
-The installer includes the self-contained .NET application, ADB, scrcpy, and a complete Python/iOS runtime. It checks for newer compatible LogPro packages after copying the bundled baseline. Offline installs retain the bundled tools. `/SKIPUPDATECHECK` disables the installer network check for managed/offline deployments.
+The installer includes the self-contained .NET application, ADB, scrcpy, and a complete Python/iOS runtime. If LogPro is already installed, setup runs its registered uninstaller before copying the new version. Leftover files in the old program directory are moved to `LocalAppData\LogPro\RecoveredInstallFiles` or, for an installation on another drive, beside the old folder with a `.Recovered` suffix; settings, sessions, logs, and other user data under `LocalAppData\LogPro` remain in place. Setup stops if the old uninstaller fails or leftover files cannot be preserved.
+
+During setup, LogPro checks Google's Windows Platform-Tools download, Genymobile's Windows scrcpy release, and PyPI's pymobiledevice3 version. Newer ADB and scrcpy packages are downloaded, checked and installed into `tools` when available. The frozen pymobiledevice3 executable stays at the tested bundled version; setup reports when a newer upstream package needs a compatible Windows build. Offline installs retain the verified bundled tools. Setup also checks for iTunes and Apple Mobile Device Service, with an iOS USB guidance prompt when needed. `/SKIPUPDATECHECK` disables network checks for managed/offline deployments.
 
 The application checks and downloads verified updates at startup and every six hours by default (configurable in Settings). Checks begin only after the local-data notice is accepted. Existing update preferences are preserved. Install Selected defers while device operations are active; tool installation into Program Files opens an elevated Windows updater and closes LogPro gracefully. Start LogPro again after the updater finishes. Rollback is available for each managed tool. Application and embedded .NET updates use the full Windows installer.
 
-Tool updates are complete `LogPro-tool-NAME-VERSION-win-x64.zip` assets from this repository's releases, validated before replacing the previous version. A newer upstream release is not installed until its commands and runtime are validated and published as a compatible package. No system Python installation is required.
+Tool updates use Google's official Windows Platform-Tools archive and Genymobile's official Windows scrcpy release with its published SHA-256 digest. The pymobiledevice3 Python package cannot replace its frozen Windows executable directly, so LogPro reports upstream releases until a tested installer bundles one. No system Python installation is required.
 
 USB readiness distinguishes transport discovery, device authorization/trust, service availability, and tool integrity. For Android, enable USB debugging and accept the RSA prompt. For iOS, unlock the device, accept Trust This Computer, and ensure Apple Mobile Device Service is running. Driver/service installation must use the appropriate manufacturer package.
 

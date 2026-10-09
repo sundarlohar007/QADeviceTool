@@ -9,6 +9,8 @@ using LogPro.Models;
 
 namespace LogPro.Services;
 
+public sealed record NumberedLogLine(long Sequence, string Text);
+public sealed record CaptureBatch(string SessionId, IReadOnlyList<NumberedLogLine> Lines);
 public readonly record struct CaptureStatistics(int PendingLines, long DroppedLines);
 
 /// <summary>
@@ -25,9 +27,12 @@ public class SessionService : ISessionService
     private readonly ConcurrentDictionary<string, Task> _captureStopTasks = new();
     private System.Threading.Timer? _flushTimer;
     private readonly object _flushTimerLock = new();
+    private readonly object _lifecycleLock = new();
+    private readonly HashSet<Task<bool>> _startTasks = new();
     private readonly object _bufferLock = new();
     private string _sessionsRootDirectory;
     private int _shutdownGeneration;
+    private volatile bool _shutdown;
     private const int DisplayQueueLimit = 10000;
 
     /// <summary>
@@ -35,6 +40,12 @@ public class SessionService : ISessionService
     /// The string key is the session Id so consumers can filter to their session.
     /// </summary>
     public event Action<string, string>? LogBatchReceived;
+    public event Action<CaptureBatch>? CaptureBatchReceived;
+    public IReadOnlyList<NumberedLogLine>? GetLiveSnapshot(string sessionId)
+    {
+        if (!_activeCaptures.TryGetValue(sessionId, out var ctx)) return null;
+        lock (ctx.WriterLock) return ctx.RecentLines.ToArray();
+    }
     public event Action<LogSession>? CaptureStarted;
     public event Action<LogSession>? CaptureStopped;
 
@@ -69,11 +80,16 @@ public class SessionService : ISessionService
     }
 
     public LogSession CreateSession(DeviceInfo device, string? customSessionName = null)
+        => CreateSessionAt(device, customSessionName, SessionsRootDirectory);
+
+    public LogSession CreateSessionAt(DeviceInfo device, string? customSessionName, string rootDirectory)
     {
+        if (!PathHelper.TryGetSafeLocalDirectory(rootDirectory, out var safeRoot))
+            throw new ArgumentException("Session output must be a safe local directory.", nameof(rootDirectory));
         var deviceHash = SecurityHelper.HashSerial(device.Serial);
         var sessionName = SecurityHelper.GetSafeSessionName(customSessionName, deviceHash, device.Platform.ToString());
 
-        var sessionDir = PathHelper.CreateSessionDirectory(sessionName, SessionsRootDirectory);
+        var sessionDir = PathHelper.CreateSessionDirectory(sessionName, safeRoot);
         var logFileName = $"{sessionName}_log.txt";
         var logFilePath = Path.Combine(sessionDir, logFileName);
         var folderName = System.IO.Path.GetFileName(sessionDir);
@@ -96,15 +112,36 @@ public class SessionService : ISessionService
     /// <summary>
     /// Starts log capture for a session. Non-blocking.
     /// </summary>
-    public async Task<bool> StartCaptureAsync(LogSession session, LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime)
+    public Task<bool> StartCaptureAsync(LogSession session, LogcatBuffer buffer = LogcatBuffer.Main, LogcatFormat format = LogcatFormat.ThreadTime)
+        => StartCaptureAsync(session, new CaptureOptions(buffer, format, session.TargetPackage ?? PreferencesService.Current.TargetPackageName));
+
+    public Task<bool> StartCaptureAsync(LogSession session, CaptureOptions options, CancellationToken token = default)
     {
+        lock (_lifecycleLock)
+        {
+            if (_shutdown || token.IsCancellationRequested) return Task.FromResult(false);
+            var task = StartCaptureCoreAsync(session, options, token);
+            _startTasks.Add(task);
+            _ = task.ContinueWith(completed => { lock (_lifecycleLock) _startTasks.Remove(completed); }, TaskScheduler.Default);
+            return task;
+        }
+    }
+
+    private async Task<bool> StartCaptureCoreAsync(LogSession session, CaptureOptions options, CancellationToken token)
+    {
+        var buffer = options.Buffer;
+        var format = options.Format;
+        if (_shutdown) return false;
         var generation = Volatile.Read(ref _shutdownGeneration);
-        session.CaptureError = string.Empty;
-        session.CaptureNotice = string.Empty;
+        var stopRevision = Interlocked.Read(ref session.StopRevision);
         await AwaitCaptureStopAsync(session.Id).ConfigureAwait(false);
+        if (_shutdown || token.IsCancellationRequested || stopRevision != Interlocked.Read(ref session.StopRevision) || generation != Volatile.Read(ref _shutdownGeneration)) return false;
         if (_activeCaptures.Values.Any(ctx => ctx.Session.DeviceSerial.Equals(session.DeviceSerial, StringComparison.OrdinalIgnoreCase)))
             return false;
         if (!_startingDevices.TryAdd(session.DeviceSerial, 0)) return false;
+        session.CaptureError = string.Empty;
+        session.CaptureNotice = string.Empty;
+        session.ExitCode = null;
 
         Process? process;
         try
@@ -131,7 +168,7 @@ public class SessionService : ISessionService
             return false;
         }
         await Task.Delay(250).ConfigureAwait(false);
-        if (process.HasExited || generation != Volatile.Read(ref _shutdownGeneration))
+        if (process.HasExited || stopRevision != Interlocked.Read(ref session.StopRevision) || token.IsCancellationRequested || generation != Volatile.Read(ref _shutdownGeneration))
         {
             session.CaptureError = ToolLauncher.GetProcessError(process);
             if (string.IsNullOrWhiteSpace(session.CaptureError)) session.CaptureError = "Capture stopped during startup. Reconnect and authorize the device, then retry.";
@@ -141,7 +178,7 @@ public class SessionService : ISessionService
             return false;
         }
 
-        string targetPackageName = PreferencesService.Current.TargetPackageName;
+        string targetPackageName = options.TargetPackage;
 
         StreamWriter? writer = null;
         StreamWriter? appWriter = null;
@@ -152,6 +189,7 @@ public class SessionService : ISessionService
             if (new FileInfo(session.LogFilePath) is { Length: > 0 })
             {
                 writer.WriteLine("--- SESSION RESTARTED ---");
+                session.LogLineCount++;
             }
             if (session.Platform == DevicePlatform.Android && !string.IsNullOrWhiteSpace(targetPackageName) &&
                 format is (LogcatFormat.Raw or LogcatFormat.Tag or LogcatFormat.Long))
@@ -176,139 +214,181 @@ public class SessionService : ISessionService
         }
 
         var cts = new CancellationTokenSource();
-        var ctx = new CaptureContext(process, writer, appWriter, session, cts, new ConcurrentQueue<string>());
+        var ctx = new CaptureContext(process, writer, appWriter, session, cts, new ConcurrentQueue<NumberedLogLine>());
 
-        // TryAdd: if a capture for this session already exists, clean up and return false
-        if (!_activeCaptures.TryAdd(session.Id, ctx))
+        lock (_lifecycleLock)
         {
-            process.Kill(session.Platform == DevicePlatform.iOS);
-            process.Dispose();
-            writer.Dispose();
-            appWriter?.Dispose();
-            cts.Dispose();
-            _startingDevices.TryRemove(session.DeviceSerial, out _);
-            return false;
-        }
-        _startingDevices.TryRemove(session.DeviceSerial, out _);
-
-        session.EndTime = null;
-        session.Status = SessionStatus.Capturing;
-        session.StartTime = DateTime.Now;
-        SaveSessionMetadata(session);
-
-        // Start batched flush timer (200ms interval) — prevents UI flooding
-        EnsureFlushTimer();
-
-        // Periodic file flush (2s) — writes buffered log data to disk without blocking stdout reads
-        ctx.FlushTask = Task.Run(async () =>
-        {
-            try
+            // TryAdd: if a capture for this session already exists, clean up and return false
+            if (_shutdown || stopRevision != Interlocked.Read(ref session.StopRevision) || token.IsCancellationRequested || !_activeCaptures.TryAdd(session.Id, ctx))
             {
-                while (!cts.Token.IsCancellationRequested)
-                {
-                    await Task.Delay(2000, cts.Token).ConfigureAwait(false);
-                    try { lock (ctx.WriterLock) { if (!ctx.WritersClosed) { writer.Flush(); appWriter?.Flush(); } } }
-                    catch (Exception ex) { FailCapture(session, ex); }
-                }
+                process.Kill(session.Platform == DevicePlatform.iOS);
+                process.Dispose();
+                writer.Dispose();
+                appWriter?.Dispose();
+                cts.Dispose();
+                _startingDevices.TryRemove(session.DeviceSerial, out _);
+                return false;
             }
-            catch (OperationCanceledException) { }
-        }, cts.Token);
 
-        string currentTargetPid = string.Empty;
-        if (appWriter != null && !string.IsNullOrWhiteSpace(targetPackageName))
-        {
-            ctx.PidTask = Task.Run(async () =>
+            session.EndTime = null;
+            session.Status = SessionStatus.Capturing;
+            if (session.LogLineCount == 0) session.StartTime = DateTime.Now;
+            if (session.StopReason is "stream-exit" or "connection-lost")
+            {
+                session.LastResumedUtc = DateTime.UtcNow;
+                AppendCaptureEvent(session, "resumed");
+            }
+            session.StopReason = "";
+            session.CaptureComplete = false;
+            session.Format = format;
+            session.Buffer = buffer;
+            session.TargetPackage = options.TargetPackage;
+            SaveSessionMetadata(session);
+
+            // Start batched flush timer (200ms interval) — prevents UI flooding
+            EnsureFlushTimer();
+
+            // Periodic file flush (2s) — writes buffered log data to disk without blocking stdout reads
+            ctx.FlushTask = Task.Run(async () =>
             {
                 try
                 {
                     while (!cts.Token.IsCancellationRequested)
                     {
-                        try
-                        {
-                            var pid = await _adbService.GetPidFromPackageNameAsync(session.DeviceSerial, targetPackageName).ConfigureAwait(false);
-                            if (currentTargetPid != (pid ?? string.Empty))
-                            {
-                                Volatile.Write(ref currentTargetPid, pid ?? string.Empty);
-                                // Write PID resolution notice only to app-specific log, NOT to main log buffer.
-                                var notice = $"[{DateTime.Now:HH:mm:ss.fff}] PID:{targetPackageName}={pid}";
-                                try { lock (ctx.WriterLock) { if (!ctx.WritersClosed) appWriter.WriteLine(notice); } }
-                                catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to write app log notice"); }
-                            }
-                        }
-                        catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to resolve package PID"); }
-                        await Task.Delay(3000, cts.Token).ConfigureAwait(false);
+                        await Task.Delay(2000, cts.Token).ConfigureAwait(false);
+                        try { lock (ctx.WriterLock) { if (!ctx.WritersClosed) { writer.Flush(); appWriter?.Flush(); } } }
+                        catch (Exception ex) { FailCapture(ctx, ex); }
                     }
                 }
                 catch (OperationCanceledException) { }
             }, cts.Token);
-        }
 
-        // Read output via OutputDataReceived — standard .NET async pattern, no pipe back-pressure
-        process.OutputDataReceived += (_, args) =>
-        {
-            try
+            string currentTargetPid = string.Empty;
+            if (appWriter != null && !string.IsNullOrWhiteSpace(targetPackageName))
             {
-                if (args.Data == null)
+                ctx.PidTask = Task.Run(async () =>
                 {
-                    ctx.OutputCompleted.TrySetResult(true);
-                    return;
-                }
-
-                var line = args.Data;
-                lock (ctx.WriterLock)
-                {
-                    if (!ctx.WritersClosed)
+                    try
                     {
-                        writer.WriteLine(line);
-                        if (appWriter != null && !string.IsNullOrWhiteSpace(currentTargetPid) &&
-                            MatchesLogcatPid(line, Volatile.Read(ref currentTargetPid), format))
-                            appWriter.WriteLine(line);
+                        while (!cts.Token.IsCancellationRequested)
+                        {
+                            try
+                            {
+                                var pid = await _adbService.GetPidFromPackageNameAsync(session.DeviceSerial, targetPackageName).ConfigureAwait(false);
+                                if (currentTargetPid != (pid ?? string.Empty))
+                                {
+                                    Volatile.Write(ref currentTargetPid, pid ?? string.Empty);
+                                    // Write PID resolution notice only to app-specific log, NOT to main log buffer.
+                                    var notice = $"[{DateTime.Now:HH:mm:ss.fff}] PID:{targetPackageName}={pid}";
+                                    try { lock (ctx.WriterLock) { if (!ctx.WritersClosed) appWriter.WriteLine(notice); } }
+                                    catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to write app log notice"); }
+                                }
+                            }
+                            catch (Exception ex) { AppLogger.Log.Debug(ex, "Failed to resolve package PID"); }
+                            await Task.Delay(3000, cts.Token).ConfigureAwait(false);
+                        }
                     }
-                }
+                    catch (OperationCanceledException) { }
+                }, cts.Token);
+            }
 
-                session.LogLineCount++;
-                ctx.Buffer.Enqueue(line);
-                while (ctx.Buffer.Count > DisplayQueueLimit && ctx.Buffer.TryDequeue(out var discardedLine))
-                    Interlocked.Increment(ref ctx.DroppedLines);
-            }
-            catch (Exception ex)
+            // Read output via OutputDataReceived — standard .NET async pattern, no pipe back-pressure
+            process.OutputDataReceived += (_, args) =>
             {
-                Interlocked.Increment(ref ctx.DroppedLines);
-                FailCapture(session, ex);
-            }
-        };
-        PublishCaptureEvent(CaptureStarted, session);
-        // Attach the exit handler before enabling events so a fast tool/device disconnect
-        // cannot leave a capture permanently marked as active.
-        process.Exited += (_, _) =>
-        {
-            _ = Task.Run(() =>
-            {
-                if (_activeCaptures.ContainsKey(session.Id))
+                try
                 {
-                    var error = ToolLauncher.GetProcessError(process);
-                    session.CaptureError = string.IsNullOrWhiteSpace(error)
-                        ? "Device log stream ended unexpectedly. Check the USB connection and reconnect." : error;
-                    StopCapture(session);
-                }
-            });
-        };
-        process.EnableRaisingEvents = true;
-        try { process.BeginOutputReadLine(); }
-        catch (Exception ex) { FailCapture(session, ex); return false; }
-        if (generation != Volatile.Read(ref _shutdownGeneration)) { StopCapture(session); return false; }
-        try { if (process.HasExited) { StopCapture(session); return false; } }
-        catch (InvalidOperationException) { return false; }
+                    if (args.Data == null)
+                    {
+                        ctx.OutputCompleted.TrySetResult(true);
+                        return;
+                    }
 
-        AppLogger.Log.Info($"Capture started for device {session.DeviceId}");
-        return true;
+                    var line = args.Data;
+                    lock (ctx.WriterLock)
+                    {
+                        if (ctx.WritersClosed) { session.CaptureComplete = false; return; }
+                        {
+                            writer.WriteLine(line);
+                            if (appWriter != null && !string.IsNullOrWhiteSpace(currentTargetPid) &&
+                                MatchesLogcatPid(line, Volatile.Read(ref currentTargetPid), format))
+                                appWriter.WriteLine(line);
+                        }
+                    }
+
+                    NumberedLogLine numbered;
+                    lock (ctx.WriterLock)
+                    {
+                        session.LogLineCount++;
+                        session.LastLogUtc = DateTime.UtcNow;
+                        numbered = new NumberedLogLine(session.LogLineCount, line);
+                        ctx.RecentLines.Enqueue(numbered);
+                        while (ctx.RecentLines.Count > 20000) ctx.RecentLines.Dequeue();
+                    }
+                    var crash = session.Crashes.ScanLine(line, (int)Math.Min(int.MaxValue, numbered.Sequence - 1), session.Platform);
+                    if (crash != null)
+                    {
+                        var safeCrash = new CrashDetector.CrashEvent
+                        {
+                            Timestamp = crash.Timestamp,
+                            Pattern = crash.Pattern,
+                            Line = SecurityHelper.RedactSensitiveText(crash.Line),
+                            Platform = crash.Platform,
+                            LineIndex = crash.LineIndex
+                        };
+                        File.AppendAllText(Path.Combine(session.SessionDirectory, "crashes.jsonl"), JsonSerializer.Serialize(safeCrash) + Environment.NewLine);
+                    }
+                    ctx.Buffer.Enqueue(numbered);
+                    while (ctx.Buffer.Count > DisplayQueueLimit && ctx.Buffer.TryDequeue(out var discardedLine))
+                        Interlocked.Increment(ref ctx.DroppedLines);
+                }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref ctx.DroppedLines);
+                    FailCapture(ctx, ex);
+                }
+            };
+            PublishCaptureEvent(CaptureStarted, session);
+            // Attach the exit handler before enabling events so a fast tool/device disconnect
+            // cannot leave a capture permanently marked as active.
+            process.Exited += (_, _) => _ = Task.Run(() => HandleCaptureExit(session, process));
+            try { process.BeginOutputReadLine(); }
+            catch (Exception ex) { FailCapture(ctx, ex); return false; }
+            process.EnableRaisingEvents = true;
+            if (generation != Volatile.Read(ref _shutdownGeneration)) { StopCapture(session); return false; }
+            try { if (process.HasExited) { StopCapture(session); return false; } }
+            catch (InvalidOperationException) { return false; }
+
+            AppLogger.Log.Info($"Capture started for device {session.DeviceId}");
+            return true;
+        }
     }
 
-    private void FailCapture(LogSession session, Exception ex)
+    internal void HandleCaptureExit(LogSession session, Process process)
     {
-        session.CaptureError = $"Log capture failed: {SecurityHelper.RedactSensitiveText(ex.Message)}";
-        AppLogger.Log.Error(ex, "Log capture failed");
-        StopCapture(session);
+        lock (_lifecycleLock)
+        {
+            if (!_activeCaptures.TryGetValue(session.Id, out var owner) || !ReferenceEquals(owner.Process, process)) return;
+            var error = ToolLauncher.GetProcessError(process);
+            session.CaptureError = string.IsNullOrWhiteSpace(error)
+                ? "Device log stream ended unexpectedly. Check the USB connection and reconnect." : error;
+            session.StopReason = "stream-exit";
+            try { session.ExitCode = process.ExitCode; } catch (InvalidOperationException) { }
+            StopCapture(session);
+        }
+    }
+
+    private void FailCapture(CaptureContext context, Exception exception)
+    {
+        lock (_lifecycleLock)
+        {
+            var session = context.Session;
+            if (!_activeCaptures.TryGetValue(session.Id, out var owner) || !ReferenceEquals(owner, context)) return;
+            session.CaptureError = "Capture output could not be saved: " + SecurityHelper.RedactSensitiveText(exception.Message);
+            session.StopReason = "write-failure";
+            session.CaptureComplete = false;
+            AppLogger.Log.Error(exception, "Capture output failed");
+            StopCapture(session);
+        }
     }
 
     internal static bool MatchesLogcatPid(string line, string pid, LogcatFormat format)
@@ -355,22 +435,32 @@ public class SessionService : ISessionService
 
     private void FlushCaptureBuffer(string sessionId, CaptureContext ctx)
     {
-        if (ctx.Buffer.IsEmpty) return;
-
-        // Drain everything, fire in 2000-line chunks to keep UI batches manageable
-        for (var batches = 0; batches < 5 && !ctx.Buffer.IsEmpty; batches++)
+        lock (ctx.DisplayLock)
         {
-            var batch = DrainDisplayBatch(ctx.Buffer, 2000);
+            if (ctx.Buffer.IsEmpty) return;
 
-            if (batch.Length > 0)
+            // Bound each timer pass and preserve order against the final stop flush.
+            for (var batches = 0; batches < 5 && !ctx.Buffer.IsEmpty; batches++)
             {
-                var handlers = LogBatchReceived;
-                if (handlers == null) continue;
-                var batchText = batch.ToString();
-                foreach (Action<string, string> handler in handlers.GetInvocationList())
+                var numbered = new List<NumberedLogLine>();
+                while (numbered.Count < 500 && ctx.Buffer.TryDequeue(out var line)) numbered.Add(line);
+                var batch = new System.Text.StringBuilder();
+                foreach (var line in numbered) batch.AppendLine(line.Text);
+                if (numbered.Count > 0 && CaptureBatchReceived is { } observers)
+                    foreach (Action<CaptureBatch> observer in observers.GetInvocationList())
+                        try { observer(new CaptureBatch(sessionId, numbered)); }
+                        catch (Exception ex) { AppLogger.Log.Warn(ex, "Capture observer failed"); }
+
+                if (batch.Length > 0)
                 {
-                    try { handler(sessionId, batchText); }
-                    catch (Exception ex) { AppLogger.Log.Warn(ex, "[SessionService] Log observer failed"); }
+                    var handlers = LogBatchReceived;
+                    if (handlers == null) continue;
+                    var batchText = batch.ToString();
+                    foreach (Action<string, string> handler in handlers.GetInvocationList())
+                    {
+                        try { handler(sessionId, batchText); }
+                        catch (Exception ex) { AppLogger.Log.Warn(ex, "[SessionService] Log observer failed"); }
+                    }
                 }
             }
         }
@@ -385,74 +475,106 @@ public class SessionService : ISessionService
 
     public void StopCapture(LogSession session)
     {
-        if (!_activeCaptures.TryRemove(session.Id, out var ctx)) return;
-
-        var stopTask = Task.Run(async () =>
+        lock (_lifecycleLock)
         {
-            try
+            Interlocked.Increment(ref session.StopRevision);
+            if (!_activeCaptures.TryRemove(session.Id, out var ctx)) return;
+            if (string.IsNullOrEmpty(session.StopReason)) session.StopReason = _shutdown ? "shutdown" : "requested";
+            if (session.StopReason is "stream-exit" or "connection-lost")
             {
-                ctx.Cts.Cancel();
-
-                if (!ctx.Process.HasExited)
-                {
-                    bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
-                    try { ctx.Process.Kill(killTree); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Kill error"); }
-                    try { ctx.Process.WaitForExit(1000); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] WaitForExit error"); }
-                }
-
-                try { await Task.WhenAny(ctx.OutputCompleted.Task, Task.Delay(2000)).ConfigureAwait(false); } catch { }
-                if (ctx.FlushTask != null) try { await Task.WhenAny(ctx.FlushTask, Task.Delay(2000)).ConfigureAwait(false); } catch { }
-                if (ctx.PidTask != null) try { await Task.WhenAny(ctx.PidTask, Task.Delay(2000)).ConfigureAwait(false); } catch { }
-                lock (ctx.WriterLock)
-                {
-                    ctx.WritersClosed = true;
-                    try { ctx.Writer.Flush(); ctx.AppWriter?.Flush(); }
-                    catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Writer flush error"); }
-                    ctx.Writer.Dispose();
-                    ctx.AppWriter?.Dispose();
-                }
-                FlushCaptureBuffer(session.Id, ctx);
+                session.InterruptionCount++;
+                session.LastInterruptedUtc = DateTime.UtcNow;
+                AppendCaptureEvent(session, session.StopReason);
             }
-            catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] StopCapture cleanup error"); }
-            finally
+
+            session.Status = SessionStatus.Stopped;
+            session.EndTime = DateTime.Now;
+            var stopTask = Task.Run(async () =>
             {
-                _startingDevices.TryRemove(session.DeviceSerial, out _);
-                ctx.Process.Dispose();
-                ctx.Cts.Dispose();
+                try
+                {
+                    ctx.Cts.Cancel();
+
+                    if (!ctx.Process.HasExited)
+                    {
+                        bool killTree = ctx.Session.Platform == DevicePlatform.iOS;
+                        try { ctx.Process.Kill(killTree); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] Kill error"); }
+                        try { ctx.Process.WaitForExit(1000); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] WaitForExit error"); }
+                    }
+
+                    var drained = await Task.WhenAny(ctx.OutputCompleted.Task, Task.Delay(TimeSpan.FromSeconds(10))).ConfigureAwait(false) == ctx.OutputCompleted.Task;
+                    if (!drained) session.CaptureError = "Capture incomplete: output did not drain before the shutdown deadline.";
+                    session.CaptureComplete = drained && string.IsNullOrEmpty(session.CaptureError);
+                    if (ctx.FlushTask != null) try { await Task.WhenAny(ctx.FlushTask, Task.Delay(2000)).ConfigureAwait(false); } catch { }
+                    if (ctx.PidTask != null) try { await Task.WhenAny(ctx.PidTask, Task.Delay(2000)).ConfigureAwait(false); } catch { }
+                    lock (ctx.WriterLock)
+                    {
+                        ctx.WritersClosed = true;
+                        try { ctx.Writer.Flush(); ctx.AppWriter?.Flush(); }
+                        catch (Exception ex) { session.CaptureComplete = false; session.CaptureError = "Final log flush failed: " + SecurityHelper.RedactSensitiveText(ex.Message); }
+                        ctx.Writer.Dispose();
+                        ctx.AppWriter?.Dispose();
+                    }
+                    while (!ctx.Buffer.IsEmpty) FlushCaptureBuffer(session.Id, ctx);
+                }
+                catch (Exception ex) { session.CaptureComplete = false; session.CaptureError = "Capture finalization failed: " + SecurityHelper.RedactSensitiveText(ex.Message); AppLogger.Log.Warn(ex, "[SessionService] StopCapture cleanup error"); }
+                finally
+                {
+                    _startingDevices.TryRemove(session.DeviceSerial, out _);
+                    ctx.Process.Dispose();
+                    ctx.Cts.Dispose();
+                    SaveSessionMetadata(session);
+                    PublishCaptureEvent(CaptureStopped, session);
+                    AppLogger.Log.Info($"Capture finalized: {session.DeviceId}; reason={session.StopReason}; exit={session.ExitCode}; saved={session.LogLineCount}; complete={session.CaptureComplete}; error={session.CaptureError}");
+                }
+            });
+            lock (_stopTasks)
+            {
+                _stopTasks.RemoveAll(t => t.IsCompleted);
+                _stopTasks.Add(stopTask);
             }
-        });
-        lock (_stopTasks)
-        {
-            _stopTasks.RemoveAll(t => t.IsCompleted);
-            _stopTasks.Add(stopTask);
-        }
-        _captureStopTasks[session.Id] = stopTask;
+            _captureStopTasks[session.Id] = stopTask;
 
-        session.Status = SessionStatus.Stopped;
-        session.EndTime = DateTime.Now;
-        SaveSessionMetadata(session);
-        PublishCaptureEvent(CaptureStopped, session);
+            SaveSessionMetadata(session);
 
-        if (_activeCaptures.Count == 0)
-        {
             lock (_flushTimerLock)
             {
-                _flushTimer?.Dispose();
-                _flushTimer = null;
+                if (_activeCaptures.IsEmpty)
+                {
+                    _flushTimer?.Dispose();
+                    _flushTimer = null;
+                }
             }
-        }
 
-        AppLogger.Log.Info($"Capture stopped for device {session.DeviceId}. Duration: {session.EndTime - session.StartTime}");
+            AppLogger.Log.Info($"Capture stopped for device {session.DeviceId}. Duration: {session.EndTime - session.StartTime}");
+        }
+    }
+
+    private static void AppendCaptureEvent(LogSession session, string reason)
+    {
+        try
+        {
+            File.AppendAllText(Path.Combine(session.SessionDirectory, "capture-events.jsonl"),
+                System.Text.Json.JsonSerializer.Serialize(new { utc = DateTime.UtcNow, reason, savedLines = session.LogLineCount }) + Environment.NewLine);
+        }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "Could not persist capture interruption event"); }
     }
 
     public void StopAllCaptures()
     {
-        Interlocked.Increment(ref _shutdownGeneration);
+        Task<bool>[] starts;
+        lock (_lifecycleLock)
+        {
+            _shutdown = true;
+            Interlocked.Increment(ref _shutdownGeneration);
+            starts = _startTasks.ToArray();
+        }
+        try { if (!Task.WhenAll(starts).Wait(TimeSpan.FromSeconds(20))) AppLogger.Log.Warn("Capture startup cancellation timed out during shutdown"); }
+        catch (Exception ex) { AppLogger.Log.Warn(ex, "Capture startup failed during shutdown"); }
         foreach (var session in _activeCaptures.Values.Select(c => c.Session).ToList())
             StopCapture(session);
 
-        foreach (var serial in _startingDevices.Keys)
-            _startingDevices.TryRemove(serial, out _);
+        // In-flight startup owns its reservation until it observes shutdown.
 
         lock (_flushTimerLock)
         {
@@ -463,7 +585,7 @@ public class SessionService : ISessionService
         lock (_stopTasks) pendingStops = _stopTasks.ToArray();
         try
         {
-            if (!Task.WhenAll(pendingStops).Wait(TimeSpan.FromSeconds(5)))
+            if (!Task.WhenAll(pendingStops).Wait(TimeSpan.FromSeconds(20)))
                 AppLogger.Log.Warn("[SessionService] Capture shutdown timed out before every file closed");
         }
         catch (Exception ex) { AppLogger.Log.Warn(ex, "[SessionService] Capture shutdown incomplete"); }
@@ -537,7 +659,9 @@ public class SessionService : ISessionService
 
     private async Task AwaitCaptureStopAsync(string sessionId)
     {
-        if (_captureStopTasks.TryGetValue(sessionId, out var task))
+        Task? task;
+        lock (_lifecycleLock) _captureStopTasks.TryGetValue(sessionId, out task);
+        if (task != null)
         {
             await task.ConfigureAwait(false);
             _captureStopTasks.TryRemove(sessionId, out _);
@@ -548,7 +672,10 @@ public class SessionService : ISessionService
 
     private const string MetadataFileName = "session.json";
     private sealed record SessionMetadata(string Id, string Name, string DeviceId, string DeviceName,
-        DevicePlatform Platform, string LogFileName, string AppLogFileName, DateTime StartTime, DateTime? EndTime);
+        DevicePlatform Platform, string LogFileName, string AppLogFileName, DateTime StartTime, DateTime? EndTime,
+        string CaptureError = "", string StopReason = "", int? ExitCode = null, bool CaptureComplete = false,
+        long LogLineCount = 0, LogcatFormat Format = LogcatFormat.ThreadTime, LogcatBuffer Buffer = LogcatBuffer.Main,
+        int InterruptionCount = 0, DateTime? LastInterruptedUtc = null, DateTime? LastResumedUtc = null);
 
     private static void SaveSessionMetadata(LogSession session)
     {
@@ -558,7 +685,7 @@ public class SessionService : ISessionService
             if (!PathHelper.IsSafeLocalPath(session.SessionDirectory)) return;
             var metadata = new SessionMetadata(session.Id, session.Name, session.DeviceId,
                 SecurityHelper.RedactSensitiveText(session.DeviceName), session.Platform,
-                Path.GetFileName(session.LogFilePath), Path.GetFileName(session.AppLogFilePath), session.StartTime, session.EndTime);
+                Path.GetFileName(session.LogFilePath), Path.GetFileName(session.AppLogFilePath), session.StartTime, session.EndTime, session.CaptureError, session.StopReason, session.ExitCode, session.CaptureComplete, session.LogLineCount, session.Format, session.Buffer, session.InterruptionCount, session.LastInterruptedUtc, session.LastResumedUtc);
             pendingPath = Path.Combine(session.SessionDirectory, $".session_{Guid.NewGuid():N}.tmp");
             File.WriteAllText(pendingPath, JsonSerializer.Serialize(metadata));
             File.Move(pendingPath, Path.Combine(session.SessionDirectory, MetadataFileName), overwrite: true);
@@ -612,6 +739,16 @@ public class SessionService : ISessionService
                             session.Platform = metadata.Platform;
                             session.StartTime = metadata.StartTime;
                             session.EndTime = metadata.EndTime;
+                            session.CaptureError = metadata.CaptureError;
+                            session.StopReason = metadata.StopReason;
+                            session.ExitCode = metadata.ExitCode;
+                            session.CaptureComplete = metadata.CaptureComplete;
+                            session.LogLineCount = metadata.LogLineCount;
+                            session.Format = metadata.Format;
+                            session.Buffer = metadata.Buffer;
+                            session.InterruptionCount = metadata.InterruptionCount;
+                            session.LastInterruptedUtc = metadata.LastInterruptedUtc;
+                            session.LastResumedUtc = metadata.LastResumedUtc;
                             if (Path.GetFileName(metadata.LogFileName) == metadata.LogFileName)
                             {
                                 var candidate = Path.Combine(dir, metadata.LogFileName);
@@ -629,6 +766,15 @@ public class SessionService : ISessionService
                 if (string.IsNullOrEmpty(session.LogFilePath) && logFiles.Length > 0)
                 {
                     session.LogFilePath = logFiles[0];
+                }
+                var crashesPath = Path.Combine(dir, "crashes.jsonl");
+                if (File.Exists(crashesPath) && PathHelper.IsSafeLocalPath(crashesPath))
+                {
+                    foreach (var record in File.ReadLines(crashesPath))
+                    {
+                        try { if (JsonSerializer.Deserialize<CrashDetector.CrashEvent>(record) is { } crash) session.Crashes.Restore(crash); }
+                        catch (JsonException) { /* A terminated write may leave one partial record. */ }
+                    }
                 }
                 if (File.Exists(session.LogFilePath) && session.EndTime == null)
                     session.EndTime = File.GetLastWriteTime(session.LogFilePath);
@@ -754,8 +900,9 @@ public class SessionService : ISessionService
 
     private sealed class CaptureContext
     {
+        public object DisplayLock { get; } = new();
         public CaptureContext(Process process, StreamWriter writer, StreamWriter? appWriter, LogSession session,
-            CancellationTokenSource cts, ConcurrentQueue<string> buffer)
+            CancellationTokenSource cts, ConcurrentQueue<NumberedLogLine> buffer)
         {
             Process = process;
             Writer = writer;
@@ -770,7 +917,8 @@ public class SessionService : ISessionService
         public StreamWriter? AppWriter { get; }
         public LogSession Session { get; }
         public CancellationTokenSource Cts { get; }
-        public ConcurrentQueue<string> Buffer { get; }
+        public ConcurrentQueue<NumberedLogLine> Buffer { get; }
+        public Queue<NumberedLogLine> RecentLines { get; } = new();
         public TaskCompletionSource<bool> OutputCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task? FlushTask { get; set; }
         public Task? PidTask { get; set; }
@@ -797,12 +945,13 @@ public class SessionService : ISessionService
             // CSV header
             await writer.WriteLineAsync("Timestamp,Level,Message");
 
+            var parser = new LogStreamParser(session.Format);
             string? line;
             while ((line = await reader.ReadLineAsync()) != null)
             {
+                var record = parser.Parse(line);
                 if (string.IsNullOrWhiteSpace(line)) continue;
-
-                var parsed = ParseLogLine(line);
+                var parsed = new Dictionary<string, string> { ["Timestamp"] = record.Timestamp, ["Level"] = record.Level.ToString(), ["Message"] = record.Message };
                 var message = parsed["Message"];
 
                 // Raw exports are never produced by the product. Keep the parameter for
@@ -842,12 +991,13 @@ public class SessionService : ISessionService
 
             jsonWriter.WriteStartArray();
 
+            var parser = new LogStreamParser(session.Format);
             string? line;
             while ((line = await reader.ReadLineAsync()) != null)
             {
+                var record = parser.Parse(line);
                 if (string.IsNullOrWhiteSpace(line)) continue;
-
-                var parsed = ParseLogLine(line);
+                var parsed = new Dictionary<string, string> { ["Timestamp"] = record.Timestamp, ["Level"] = record.Level.ToString(), ["Message"] = record.Message };
                 // Raw exports are never produced by the product. Keep the parameter for
                 // source compatibility, but always redact sensitive device/game data.
                 var message = SecurityHelper.RedactSensitiveText(parsed["Message"]);
@@ -872,91 +1022,8 @@ public class SessionService : ISessionService
 
     private static Dictionary<string, string> ParseLogLine(string line)
     {
-        var result = new Dictionary<string, string>
-        {
-            { "Timestamp", "" },
-            { "Level", "Unknown" },
-            { "Message", line }
-        };
-
-        try
-        {
-            // Format 1: Standard logcat -v threadtime
-            // "MM-DD HH:MM:SS.mmm   PID  TID P/Tag: message"
-            if (line.Length > 30 && line[2] == '-' && line[5] == ' ' && line[14] == '.')
-            {
-                result["Timestamp"] = line.Substring(0, 18);
-                var match = Regex.Match(line, @"^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+([VDIWEFA])\s+(.*)$");
-                if (match.Success)
-                {
-                    result["Level"] = match.Groups[1].Value[0] switch
-                    {
-                        'F' or 'A' => "Fatal",
-                        'E' => "Error",
-                        'W' => "Warning",
-                        'I' => "Info",
-                        'D' => "Debug",
-                        'V' => "Verbose",
-                        _ => "Unknown"
-                    };
-                    result["Message"] = match.Groups[2].Value;
-                }
-            }
-            // Format 2: Legacy bracket format "[HH:mm:ss.fff] E/Tag: message"
-            else if (line.StartsWith("["))
-            {
-                var closeBracket = line.IndexOf(']');
-                if (closeBracket > 1)
-                {
-                    result["Timestamp"] = line.Substring(1, closeBracket - 1);
-                    var rest = line.Substring(closeBracket + 1).TrimStart();
-                    result["Message"] = rest;
-
-                    if (rest.StartsWith("F/")) result["Level"] = "Fatal";
-                    else if (rest.StartsWith("E/")) result["Level"] = "Error";
-                    else if (rest.StartsWith("W/")) result["Level"] = "Warning";
-                    else if (rest.StartsWith("D/")) result["Level"] = "Debug";
-                    else if (rest.StartsWith("I/")) result["Level"] = "Info";
-                    else if (rest.StartsWith("V/")) result["Level"] = "Verbose";
-                }
-            }
-            // Format 3: Fallback — try P/ prefix anywhere in the line
-            else
-            {
-                var match = System.Text.RegularExpressions.Regex.Match(line, @"\b([FEWIDV])/");
-                if (match.Success)
-                {
-                    result["Level"] = match.Groups[1].Value switch
-                    {
-                        "F" => "Fatal",
-                        "E" => "Error",
-                        "W" => "Warning",
-                        "I" => "Info",
-                        "D" => "Debug",
-                        "V" => "Verbose",
-                        _ => "Unknown"
-                    };
-                }
-            }
-            if (result["Level"] == "Unknown")
-            {
-                var iosLevel = Regex.Match(line, @"<(Fault|Error|Warning|Notice|Info|Default|Debug)>",
-                    RegexOptions.IgnoreCase);
-                if (iosLevel.Success)
-                    result["Level"] = iosLevel.Groups[1].Value.ToUpperInvariant() switch
-                    {
-                        "FAULT" => "Fatal",
-                        "ERROR" => "Error",
-                        "WARNING" => "Warning",
-                        "NOTICE" or "INFO" or "DEFAULT" => "Info",
-                        "DEBUG" => "Debug",
-                        _ => "Unknown"
-                    };
-            }
-        }
-        catch (Exception ex) { AppLogger.Log.Debug(ex, "[SessionService] ParseLogLine failed"); }
-
-        return result;
+        var parsed = LogLineParser.Parse(line);
+        return new() { ["Timestamp"] = parsed.Timestamp, ["Level"] = parsed.Level.ToString(), ["Message"] = parsed.Message };
     }
 
     private static string EscapeCsvCell(string value)

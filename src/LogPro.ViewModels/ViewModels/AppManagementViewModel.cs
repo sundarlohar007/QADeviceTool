@@ -74,16 +74,16 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     private string _detailsText = string.Empty;
 
     public ObservableCollection<string> FilterOptions { get; } = new(["All", "User", "System", "Running"]);
-    public bool CanUninstall => !_operationInProgress && SelectedDevice?.ConnectionState == DeviceConnectionState.Online && SelectedApp?.Category == AppCategory.User;
-    public bool CanAndroidAction => !_operationInProgress && SelectedDevice?.Platform == DevicePlatform.Android && SelectedDevice.ConnectionState == DeviceConnectionState.Online && SelectedApp?.Category == AppCategory.User;
-    public bool CanInstall => !_operationInProgress && SelectedDevice?.ConnectionState == DeviceConnectionState.Online;
+    public bool CanUninstall => !_operationInProgress && SelectedDevice?.IsReady == true && SelectedApp?.Category == AppCategory.User;
+    public bool CanAndroidAction => !_operationInProgress && SelectedDevice?.Platform == DevicePlatform.Android && SelectedDevice.IsReady && SelectedApp?.Category == AppCategory.User;
+    public bool CanInstall => !_operationInProgress && SelectedDevice?.IsReady == true;
     public bool CanRefresh => CanInstall && !IsLoading;
     public bool CanExport => !_operationInProgress && _inventoryLoaded;
     public bool IsAndroid => SelectedDevice?.Platform == DevicePlatform.Android;
     public string PlatformNotice => SelectedDevice?.Platform == DevicePlatform.iOS
         ? "iOS does not support Force Stop, Clear Data, or reliable running-app filtering."
         : SelectedDevice?.Platform == DevicePlatform.Android
-            ? "Android app labels may show package IDs; version values are version codes."
+            ? "Android app names and display versions are resolved when supported; unresolved apps retain package IDs and version codes."
             : string.Empty;
     public bool CanCompare => _inventoryLoaded && SelectedDevice != null && _snapshots.ContainsKey(DeviceKey(SelectedDevice));
     private readonly StringBuilder _outputBuilder = new();
@@ -123,6 +123,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         var current = SelectedDevice;
         var oldState = current?.ConnectionState;
+        var oldUnavailable = current?.IsTemporarilyUnavailable;
         foreach (var existing in Devices.Where(d => !devices.Any(incoming => SameDevice(d, incoming))).ToList())
             Devices.Remove(existing);
         foreach (var incoming in devices)
@@ -135,8 +136,8 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             ? Devices.FirstOrDefault(d => SameDevice(d, current)) ?? Devices.FirstOrDefault()
             : Devices.FirstOrDefault(d => SameDevice(d, storeSelection));
         SelectedDevice = desired;
-        if (ReferenceEquals(current, desired) && oldState != desired?.ConnectionState)
-            OnSelectedDeviceChanged(new DeviceInfo { Serial = desired!.Serial, Platform = desired.Platform, ConnectionState = oldState!.Value }, desired);
+        if (ReferenceEquals(current, desired) && (oldState != desired?.ConnectionState || oldUnavailable != desired?.IsTemporarilyUnavailable))
+            OnSelectedDeviceChanged(new DeviceInfo { Serial = desired!.Serial, Platform = desired.Platform, ConnectionState = oldState!.Value, IsTemporarilyUnavailable = oldUnavailable == true }, desired);
     }
 
     private static void CopyDeviceMetadata(DeviceInfo target, DeviceInfo source)
@@ -179,6 +180,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         if (changedDevice)
         {
             Interlocked.Increment(ref _loadGeneration);
+            _inventoryCts?.Cancel();
             _installCancellation?.Cancel();
             _operationGeneration++;
             SelectedApp = null;
@@ -206,6 +208,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
         if (value.ConnectionState == DeviceConnectionState.Unauthorized)
         {
+            _inventoryCts?.Cancel();
             _installCancellation?.Cancel();
             StatusMessage = "[!] Device is unauthorized. Accept RSA key on device and refresh.";
             Interlocked.Increment(ref _loadGeneration);
@@ -220,6 +223,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
         if (value.ConnectionState == DeviceConnectionState.PendingTrust)
         {
+            _inventoryCts?.Cancel();
             _installCancellation?.Cancel();
             StatusMessage = "[!] Device requires trust. Accept trust dialog on iOS device and refresh.";
             Interlocked.Increment(ref _loadGeneration);
@@ -232,10 +236,11 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (value.ConnectionState != DeviceConnectionState.Online)
+        if (!value.IsReady)
         {
+            _inventoryCts?.Cancel();
             _installCancellation?.Cancel();
-            StatusMessage = $"[!] Device is {value.ConnectionState}.";
+            StatusMessage = $"[!] Device is {value.StatusText}.";
             Interlocked.Increment(ref _loadGeneration);
             InstalledApps.Clear(); ApplyFilter();
             SelectedApp = null;
@@ -246,7 +251,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (changedDevice || oldValue?.ConnectionState != DeviceConnectionState.Online) _ = LoadAppsAsync(value);
+        if (changedDevice || oldValue?.IsReady != true) _ = LoadAppsAsync(value);
     }
 
     partial void OnSelectedAppChanged(AppItem? value) => UpdateActionAvailability();
@@ -294,11 +299,16 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         }
     }
 
+    private CancellationTokenSource? _inventoryCts;
     private async Task LoadAppsAsync(DeviceInfo device, bool force = false)
     {
-        if (_disposed || !SameDevice(SelectedDevice, device)) return;
+        if (_disposed || !device.IsReady || !SameDevice(SelectedDevice, device)) return;
+        _inventoryCts?.Cancel();
+        using var cts = new CancellationTokenSource();
+        _inventoryCts = cts;
         var generation = Interlocked.Increment(ref _loadGeneration);
         if (!_operationInProgress) IsLoading = true;
+        var selectedPackage = SelectedApp?.PackageId;
         StatusMessage = "Loading installed applications...";
 
         try
@@ -311,7 +321,17 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             else
             {
                 result = device.Platform == DevicePlatform.Android
-                    ? await _adbService.GetAppInventoryAsync(device.Serial)
+                    ? _adbService is IProgressiveAppInventory progressive
+                        ? await progressive.GetAppInventoryAsync(device.Serial, partial => _dispatcher.InvokeAsync(() =>
+                        {
+                            if (_disposed || cts.IsCancellationRequested || generation != Interlocked.Read(ref _loadGeneration) || !SameDevice(SelectedDevice, device)) return;
+                            InstalledApps.Clear();
+                            foreach (var app in partial.Apps) InstalledApps.Add(app);
+                            ApplyFilter();
+                            SelectedApp = FilteredApps.FirstOrDefault(a => a.PackageId == selectedPackage);
+                            StatusMessage = partial.Error;
+                        }), cts.Token)
+                        : await _adbService.GetAppInventoryAsync(device.Serial)
                     : await _iosService.GetAppInventoryAsync(device.Serial);
                 if (generation == Interlocked.Read(ref _loadGeneration) && SameDevice(SelectedDevice, device))
                 {
@@ -322,8 +342,8 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
             await _dispatcher.InvokeAsync(() =>
             {
-                if (_disposed || generation != Interlocked.Read(ref _loadGeneration) || !SameDevice(SelectedDevice, device)) return;
-                var selectedId = SelectedApp?.PackageId;
+                if (_disposed || cts.IsCancellationRequested || generation != Interlocked.Read(ref _loadGeneration) || !SameDevice(SelectedDevice, device) || SelectedDevice?.IsReady != true) return;
+                var selectedId = SelectedApp?.PackageId ?? selectedPackage;
                 InstalledApps.Clear();
                 foreach (var app in result.Apps)
                     InstalledApps.Add(app);
@@ -336,7 +356,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                 StatusMessage = result.Success
                     ? SelectedFilter == "Running" && !RunningStateAvailable
                         ? "[!] Running-app detection is unavailable on this device."
-                        : $"Found {result.Apps.Count} applications on {device.DisplayName}."
+                        : $"Found {result.Apps.Count} applications on {device.DisplayName}. {result.Error}"
                     : $"[!] Unable to list apps: {result.Error}";
             });
         }
@@ -349,6 +369,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         }
         finally
         {
+            if (ReferenceEquals(_inventoryCts, cts)) _inventoryCts = null;
             if (generation == Interlocked.Read(ref _loadGeneration) && !_operationInProgress) IsLoading = false;
         }
     }
@@ -357,7 +378,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     private async Task InstallAppAsync()
     {
         if (_operationInProgress) return;
-        if (SelectedDevice?.ConnectionState != DeviceConnectionState.Online)
+        if (SelectedDevice?.IsReady != true)
         {
             StatusMessage = "[!] Select an online device before installing an app.";
             return;
@@ -370,7 +391,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
         var filePath = await UiServices.Files.OpenFileAsync(fileTitle, fileFilter);
         if (filePath == null) return;
-        if (!SameDevice(SelectedDevice, device) || SelectedDevice?.ConnectionState != DeviceConnectionState.Online)
+        if (!SameDevice(SelectedDevice, device) || SelectedDevice?.IsReady != true)
         {
             StatusMessage = "[!] Target device changed while choosing a file. Select it again.";
             return;
@@ -519,7 +540,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     public async Task InstallFilesAsync(string[] filePaths)
     {
         if (_operationInProgress) return;
-        if (SelectedDevice?.ConnectionState != DeviceConnectionState.Online)
+        if (SelectedDevice?.IsReady != true)
         {
             StatusMessage = "[!] Select an online target device first.";
             return;
@@ -548,7 +569,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
                     AppendConsole($"SKIPPED: {Path.GetFileName(path)} — {packageError}");
                     continue;
                 }
-                if (!SameDevice(SelectedDevice, device) || SelectedDevice?.ConnectionState != DeviceConnectionState.Online)
+                if (!SameDevice(SelectedDevice, device) || SelectedDevice?.IsReady != true)
                 {
                     AppendConsole("STOPPED: target device changed or disconnected.");
                     break;
@@ -607,6 +628,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
         var session = _sessionService.GetActiveSessionForDevice(device.Serial);
         var paused = false;
+        long stopRevision = -1;
         var resumed = true;
         (bool Success, string Message) result;
         try
@@ -615,6 +637,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
             {
                 _sessionService.StopCapture(session);
                 paused = true;
+                stopRevision = Volatile.Read(ref session.StopRevision);
                 await _sessionService.WaitForCaptureStopAsync(session);
                 if (SameDevice(SelectedDevice, device)) AppendConsole("Log capture paused for iOS installation.");
             }
@@ -622,7 +645,8 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            if (paused && session != null)
+            if (paused && session != null && !_disposed && !token.IsCancellationRequested &&
+                Volatile.Read(ref session.StopRevision) == stopRevision && SelectedDevice is { IsTemporarilyUnavailable: false, ConnectionState: DeviceConnectionState.Online })
             {
                 try
                 {
@@ -665,7 +689,7 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void CancelInstall() => _installCancellation?.Cancel();
+    private void CancelInstall() { _inventoryCts?.Cancel(); _installCancellation?.Cancel(); }
 
     private void BeginOperation()
     {
@@ -782,9 +806,11 @@ public partial class AppManagementViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _inventoryCts?.Cancel();
         _disposed = true;
         Interlocked.Increment(ref _loadGeneration);
         _operationGeneration++;
+        _inventoryCts?.Cancel();
         _installCancellation?.Cancel();
         if (_deviceStore != null) _deviceStore.Changed -= OnDeviceStoreChanged;
         else _deviceMonitor.DevicesChanged -= OnDevicesChanged;

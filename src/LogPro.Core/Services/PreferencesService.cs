@@ -31,6 +31,7 @@ public interface IPreferencesStore
     AppPreferences Current { get; set; }
     string SettingsFilePath { get; }
     bool Save();
+    bool Update(Action<AppPreferences> change) { change(Current); return Save(); }
     DevicePreference GetDevicePreference(string serial);
     void SaveDevicePreference(string serial, DevicePreference pref);
     bool TrySaveDevicePreference(string serial, DevicePreference pref);
@@ -51,6 +52,7 @@ public sealed class PreferencesStore : IPreferencesStore
 {
     private readonly string _appDataDir;
     private readonly object _saveLock = new();
+    private string? _lastSavedJson;
 
     public PreferencesStore(string? appDataDir = null)
     {
@@ -74,6 +76,7 @@ public sealed class PreferencesStore : IPreferencesStore
             if (File.Exists(SettingsFilePath))
             {
                 var json = File.ReadAllText(SettingsFilePath);
+                _lastSavedJson = json;
                 Current = JsonSerializer.Deserialize(json, LogProJsonContext.Default.AppPreferences) ?? new AppPreferences();
             }
         }
@@ -96,6 +99,18 @@ public sealed class PreferencesStore : IPreferencesStore
         }
 
         var normalized = false;
+        if (File.Exists(SettingsFilePath + ".backup"))
+        {
+            try
+            {
+                if (_lastSavedJson == null || !IsValidSettings(_lastSavedJson))
+                {
+                    Current = JsonSerializer.Deserialize(File.ReadAllText(SettingsFilePath + ".backup"), LogProJsonContext.Default.AppPreferences) ?? new();
+                    normalized = true;
+                }
+            }
+            catch (Exception ex) { AppLogger.Log.Warn(ex, "Preferences backup could not be restored"); }
+        }
         // Apply defaults for unsafe or malformed persisted values.
         if (!PathHelper.IsSafeLocalPath(Current.SessionsRootDirectory))
         {
@@ -131,22 +146,45 @@ public sealed class PreferencesStore : IPreferencesStore
         if (rawKeys.Count > 0 || normalized) Save();
     }
 
+    private static bool IsValidSettings(string json)
+    {
+        try { return JsonSerializer.Deserialize(json, LogProJsonContext.Default.AppPreferences) != null; }
+        catch (JsonException) { return false; }
+    }
+
     public bool Save()
     {
         return TrySave();
     }
 
-    private bool TrySave()
+    private bool TrySave(AppPreferences? snapshot = null)
     {
         lock (_saveLock)
         {
             try
             {
                 if (!PathHelper.IsSafeLocalPath(SettingsFilePath)) return false;
-                var json = JsonSerializer.Serialize(Current, LogProJsonContext.Default.AppPreferences);
-                var tmpPath = SettingsFilePath + ".tmp";
-                File.WriteAllText(tmpPath, json);
-                File.Move(tmpPath, SettingsFilePath, overwrite: true);
+                using var mutex = new Mutex(false, "LogProSettings_" + SecurityHelper.HashSerial(Path.GetFullPath(SettingsFilePath).ToUpperInvariant()));
+                var acquired = false;
+                try
+                {
+                    try { acquired = mutex.WaitOne(TimeSpan.FromSeconds(2)); }
+                    catch (AbandonedMutexException) { acquired = true; }
+                    if (!acquired) return false;
+                    var currentDisk = File.Exists(SettingsFilePath) ? File.ReadAllText(SettingsFilePath) : null;
+                    if (currentDisk != _lastSavedJson) return false; // Another process saved newer preferences; do not overwrite them.
+                    var json = JsonSerializer.Serialize(snapshot ?? Current, LogProJsonContext.Default.AppPreferences);
+                    var tmpPath = SettingsFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    try
+                    {
+                        File.WriteAllText(tmpPath, json);
+                        if (File.Exists(SettingsFilePath)) File.Replace(tmpPath, SettingsFilePath, SettingsFilePath + ".backup");
+                        else File.Move(tmpPath, SettingsFilePath);
+                        _lastSavedJson = json;
+                    }
+                    finally { if (File.Exists(tmpPath)) File.Delete(tmpPath); }
+                }
+                finally { if (acquired) mutex.ReleaseMutex(); }
                 return true;
             }
             catch (Exception ex)
@@ -157,33 +195,31 @@ public sealed class PreferencesStore : IPreferencesStore
         }
     }
 
+    public bool Update(Action<AppPreferences> change)
+    {
+        lock (_saveLock)
+        {
+            var snapshot = JsonSerializer.Serialize(Current, LogProJsonContext.Default.AppPreferences);
+            var candidate = JsonSerializer.Deserialize(snapshot, LogProJsonContext.Default.AppPreferences)!;
+            change(candidate);
+            if (!TrySave(candidate)) return false;
+            Current = candidate;
+            return true;
+        }
+    }
+
     public DevicePreference GetDevicePreference(string serial)
     {
-        var key = SecurityHelper.HashSerial(serial);
-        if (Current.DevicePreferences.TryGetValue(key, out var pref))
-            return pref;
-
-        var newPref = new DevicePreference();
-        Current.DevicePreferences[key] = newPref;
-        return newPref;
+        lock (_saveLock)
+        {
+            if (!Current.DevicePreferences.TryGetValue(SecurityHelper.HashSerial(serial), out var pref)) return new();
+            return new() { Notes = pref.Notes, Tag = pref.Tag, LastConnected = pref.LastConnected };
+        }
     }
-
-    public void SaveDevicePreference(string serial, DevicePreference pref)
-    {
-        Current.DevicePreferences[SecurityHelper.HashSerial(serial)] = pref;
-        Save();
-    }
-
-    public bool TrySaveDevicePreference(string serial, DevicePreference pref)
-    {
-        var key = SecurityHelper.HashSerial(serial);
-        Current.DevicePreferences.TryGetValue(key, out var previous);
-        Current.DevicePreferences[key] = pref;
-        if (TrySave()) return true;
-        if (previous == null) Current.DevicePreferences.Remove(key);
-        else Current.DevicePreferences[key] = previous;
-        return false;
-    }
+    public void SaveDevicePreference(string serial, DevicePreference pref) => TrySaveDevicePreference(serial, pref);
+    public bool TrySaveDevicePreference(string serial, DevicePreference pref) => Update(current =>
+        current.DevicePreferences[SecurityHelper.HashSerial(serial)] = new()
+        { Notes = pref.Notes, Tag = pref.Tag, LastConnected = pref.LastConnected });
 
     public DataClearPreview PreviewClearAllData()
     {
@@ -222,6 +258,9 @@ public sealed class PreferencesStore : IPreferencesStore
             try
             {
                 if (File.Exists(SettingsFilePath)) File.Delete(SettingsFilePath);
+                foreach (var backup in Directory.GetFiles(_appDataDir, "settings.json.*"))
+                    if (PathHelper.IsSafeLocalPath(backup)) File.Delete(backup);
+                _lastSavedJson = null;
                 Current = new AppPreferences { SessionsRootDirectory = PathHelper.GetDefaultSessionsDirectory() };
                 if (!Save()) failures.Add("Settings could not be reset.");
             }
@@ -339,7 +378,9 @@ public sealed class PreferencesStore : IPreferencesStore
 /// </summary>
 public static class PreferencesService
 {
-    public static IPreferencesStore Instance { get; set; } = new PreferencesStore();
+    private static readonly Lazy<IPreferencesStore> Default = new(() => new PreferencesStore());
+    private static readonly AsyncLocal<IPreferencesStore?> Override = new();
+    public static IPreferencesStore Instance { get => Override.Value ?? Default.Value; set => Override.Value = value; }
 
     public static AppPreferences Current
     {
@@ -348,6 +389,7 @@ public static class PreferencesService
     }
 
     public static bool Save() => Instance.Save();
+    public static bool Update(Action<AppPreferences> change) => Instance.Update(change);
     public static DevicePreference GetDevicePreference(string serial) => Instance.GetDevicePreference(serial);
     public static void SaveDevicePreference(string serial, DevicePreference pref) => Instance.SaveDevicePreference(serial, pref);
     public static bool TrySaveDevicePreference(string serial, DevicePreference pref) => Instance.TrySaveDevicePreference(serial, pref);

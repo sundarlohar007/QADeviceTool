@@ -33,8 +33,7 @@ public class SoakRunnerTests
         for (var i = 0; i < 60 + extraFrames; i++)
         {
             present += 16_666_666L;
-            if (i % 10 == 0) present += 20_000_000L;
-            sb.AppendLine($"{i * 16_666_666:D14}\t{i * 16_666_666 + 2_000_000:D14}\t{present:D14}");
+            sb.AppendLine($"{i * 16_666_666:D14}\t{present:D14}\t{i * 16_666_666 + 2_000_000:D14}");
         }
         return sb.ToString();
     }
@@ -51,7 +50,7 @@ public class SoakRunnerTests
         };
 
         var report = await SoakRunner.RunAsync(
-            adb.Object, "FAKE01", "com.fakegame", TimeSpan.FromSeconds(3), load);
+            adb.Object, "FAKE01", "com.fakegame", TimeSpan.FromSeconds(3), load, sampleIntervalMs: 200);
 
         report.SampleCount.Should().BeGreaterThanOrEqualTo(1);
         report.Duration.Should().Be(TimeSpan.FromSeconds(3));

@@ -17,7 +17,7 @@ public class AndroidPerformanceProfilerTests
             {
                 if (command.EndsWith("SurfaceFlinger --list")) return "SurfaceView[other/app]#1\n" + layer + "\n";
                 if (command.Contains("SurfaceFlinger --latency"))
-                    return "16666666\n" + string.Join("\n", present.Select(p => $"1\t2\t{p}"));
+                    return "16666666\n" + string.Join("\n", present.Select(p => $"1\t{p}\t2"));
                 return string.Empty;
             });
         await using var profiler = new AndroidPerformanceProfiler(adb.Object, "S1", "com.game");

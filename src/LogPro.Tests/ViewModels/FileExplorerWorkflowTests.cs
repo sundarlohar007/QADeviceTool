@@ -7,6 +7,20 @@ namespace LogPro.Tests.ViewModels;
 
 public class FileExplorerWorkflowTests
 {
+    [Fact]
+    public async Task ReconnectingDevice_DisablesTransferAndDirectoryQueries()
+    {
+        var context = Create(new List<DeviceInfo> { Android("A") });
+        using var vm = context.Vm;
+        var unavailable = Android("A");
+        unavailable.IsTemporarilyUnavailable = true;
+        context.Monitor.Raise(x => x.DevicesChanged += null, new List<DeviceInfo> { unavailable });
+        vm.CanTransfer.Should().BeFalse();
+        context.Adb.Invocations.Clear();
+        await vm.LoadDirectoryCommand.ExecuteAsync("/sdcard/DCIM");
+        context.Adb.Verify(x => x.ListDirectoryAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
     private static DeviceInfo Android(string serial) => new()
     {
         Serial = serial,

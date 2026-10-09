@@ -36,9 +36,17 @@ jobs:
     - name: Execute unit tests with coverage
       run: dotnet test src\LogPro.Tests\LogPro.Tests.csproj -c Release --no-build --collect:"XPlat Code Coverage"
 
-    - name: Smoke test bundled iOS commands
+    - name: Setup Python runtime builder
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.13'
+
+    - name: Build and test packaged iOS runtime
       shell: pwsh
-      run: ./scripts/test-pymobiledevice3.ps1
+      run: |
+        python -m pip install -r scripts/requirements-pymobiledevice3-build.txt
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        ./scripts/build-pymobiledevice3.ps1
 
     - name: Upload coverage
       uses: actions/upload-artifact@v7

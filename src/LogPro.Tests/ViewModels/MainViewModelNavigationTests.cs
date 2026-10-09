@@ -1,3 +1,4 @@
+using Moq;
 using LogPro.Services;
 using LogPro.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,12 +14,20 @@ public class MainViewModelNavigationTests
 {
     private static MainViewModel CreateVm()
     {
+        var adb = new Moq.Mock<IAdbService>();
+        adb.Setup(s => s.GetConnectedDevicesWithStatusAsync()).ReturnsAsync((true, new List<LogPro.Models.DeviceInfo>()));
+        adb.Setup(s => s.CheckAvailabilityAsync()).ReturnsAsync(new LogPro.Models.ToolStatus { IsInstalled = true });
+        var ios = new Moq.Mock<IIosService>();
+        ios.Setup(s => s.GetConnectedDevicesWithStatusAsync()).ReturnsAsync((true, new List<LogPro.Models.DeviceInfo>()));
+        ios.Setup(s => s.CheckAvailabilityAsync()).ReturnsAsync(new LogPro.Models.ToolStatus { IsInstalled = true });
+        var mirror = new Moq.Mock<IScrcpyService>();
+        mirror.Setup(s => s.CheckAvailabilityAsync()).ReturnsAsync(new LogPro.Models.ToolStatus { IsInstalled = true });
         var services = new ServiceCollection()
             .AddSingleton<IUiDispatcher, ImmediateUiDispatcher>()
             .AddSingleton<IDeviceStore, DeviceStore>()
-            .AddSingleton<IAdbService, AdbService>()
-            .AddSingleton<IIosService, IosService>()
-            .AddSingleton<IScrcpyService, ScrcpyService>()
+            .AddSingleton(adb.Object)
+            .AddSingleton(ios.Object)
+            .AddSingleton(mirror.Object)
             .AddSingleton<ISessionService>(sp => new SessionService(
                 sp.GetRequiredService<IAdbService>(), sp.GetRequiredService<IIosService>()))
             .AddSingleton<IDeviceMonitorService>(sp => new DeviceMonitorService(

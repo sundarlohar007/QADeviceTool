@@ -6,6 +6,30 @@ namespace LogPro.Tests.Services;
 
 public class DeviceMonitorFailureTests
 {
+    [Theory]
+    [InlineData(DevicePlatform.Android, DeviceConnectionState.Unauthorized)]
+    [InlineData(DevicePlatform.iOS, DeviceConnectionState.PendingTrust)]
+    public async Task AuthorizationAndBriefReconnect_PublishReadyTransition(DevicePlatform platform, DeviceConnectionState blocked)
+    {
+        var current = new List<DeviceInfo> { new() { Serial = "synthetic", Platform = platform, ConnectionState = blocked } };
+        var adb = new Mock<IAdbService>();
+        var ios = new Mock<IIosService>();
+        adb.Setup(x => x.GetConnectedDevicesWithStatusAsync()).ReturnsAsync(() => (true, platform == DevicePlatform.Android ? current : new()));
+        ios.Setup(x => x.GetConnectedDevicesWithStatusAsync()).ReturnsAsync(() => (true, platform == DevicePlatform.iOS ? current : new()));
+        using var monitor = new DeviceMonitorService(adb.Object, ios.Object);
+        var ready = 0;
+        monitor.DeviceConnected += d => { if (d.IsReady) ready++; };
+        await monitor.PollDevicesAsync();
+        current = new() { new() { Serial = "synthetic", Platform = platform, ConnectionState = DeviceConnectionState.Online } };
+        await monitor.PollDevicesAsync();
+        ready.Should().Be(1);
+        current = new();
+        await monitor.PollDevicesAsync();
+        current = new() { new() { Serial = "synthetic", Platform = platform, ConnectionState = DeviceConnectionState.Online } };
+        await monitor.PollDevicesAsync();
+        ready.Should().Be(2);
+    }
+
     [Fact]
     public async Task ConcurrentRefresh_CoalescesWhileBothPlatformsArePending()
     {

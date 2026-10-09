@@ -14,7 +14,6 @@ on:
 env:
   SOLUTION: LogPro.sln
   PROJECT: src/LogPro.App/LogPro.App.csproj
-  CLI_PROJECT: src/LogPro.Cli/LogPro.Cli.csproj
   TEST_PROJECT: src/LogPro.Tests/LogPro.Tests.csproj
   SETUP_SCRIPT: publish/setup.iss
 
@@ -49,10 +48,6 @@ jobs:
       - name: Test
         run: dotnet test ${{ env.TEST_PROJECT }} -c Release --no-build --verbosity normal
 
-      - name: Smoke test bundled iOS commands
-        shell: pwsh
-        run: ./scripts/test-pymobiledevice3.ps1
-
       - name: Determine Version
         id: version
         shell: pwsh
@@ -86,6 +81,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./scripts/build-pymobiledevice3.ps1
           Invoke-WebRequest -Uri "https://dl.google.com/android/repository/platform-tools-latest-windows.zip" -OutFile "$env:RUNNER_TEMP/platform-tools.zip"
+
+      - name: Build Android inventory helper
+        shell: pwsh
+        run: |
+          & "$env:ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager.bat" "platforms;android-34" "build-tools;35.0.0"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/build-android-helper.ps1
 
       - name: Publish App
         run: dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:Version=${{ steps.version.outputs.semver }} -o publish/app
@@ -159,79 +161,16 @@ jobs:
           }
           Test-ToolsManifest "publish/app/tools" "publish/app/tools-manifest.json"
 
-      - name: Publish CLI
-        run: dotnet publish ${{ env.CLI_PROJECT }} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.semver }} -o publish/cli
-
-      - name: Prepare complete CLI tool payload
-        shell: pwsh
-        run: ./scripts/prepare-windows-tools.ps1 -PublishDirectory publish/cli -AdbArchive "$env:RUNNER_TEMP/platform-tools.zip"
-
-      - name: Prepare Windows CLI package
-        shell: pwsh
-        run: |
-          $legal = "publish/cli/licenses"
-          foreach ($notice in @("LogPro-LICENSE.txt", "LogPro-SECURITY.md", "LogPro-GPL_COMPLIANCE.md", "LogPro-THIRD_PARTY_NOTICES.txt", "SOURCE-OFFER-pymobiledevice3.txt")) {
-            if (-not (Test-Path -LiteralPath (Join-Path $legal $notice) -PathType Leaf)) {
-              throw "Windows CLI package is missing legal notice: $notice"
-            }
-          }
-
-          $toolsRoot = "publish/cli/tools"
-          $files = @(Get-ChildItem -LiteralPath $toolsRoot -File -Recurse)
-          if ($files.Count -eq 0) { throw "Windows CLI package has no bundled tools." }
-          foreach ($file in $files) {
-            $firstLine = Get-Content -LiteralPath $file.FullName -TotalCount 1 -ErrorAction SilentlyContinue
-            if ($firstLine -eq "version https://git-lfs.github.com/spec/v1") {
-              throw "Git LFS pointer was packaged instead of the real CLI tool: $($file.FullName)"
-            }
-          }
-          $manifestPath = "publish/cli/tools-manifest.json"
-          if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "Windows CLI tools manifest is missing." }
-          $root = (Resolve-Path -LiteralPath $toolsRoot).Path
-          $entries = @(Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
-          $expected = @{}
-          foreach ($entry in $entries) { $expected[$entry.path] = $entry.sha256.ToLowerInvariant() }
-          $seen = @{}
-          foreach ($file in $files) {
-            $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
-            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            if (-not $expected.ContainsKey($relative) -or $expected[$relative] -ne $hash) { throw "CLI tool hash mismatch: $relative" }
-            $seen[$relative] = $true
-          }
-          if ($seen.Count -ne $expected.Count) { throw "CLI tools manifest contains missing files." }
-
       - name: Remove debug symbols from release payloads
         shell: pwsh
         run: |
-          Get-ChildItem publish/app, publish/cli -File -Filter *.pdb | Remove-Item -Force
-
-      - name: Package compatible tool updates
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path dist -Force | Out-Null
-          foreach ($name in @("adb", "scrcpy", "pymobiledevice3")) {
-            $version = (Get-Content "publish/app/tools/$name/tool-version.txt" -Raw).Trim()
-            Compress-Archive -Path "publish/app/tools/$name" -DestinationPath "dist/LogPro-tool-$name-$version-win-x64.zip"
-          }
-
-      - name: Upload managed Windows tools
-        uses: actions/upload-artifact@v7
-        with:
-          name: managed-windows-tools
-          path: dist/LogPro-tool-*.zip
+          Get-ChildItem publish/app -File -Filter *.pdb | Remove-Item -Force
 
       - name: Upload App
         uses: actions/upload-artifact@v7
         with:
           name: app-published
           path: publish/app/
-          include-hidden-files: true
-
-      - name: Upload CLI
-        uses: actions/upload-artifact@v7
-        with:
-          name: cli-published
-          path: publish/cli/
           include-hidden-files: true
 
   installer:
@@ -290,6 +229,55 @@ jobs:
           & (Join-Path $target "tools/scrcpy/scrcpy.exe") --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          # A second install must replace the old program while retaining local data.
+          $leftover = Join-Path $target "user-leftover.txt"
+          Set-Content -LiteralPath $leftover -Value "preserve me"
+          $userData = Join-Path $env:LOCALAPPDATA "LogPro/installer-smoke-user-data.txt"
+          New-Item -ItemType Directory -Path (Split-Path $userData) -Force | Out-Null
+          Set-Content -LiteralPath $userData -Value "user settings survive"
+          Remove-Item -LiteralPath (Join-Path $target 'LogPro.exe') -Force
+          $second = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SKIPUPDATECHECK', "/DIR=`"$target`"") -WindowStyle Hidden -Wait -PassThru
+          if ($second.ExitCode -ne 0) { throw "Clean replacement install failed: $($second.ExitCode)" }
+          if (Test-Path -LiteralPath $leftover) { throw "Old program directory was not cleaned" }
+          if ((Get-Content -LiteralPath $userData -Raw).Trim() -ne "user settings survive") { throw "User data was lost during replacement" }
+          $recoveredLocal = @(Get-ChildItem (Join-Path $env:LOCALAPPDATA "LogPro/RecoveredInstallFiles") -Recurse -File -Filter "user-leftover.txt" -ErrorAction SilentlyContinue)
+          $adjacentName = (Split-Path $target -Leaf) + '.Recovered.*'
+          $recoveredAdjacent = @(Get-ChildItem -LiteralPath (Split-Path $target) -Directory -Filter $adjacentName -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -File -Filter 'user-leftover.txt' -ErrorAction SilentlyContinue
+          })
+          $recovered = @($recoveredLocal) + @($recoveredAdjacent)
+          if ($recovered.Count -ne 1) { throw "Unowned old-installation file was not preserved; found $($recovered.Count) recovery copies" }
+          Write-Host "Old-install leftover preserved at $($recovered[0].FullName)"
+          $uninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1'
+          $registered = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($uninstallKey)
+          if ($null -eq $registered) { throw 'Replacement installation has no uninstall entry' }
+          try {
+            $registeredPath = [IO.Path]::GetFullPath([string]$registered.GetValue('InstallLocation')).TrimEnd('\')
+            if ($registeredPath -ne [IO.Path]::GetFullPath($target).TrimEnd('\')) { throw 'Uninstall entry points to the wrong installation' }
+            $uninstallCommand = [string]$registered.GetValue('UninstallString')
+            $uninstallExe = $uninstallCommand.Trim('"')
+            if (-not (Test-Path -LiteralPath $uninstallExe -PathType Leaf)) {
+              $present = @(Get-ChildItem -LiteralPath $target -File -Filter 'unins*.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+              throw "Replacement uninstaller is missing. Registered: $uninstallCommand; present: $($present -join ', ')"
+            }
+          } finally { $registered.Dispose() }
+          $verify = Start-Process -FilePath (Join-Path $target "LogPro.exe") -ArgumentList '--verify-installation' -WindowStyle Hidden -Wait -PassThru
+          if ($verify.ExitCode -ne 0) { throw "Replacement installation failed integrity verification" }
+
+          # No network must leave the bundled baseline healthy and finish setup successfully.
+          $offline = [Diagnostics.ProcessStartInfo]::new((Join-Path $target "LogPro.exe"), '--installation-check')
+          $offline.UseShellExecute = $false
+          $offline.CreateNoWindow = $true
+          $offline.Environment['HTTPS_PROXY'] = 'http://127.0.0.1:9'
+          $offline.Environment['HTTP_PROXY'] = 'http://127.0.0.1:9'
+          $offlineProcess = [Diagnostics.Process]::Start($offline)
+          try {
+            if (-not $offlineProcess.WaitForExit(60000)) { $offlineProcess.Kill($true); throw 'Offline installation check timed out' }
+            if ($offlineProcess.ExitCode -ne 0) { throw "Offline installation check failed: $($offlineProcess.ExitCode)" }
+          } finally { $offlineProcess.Dispose() }
+          $verify = Start-Process -FilePath (Join-Path $target "LogPro.exe") -ArgumentList '--verify-installation' -WindowStyle Hidden -Wait -PassThru
+          if ($verify.ExitCode -ne 0) { throw "Offline fallback damaged bundled tools" }
+
       - name: Sign Setup.exe
         if: env.SIGN_CERT_PFX != '' && env.SIGN_CERT_PASSWORD != ''
         shell: pwsh
@@ -310,45 +298,10 @@ jobs:
           name: setup-exe
           path: dist/*.exe
 
-  portable:
-    name: Portable.zip
-    needs: build
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Download App
-        uses: actions/download-artifact@v8
-        with:
-          name: app-published
-          path: publish/app/
-
-      - name: Download CLI
-        uses: actions/download-artifact@v8
-        with:
-          name: cli-published
-          path: publish/cli/
-
-      - name: Create Archives
-        shell: pwsh
-        run: |
-          $ver = "${{ needs.build.outputs.version }}"
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path publish/app/* -DestinationPath "dist/LogPro_v${ver}_portable.zip"
-          Compress-Archive -Path publish/cli/* -DestinationPath "dist/logpro-cli_v${ver}_win-x64.zip"
-          Get-ChildItem dist/
-
-      - name: Upload Zips
-        uses: actions/upload-artifact@v7
-        with:
-          name: portable-zip
-          path: dist/*.zip
-
   release:
     name: GitHub Release
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
-    needs: [build, installer, portable]
+    needs: [build, installer]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -360,18 +313,6 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: setup-exe
-          path: dist/
-
-      - name: Download Zips
-        uses: actions/download-artifact@v8
-        with:
-          name: portable-zip
-          path: dist/
-
-      - name: Download managed Windows tools
-        uses: actions/download-artifact@v8
-        with:
-          name: managed-windows-tools
           path: dist/
 
       - name: List Assets
@@ -399,6 +340,6 @@ jobs:
           tag_name: v${{ needs.build.outputs.version }}
           name: LogPro v${{ needs.build.outputs.version }}
           body_path: CHANGELOG.md
-          files: dist/*
+          files: dist/LogPro_v*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

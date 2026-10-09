@@ -37,7 +37,20 @@ public static class ToolLauncher
     }
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Process, ProcessDiagnostic> Diagnostics = new();
-    private sealed class ProcessDiagnostic { public string LastError = ""; }
+    private sealed class ProcessDiagnostic
+    {
+        public readonly Queue<string> Lines = new();
+        public string LastError = "";
+        public void Append(string line)
+        {
+            lock (Lines)
+            {
+                Lines.Enqueue(line.Length > 2000 ? line[..2000] : line);
+                while (Lines.Count > 12) Lines.Dequeue();
+                Volatile.Write(ref LastError, string.Join(Environment.NewLine, Lines));
+            }
+        }
+    }
     public static string GetProcessError(Process process) => Diagnostics.TryGetValue(process, out var diagnostic)
         ? Volatile.Read(ref diagnostic.LastError) : "";
     public static bool HasRunningTools => Services.ProcessManager.Instance.HasRunningProcesses;
@@ -329,7 +342,8 @@ public static class ToolLauncher
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8
             };
 
             ConfigureOfflineEnvironment(process.StartInfo);
@@ -361,7 +375,7 @@ public static class ToolLauncher
                     while (await process.StandardError.ReadLineAsync() is { } line)
                     {
                         var safeLine = SecurityHelper.RedactSensitiveText(line);
-                        Volatile.Write(ref diagnostic.LastError, safeLine.Length > 2000 ? safeLine[..2000] : safeLine);
+                        diagnostic.Append(safeLine);
                         errorCallback?.Invoke(safeLine);
                         logger.Warn($"[ToolLauncher] STDERR(long): {safeLine}");
                     }

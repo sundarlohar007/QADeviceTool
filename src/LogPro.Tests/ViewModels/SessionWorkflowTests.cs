@@ -20,6 +20,46 @@ public class SessionWorkflowTests
     }
 
     [Fact]
+    public async Task ManualStop_RemainsStoppedOnReadinessEvent()
+    {
+        var device = new DeviceInfo { Serial = "A", Platform = DevicePlatform.Android };
+        var (vm, sessions) = Create(device);
+        using (vm)
+        {
+            vm.AutoCapture = true;
+            var session = new LogSession { DeviceSerial = "A", Status = SessionStatus.Capturing };
+            vm.SelectedSession = session;
+            sessions.Raise(x => x.CaptureStarted += null, session);
+            vm.StopCaptureCommand.Execute(null);
+            var monitor = (IDeviceMonitorService)typeof(SessionViewModel).GetField("_deviceMonitor", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(vm)!;
+            Mock.Get(monitor).Raise(x => x.DeviceConnected += null, device);
+            await Task.Delay(50);
+            sessions.Verify(x => x.CreateSession(It.IsAny<DeviceInfo>(), It.IsAny<string>()), Times.Never);
+        }
+    }
+
+    [Fact]
+    public async Task Filtering_LatestSnapshotWins_AndRawModeDoesNotReparseHistory()
+    {
+        var (vm, _) = Create();
+        using (vm)
+        {
+            vm.LogEntries.AddRange(Enumerable.Range(0, 20000).Select(i => new LogEntry
+            { RawLine = "entry " + i, Message = "entry " + i, Level = i % 2 == 0 ? LogLevel.Error : LogLevel.Info }));
+            var original = vm.LogEntries[0];
+            foreach (var level in vm.LogLevelFilters) level.IsSelected = false;
+            vm.LogLevelFilters.Single(f => f.Level == LogLevel.Error).IsSelected = true;
+            await vm.FilteringTask;
+            vm.LogEntriesView.Should().HaveCount(10000).And.OnlyContain(e => e.Level == LogLevel.Error);
+            vm.IsRawMode = !vm.IsRawMode;
+            vm.LogEntries[0].Should().BeSameAs(original);
+            foreach (var level in vm.LogLevelFilters) level.IsSelected = false;
+            await vm.FilteringTask;
+            vm.LogEntriesView.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
     public void DeviceRefresh_KeepsSelectedDeviceInRefreshedList()
     {
         var a = new DeviceInfo { Serial = "A", Platform = DevicePlatform.Android };
@@ -68,7 +108,7 @@ public class SessionWorkflowTests
     }
 
     [Fact]
-    public void PauseDisplay_KeepsCapturedLinesAndReplaysOnResume()
+    public async Task PauseDisplay_KeepsCapturedLinesAndReplaysOnResume()
     {
         var a = new DeviceInfo { Serial = "A", Platform = DevicePlatform.Android };
         var (vm, sessions) = Create(a);
@@ -84,10 +124,27 @@ public class SessionWorkflowTests
             vm.LogEntries.Should().HaveCount(1);
             vm.LogEntriesView.Should().BeEmpty();
             vm.TogglePauseCommand.Execute(null);
+            await vm.FilteringTask;
             vm.LogEntriesView.Should().HaveCount(1);
             vm.IsRawMode = false;
             vm.LogEntriesView[0].Message.Should().Be("failed");
             vm.LogEntriesView[0].Tag.Should().Be("Example");
+        }
+    }
+
+    [Fact]
+    public void LiveLongRecords_ResetSeverityBetweenRecords()
+    {
+        var (vm, sessions) = Create();
+        using (vm)
+        {
+            var session = new LogSession { DeviceSerial = "A", Status = SessionStatus.Capturing, Format = LogcatFormat.Long };
+            vm.SelectedSession = session;
+            sessions.Raise(x => x.CaptureStarted += null, session);
+            sessions.Raise(x => x.LogBatchReceived += null, session.Id,
+                "[ 10-06 12:00:00.000 123: 456 E/Tag ]\r\ncontinued\r\n\r\nunattributed\r\n");
+            vm.LogEntries.Single(e => e.RawLine == "continued").Level.Should().Be(LogLevel.Error);
+            vm.LogEntries.Single(e => e.RawLine == "unattributed").Level.Should().Be(LogLevel.Unknown);
         }
     }
 
@@ -113,15 +170,18 @@ public class SessionWorkflowTests
         }
     }
 
-    [Fact]
-    public async Task SearchEntireSession_FindsLinesOutsideViewerTail()
+    [Theory]
+    [InlineData(LogcatFormat.ThreadTime)]
+    [InlineData(LogcatFormat.Long)]
+    public async Task SearchEntireSession_FindsLinesOutsideViewerTail(LogcatFormat format)
     {
         var root = Path.Combine(Path.GetTempPath(), $"LogProSearch_{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
         try
         {
             var file = Path.Combine(root, "capture_log.txt");
-            await File.WriteAllTextAsync(file, "older important line\nrecent line\n");
+            var header = format == LogcatFormat.Long ? "[ 10-06 12:00:00.000 123: 456 E/Tag ]\n" : "";
+            await File.WriteAllTextAsync(file, header + "older important line\n\nrecent line\n");
             var (vm, sessions) = Create();
             using (vm)
             {
@@ -131,13 +191,20 @@ public class SessionWorkflowTests
                 {
                     LogFilePath = file,
                     SessionDirectory = root,
+                    Format = format,
                     Status = SessionStatus.Stopped
                 };
                 vm.SearchText = "older important";
 
                 await vm.SearchEntireSessionCommand.ExecuteAsync(null);
+                await vm.FilteringTask;
 
                 vm.LogEntriesView.Should().ContainSingle(e => e.RawLine == "older important line");
+                if (format == LogcatFormat.Long)
+                {
+                    vm.LogEntriesView[0].Level.Should().Be(LogLevel.Error);
+                    vm.LogEntriesView[0].Tag.Should().Be("Tag");
+                }
                 vm.IsShowingFullFileSearch.Should().BeTrue();
             }
         }

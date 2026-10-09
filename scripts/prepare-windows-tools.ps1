@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory)][string]$PublishDirectory,
     [string]$IosRuntime = "publish/pymobiledevice3",
-    [string]$AdbArchive = ""
+    [string]$AdbArchive = "",
+    [int]$ManagedRevision = 1
 )
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path -LiteralPath $PublishDirectory).Path
@@ -46,6 +47,14 @@ foreach ($name in @("adb", "scrcpy", "pymobiledevice3")) {
 }
 $placeholder = Join-Path $tools ".gitkeep"
 if (Test-Path -LiteralPath $placeholder) { Remove-Item -LiteralPath $placeholder -Force }
+$androidHelper = Join-Path $tools 'adb'
+New-Item -ItemType Directory -Force -Path $androidHelper | Out-Null
+Copy-Item -LiteralPath 'publish/android-helper/inventory.jar' -Destination $androidHelper
+foreach ($name in @('adb', 'scrcpy', 'pymobiledevice3')) {
+    $upstream = [Version](Get-Content -LiteralPath (Join-Path $tools "$name/tool-version.txt") -Raw).Trim()
+    $packageVersion = "$($upstream.Major).$($upstream.Minor).$([Math]::Max(0,$upstream.Build)).$ManagedRevision"
+    Set-Content -LiteralPath (Join-Path $tools "$name/tool-package-version.txt") -Value $packageVersion -Encoding utf8NoBOM
+}
 $entries = @(Get-ChildItem -LiteralPath $tools -File -Recurse -Force | Sort-Object FullName | ForEach-Object {
     @{ path = $_.FullName.Substring($tools.Length + 1).Replace('\', '/'); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 })

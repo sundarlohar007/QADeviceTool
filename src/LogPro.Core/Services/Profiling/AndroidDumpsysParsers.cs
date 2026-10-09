@@ -11,8 +11,8 @@ public static class AndroidDumpsysParsers
 {
     /// <summary>
     /// Parses `dumpsys SurfaceFlinger --latency &lt;layer&gt;`.
-    /// Line 1 = refresh period (ns). Each following line: "appTs\tsfTs\tpresentTs".
-    /// Present timestamps of 0 are pending frames and are skipped.
+    /// Line 1 = refresh period (ns). Each following line: "desiredPresent\tactualPresent\tframeReady".
+    /// Zero and INT64_MAX timestamps are invalid/pending and are skipped.
     /// Frame time = delta between consecutive present timestamps.
     /// </summary>
     public static SurfaceFlingerLatencyResult ParseSurfaceFlingerLatency(string output)
@@ -33,7 +33,7 @@ public static class AndroidDumpsysParsers
 
             var parts = line.Split('\t', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length < 3) continue;
-            if (!long.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var presentNs) || presentNs <= 0)
+            if (!long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var presentNs) || presentNs <= 0 || presentNs == long.MaxValue)
                 continue;
 
             var prev = frames.LastOrDefault();

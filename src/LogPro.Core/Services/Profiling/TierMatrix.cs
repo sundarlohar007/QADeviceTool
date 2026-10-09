@@ -46,7 +46,7 @@ public static class TierMatrix
             profiler.Start();
             try { await Task.Delay(duration, cancellationToken); }
             finally { await profiler.StopAsync(); }
-            var summary = ProfilerReportWriter.Summarize(profiler.History);
+            var summary = profiler.Summary;
             return new TierResult
             {
                 Profile = profile,

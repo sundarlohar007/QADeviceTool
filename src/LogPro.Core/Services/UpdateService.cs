@@ -70,12 +70,11 @@ public sealed class UpdateService : IDisposable
     /// </summary>
     public async Task<List<UpdateInfo>> CheckAllAsync(CancellationToken ct = default)
     {
-        var checks = _sources.Select(async entry =>
+        async Task<UpdateInfo> Check(string toolName, Func<Task<UpdateInfo>> check)
         {
-            var (toolName, source) = entry;
             try
             {
-                return await CheckOneAsync(toolName, source, ct).ConfigureAwait(false);
+                return await check().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -89,19 +88,130 @@ public sealed class UpdateService : IDisposable
                     ReleaseNotes = $"Check failed: {ex.Message}"
                 };
             }
-        });
+        }
+        var checks = new[]
+        {
+            Check("adb", () => CheckAdbAsync(ct)),
+            Check("scrcpy", () => CheckScrcpyAsync(ct)),
+            Check("pymobiledevice3", () => CheckPymobiledevice3Async(ct)),
+            Check("logpro", async () => await CheckOneAsync("logpro", _sources["logpro"], await GetReleaseJsonAsync(ct)).ConfigureAwait(false))
+        };
         return (await Task.WhenAll(checks).ConfigureAwait(false)).ToList();
+    }
+
+    private async Task<UpdateInfo> CheckAdbAsync(CancellationToken ct)
+    {
+        const string url = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip";
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(45));
+        var cache = GetSecuredUpdateCache();
+        var partial = Path.Combine(cache, "google-platform-tools." + Guid.NewGuid().ToString("N") + ".partial");
+        try
+        {
+            await DownloadFileAsync(url, partial, null, deadline.Token).ConfigureAwait(false);
+            var parsed = ReadAdbArchiveVersion(partial);
+            var hash = await ComputeSha256Async(partial).ConfigureAwait(false);
+            File.Move(partial, Path.Combine(cache, hash + ".download"), overwrite: true);
+            return new UpdateInfo
+            {
+                ToolName = "adb",
+                CurrentVersion = GetCurrentVersion("adb"),
+                LatestVersion = ToManagedVersion(parsed),
+                DownloadUrl = url,
+                Sha256 = hash,
+                FileName = "platform-tools-latest-windows.zip",
+                ReleaseNotes = "Official Google Platform-Tools for Windows."
+            };
+        }
+        finally { if (File.Exists(partial)) File.Delete(partial); }
+    }
+
+    private async Task<UpdateInfo> CheckScrcpyAsync(CancellationToken ct)
+    {
+        var json = await GetJsonAsync("https://api.github.com/repos/Genymobile/scrcpy/releases/latest", ct).ConfigureAwait(false);
+        return ParseScrcpyRelease(json, GetCurrentVersion("scrcpy"));
+    }
+
+    internal static UpdateInfo ParseScrcpyRelease(string json, string currentVersion)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var tag = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
+        var version = Regex.Match(tag, @"^v?(\d+(?:\.\d+){1,3})$").Groups[1].Value;
+        if (!Version.TryParse(version, out var parsed)) throw new InvalidDataException("scrcpy release has no valid version.");
+        var expectedName = "scrcpy-win64-v" + version + ".zip";
+        foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
+        {
+            if (asset.GetProperty("name").GetString() != expectedName) continue;
+            var digest = asset.TryGetProperty("digest", out var value) ? value.GetString() ?? "" : "";
+            var url = asset.GetProperty("browser_download_url").GetString() ?? "";
+            var update = new UpdateInfo
+            {
+                ToolName = "scrcpy",
+                CurrentVersion = currentVersion,
+                LatestVersion = ToManagedVersion(parsed),
+                DownloadUrl = url,
+                Sha256 = digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ? digest[7..] : "",
+                FileName = expectedName,
+                ReleaseNotes = "Official Genymobile Windows release."
+            };
+            if (!IsTrustedDownloadUrl(update) ||
+                new Uri(url).AbsolutePath != $"/Genymobile/scrcpy/releases/download/v{version}/{expectedName}" ||
+                !Regex.IsMatch(update.Sha256, "^[a-fA-F0-9]{64}$"))
+                throw new InvalidDataException("scrcpy release asset has no trusted URL or SHA-256 digest.");
+            return update;
+        }
+        throw new InvalidDataException("scrcpy release has no matching Windows x64 archive.");
+    }
+
+    private async Task<UpdateInfo> CheckPymobiledevice3Async(CancellationToken ct)
+    {
+        var json = await GetJsonAsync("https://pypi.org/pypi/pymobiledevice3/json", ct).ConfigureAwait(false);
+        return ParsePymobiledevice3Release(json, GetCurrentVersion("pymobiledevice3"));
+    }
+
+    internal static UpdateInfo ParsePymobiledevice3Release(string json, string currentVersion)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var version = doc.RootElement.GetProperty("info").GetProperty("version").GetString() ?? "";
+        if (!Version.TryParse(version, out var parsed)) throw new InvalidDataException("PyPI did not provide a compatible version number.");
+        return new UpdateInfo
+        {
+            ToolName = "pymobiledevice3",
+            CurrentVersion = currentVersion,
+            LatestVersion = ToManagedVersion(parsed),
+            ReleaseNotes = "A newer upstream Python package needs a tested, frozen LogPro Windows runtime. Keep the bundled version until a compatible installer is released."
+        };
+    }
+
+    private static string ToManagedVersion(Version version) =>
+        $"{version.Major}.{version.Minor}.{Math.Max(0, version.Build)}.{Math.Max(0, version.Revision)}";
+
+    internal static Version ReadAdbArchiveVersion(string path)
+    {
+        using var archive = ZipFile.OpenRead(path);
+        var properties = archive.GetEntry("platform-tools/source.properties")
+            ?? throw new InvalidDataException("Google platform-tools archive lacks version metadata.");
+        using var reader = new StreamReader(properties.Open());
+        var versionText = reader.ReadToEnd();
+        var version = Regex.Match(versionText, @"(?m)^Pkg\.Revision\s*=\s*([\d.]+)\s*$").Groups[1].Value;
+        if (!Version.TryParse(version, out var parsed) || archive.GetEntry("platform-tools/adb.exe") == null)
+            throw new InvalidDataException("Google platform-tools archive is incomplete.");
+        return parsed;
+    }
+
+    private static string GetSecuredUpdateCache()
+    {
+        var cache = Path.Combine(PathHelper.GetAppDataDirectory(), "updates");
+        Directory.CreateDirectory(cache);
+        if (!PathHelper.RestrictDirectoryAccess(cache)) throw new IOException("Cannot secure update cache.");
+        return cache;
     }
 
     public async Task<string> PrepareUpdateAsync(UpdateInfo update, CancellationToken ct = default)
     {
-        if (!update.IsInstallable || !Uri.TryCreate(update.DownloadUrl, UriKind.Absolute, out var uri) ||
-            uri.Scheme != "https" || uri.Host != "github.com" ||
-            !uri.AbsolutePath.StartsWith("/sundarlohar007/QADeviceTool/releases/download/", StringComparison.Ordinal))
-            throw new InvalidDataException("No compatible verified LogPro release package is available.");
-        var cache = Path.Combine(LogPro.Helpers.PathHelper.GetAppDataDirectory(), "updates");
-        Directory.CreateDirectory(cache);
-        if (!PathHelper.RestrictDirectoryAccess(cache)) throw new IOException("Cannot secure update cache.");
+        if (!update.IsInstallable || !IsTrustedDownloadUrl(update))
+            throw new InvalidDataException("No verified package from an approved source is available.");
+        var cache = GetSecuredUpdateCache();
         var target = Path.Combine(cache, update.Sha256.ToLowerInvariant() + ".download");
         if (File.Exists(target) && string.Equals(await ComputeSha256Async(target), update.Sha256, StringComparison.OrdinalIgnoreCase)) return target;
         var partial = target + "." + Guid.NewGuid().ToString("N") + ".partial";
@@ -129,9 +239,7 @@ public sealed class UpdateService : IDisposable
             return (false, "No download URL.");
         if (!Regex.IsMatch(update.Sha256 ?? string.Empty, "^[a-fA-F0-9]{64}$"))
             return (false, "No trusted SHA-256 digest is available for this release asset.");
-        if (!Uri.TryCreate(update.DownloadUrl, UriKind.Absolute, out var downloadUri) ||
-            downloadUri.Scheme != Uri.UriSchemeHttps || downloadUri.Host != "github.com")
-            return (false, "Update asset must be served from GitHub over HTTPS.");
+        if (!IsTrustedDownloadUrl(update)) return (false, "Update asset is not from the approved source.");
 
         if (ToolLauncher.HasRunningTools)
             return (false, "Update deferred: stop active device operations before installing tools.");
@@ -203,18 +311,39 @@ public sealed class UpdateService : IDisposable
 
     // ─── Private helpers ─────────────────────────────────────────
 
-    private async Task<UpdateInfo> CheckOneAsync(string toolName, ToolSource source, CancellationToken ct)
-    {
-        var currentVersion = GetCurrentVersion(toolName);
-        var releaseUrl = $"https://api.github.com/repos/{source.GitHubOwner}/{source.GitHubRepo}/releases/latest";
+    private static async Task<string> GetReleaseJsonAsync(CancellationToken ct)
+        => await GetJsonAsync("https://api.github.com/repos/sundarlohar007/QADeviceTool/releases/latest", ct).ConfigureAwait(false);
 
+    private static async Task<string> GetJsonAsync(string url, CancellationToken ct)
+    {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
-        ct = timeout.Token;
-        using var response = await _http.GetAsync(releaseUrl, ct).ConfigureAwait(false);
+        using var response = await _http.GetAsync(url, timeout.Token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
+    }
 
-        var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+    internal static bool IsTrustedDownloadUrl(UpdateInfo update)
+    {
+        if (!Uri.TryCreate(update.DownloadUrl, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort ||
+            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment)) return false;
+        return update.ToolName switch
+        {
+            "adb" => uri.Host == "dl.google.com" && uri.AbsolutePath == "/android/repository/platform-tools-latest-windows.zip",
+            "scrcpy" => uri.Host == "github.com" && Regex.IsMatch(uri.AbsolutePath,
+                @"^/Genymobile/scrcpy/releases/download/v[\d.]+/scrcpy-win64-v[\d.]+\.zip$", RegexOptions.IgnoreCase),
+            "logpro" => uri.Host == "github.com" && uri.AbsolutePath.StartsWith(
+                "/sundarlohar007/QADeviceTool/releases/download/", StringComparison.Ordinal) &&
+                IsCompatibleAsset("logpro", Path.GetFileName(uri.AbsolutePath)),
+            _ => false
+        };
+    }
+
+    private Task<UpdateInfo> CheckOneAsync(string toolName, ToolSource source, string json)
+    {
+        var currentVersion = GetCurrentVersion(toolName);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
@@ -247,7 +376,7 @@ public sealed class UpdateService : IDisposable
         }
 
         if (toolName != "logpro" && string.IsNullOrEmpty(fileName)) latestVersion = "";
-        return new UpdateInfo
+        return Task.FromResult(new UpdateInfo
         {
             ToolName = toolName,
             CurrentVersion = currentVersion,
@@ -256,7 +385,7 @@ public sealed class UpdateService : IDisposable
             Sha256 = sha256,
             ReleaseNotes = string.IsNullOrEmpty(fileName) ? "Check failed: no compatible Windows package was published for this component." : TruncateReleaseNotes(releaseNotes),
             FileName = fileName
-        };
+        });
     }
 
     internal static bool IsCompatibleAsset(string toolName, string assetName) =>
@@ -266,7 +395,8 @@ public sealed class UpdateService : IDisposable
     {
         try
         {
-            var versionFile = Path.Combine(_toolsDir, toolName, "tool-version.txt");
+            var versionFile = Path.Combine(_toolsDir, toolName, "tool-package-version.txt");
+            if (!File.Exists(versionFile)) versionFile = Path.Combine(_toolsDir, toolName, "tool-version.txt");
             if (File.Exists(versionFile)) return File.ReadAllText(versionFile).Trim();
             if (string.Equals(toolName, "logpro", StringComparison.OrdinalIgnoreCase))
             {
@@ -307,15 +437,11 @@ public sealed class UpdateService : IDisposable
     internal async Task InstallToolAsync(string downloadPath, string toolName, string expectedVersion, CancellationToken ct)
     {
         if (toolName is not ("adb" or "scrcpy" or "pymobiledevice3")) throw new ArgumentException("Unknown managed tool.", nameof(toolName));
+        await new ToolUpdateTransaction(_appDir, _toolsDir).RecoverAsync(toolName).ConfigureAwait(false);
         var integrity = await ToolManifest.VerifyAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false);
         if (!integrity.IsHealthy) throw new InvalidDataException("Repair the existing installation before updating tools. Its integrity check failed.");
         Directory.CreateDirectory(_toolsDir);
         var staging = Path.Combine(_appDir, $".update_{Guid.NewGuid():N}");
-        var backup = BackupPath(toolName);
-        string? installed = null;
-        string? previous = null;
-        var installedNew = false;
-        var backupCreated = false;
         Directory.CreateDirectory(staging);
         try
         {
@@ -324,52 +450,41 @@ public sealed class UpdateService : IDisposable
                 throw new InvalidDataException("Managed tool updates must contain a complete Windows runtime bundle.");
             ZipFile.ExtractToDirectory(downloadPath, staging);
             var staged = Path.Combine(staging, toolName);
+            var upstream = expectedVersion.EndsWith(".0", StringComparison.Ordinal)
+                ? expectedVersion[..^2] : expectedVersion;
+            if (toolName == "adb" && Directory.Exists(Path.Combine(staging, "platform-tools")))
+            {
+                Directory.Move(Path.Combine(staging, "platform-tools"), staged);
+                var sourceProperties = Path.Combine(staged, "source.properties");
+                if (!File.Exists(sourceProperties) || !Regex.IsMatch(File.ReadAllText(sourceProperties),
+                    @"(?m)^Pkg\.Revision\s*=\s*" + Regex.Escape(upstream) + @"\s*$"))
+                    throw new InvalidDataException("Google archive revision differs from the checked release.");
+                var helper = Path.Combine(_toolsDir, "adb", "inventory.jar");
+                if (File.Exists(helper)) File.Copy(helper, Path.Combine(staged, "inventory.jar"));
+                File.WriteAllText(Path.Combine(staged, "tool-version.txt"), upstream);
+                File.WriteAllText(Path.Combine(staged, "tool-package-version.txt"), expectedVersion);
+            }
+            else if (toolName == "scrcpy" && !Directory.Exists(staged))
+            {
+                var source = Path.Combine(staging, "scrcpy-win64-v" + upstream);
+                if (!Directory.Exists(source)) throw new InvalidDataException("scrcpy archive layout or version is unexpected.");
+                Directory.Move(source, staged);
+                File.WriteAllText(Path.Combine(staged, "tool-version.txt"), upstream);
+                File.WriteAllText(Path.Combine(staged, "tool-package-version.txt"), expectedVersion);
+            }
             if (!File.Exists(Path.Combine(staged, toolName + ".exe")) ||
                 !File.Exists(Path.Combine(staged, "tool-version.txt")))
                 throw new InvalidDataException("Update archive is missing its executable or version metadata.");
-            if (!string.Equals(File.ReadAllText(Path.Combine(staged, "tool-version.txt")).Trim(), expectedVersion, StringComparison.Ordinal))
+            var packageVersionFile = Path.Combine(staged, "tool-package-version.txt");
+            if (!File.Exists(packageVersionFile)) packageVersionFile = Path.Combine(staged, "tool-version.txt");
+            if (!string.Equals(File.ReadAllText(packageVersionFile).Trim(), expectedVersion, StringComparison.Ordinal))
                 throw new InvalidDataException("Package version does not match the release metadata.");
             // Validate the CLI contract before touching the working installation.
             var args = toolName == "scrcpy" ? "--version" : "version";
             var probe = await ToolLauncher.RunAsync(Path.Combine(staged, toolName + ".exe"), args, 60000, cancellationToken: ct).ConfigureAwait(false);
             if (!probe.Success) throw new InvalidDataException("Updated tool health check failed: " + probe.Error);
-            installed = Path.Combine(_toolsDir, toolName);
-            previous = Directory.Exists(installed) ? installed : toolName == "scrcpy"
-                ? Directory.GetDirectories(_toolsDir, "scrcpy-win64-*").FirstOrDefault() : null;
-            if (previous != null)
-            {
-                if (Directory.Exists(backup)) Directory.Delete(backup, true);
-                Directory.Move(previous, backup);
-                backupCreated = true;
-            }
-            Directory.Move(staged, installed);
-            installedNew = true;
-            Directory.Delete(staging, true);
-
             ct.ThrowIfCancellationRequested();
-            await ToolManifest.WriteAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false);
-            if (!(await ToolManifest.VerifyAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false)).IsHealthy)
-                throw new InvalidDataException("Installed update failed verification.");
-            ToolResolver.ClearCache();
-            if (previous != null) File.WriteAllText(backup + ".name", Path.GetFileName(previous));
-            else
-            {
-                try
-                {
-                    if (Directory.Exists(backup)) Directory.Delete(backup, true);
-                    if (File.Exists(backup + ".name")) File.Delete(backup + ".name");
-                }
-                catch (Exception ex) { AppLogger.Log.Warn(ex, "[UpdateService] Could not remove stale rollback data"); }
-            }
-        }
-        catch
-        {
-            if (installedNew && installed != null && Directory.Exists(installed)) Directory.Delete(installed, true);
-            if (backupCreated && previous != null && Directory.Exists(backup)) Directory.Move(backup, previous);
-            try { await ToolManifest.WriteAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false); }
-            catch (Exception ex) { AppLogger.Log.Warn(ex, "[UpdateService] Could not restore tool manifest after rollback"); }
-            ToolResolver.ClearCache();
-            throw;
+            await new ToolUpdateTransaction(_appDir, _toolsDir).CommitAsync(toolName, staged).ConfigureAwait(false);
         }
         finally
         {
@@ -379,55 +494,57 @@ public sealed class UpdateService : IDisposable
     }
 
     private string BackupPath(string toolName)
-        => Path.Combine(Path.GetDirectoryName(_toolsDir)!, $".logpro_backup_{toolName}");
+        => Path.Combine(_appDir, $".logpro_backup_{toolName}");
+
+    public bool HasRollback(string toolName) => toolName is ("adb" or "scrcpy" or "pymobiledevice3") &&
+        Directory.Exists(BackupPath(toolName)) && File.Exists(BackupPath(toolName) + ".name") && File.Exists(BackupPath(toolName) + ".manifest.json");
 
     public async Task<(bool Success, string Message)> RollbackLastUpdateAsync(string toolName)
     {
         if (ToolLauncher.HasRunningTools) return (false, "Stop device operations before rolling back tools.");
         if (toolName is not ("adb" or "scrcpy" or "pymobiledevice3")) return (false, "Unknown tool.");
-        var backup = BackupPath(toolName);
-        var marker = backup + ".name";
-        if (!Directory.Exists(backup) || !File.Exists(marker)) return (false, "No previous installation is available.");
-        var previousName = File.ReadAllText(marker).Trim();
-        if (previousName != Path.GetFileName(previousName) ||
-            (toolName == "scrcpy" && previousName != "scrcpy" && !previousName.StartsWith("scrcpy-win64-", StringComparison.OrdinalIgnoreCase)) ||
-            (toolName == "pymobiledevice3" && previousName != "pymobiledevice3") ||
-            (toolName == "adb" && previousName != "adb"))
-            return (false, "Rollback metadata is invalid.");
-        var current = Path.Combine(_toolsDir, toolName);
-        if (toolName == "scrcpy" && !Directory.Exists(current))
-            current = Directory.GetDirectories(_toolsDir, "scrcpy-win64-*").FirstOrDefault();
-        if (current == null || !Directory.Exists(current)) return (false, "Current installation is unavailable.");
-        var restored = Path.Combine(_toolsDir, previousName);
-        if (restored != current && Directory.Exists(restored)) return (false, "Rollback target already exists.");
-        var swap = Path.Combine(Path.GetDirectoryName(_toolsDir)!, $".logpro_swap_{Guid.NewGuid():N}");
+        var staging = Path.Combine(_appDir, ".rollback_" + Guid.NewGuid().ToString("N"));
         try
         {
-            Directory.Move(current, swap);
-            try
-            {
-                Directory.Move(backup, restored);
-                await ToolManifest.WriteAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false);
-                ToolResolver.ClearCache();
-                Directory.Move(swap, backup);
-                File.WriteAllText(marker, Path.GetFileName(current));
-                return (true, $"Restored previous {toolName} installation.");
-            }
-            catch
-            {
-                if (Directory.Exists(restored)) Directory.Move(restored, backup);
-                Directory.Move(swap, current);
-                try { await ToolManifest.WriteAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false); }
-                catch (Exception ex) { AppLogger.Log.Warn(ex, "[UpdateService] Failed to regenerate manifest after rollback failure"); }
-                ToolResolver.ClearCache();
-                throw;
-            }
+            var transaction = new ToolUpdateTransaction(_appDir, _toolsDir);
+            await transaction.RecoverAsync(toolName).ConfigureAwait(false);
+            await transaction.ValidateBackupAsync(toolName).ConfigureAwait(false);
+            var integrity = await ToolManifest.VerifyAsync(_toolsDir, Path.Combine(_appDir, ToolManifest.DefaultFileName)).ConfigureAwait(false);
+            bool BelongsToTool(string path) => path.StartsWith(toolName + "/", StringComparison.OrdinalIgnoreCase) ||
+                (toolName == "scrcpy" && path.StartsWith("scrcpy-win64-", StringComparison.OrdinalIgnoreCase));
+            if (integrity.Mismatched.Select(e => e.Path).Concat(integrity.Missing).Concat(integrity.Unexpected).Any(p => !BelongsToTool(p)))
+                throw new InvalidDataException("Unrelated installed files fail verification. Repair the complete installation first.");
+            ToolUpdateTransaction.CopyTree(BackupPath(toolName), staging);
+            await transaction.CommitAsync(toolName, staging, preserveBackup: true).ConfigureAwait(false);
+            return (true, $"Restored previous {toolName} installation.");
         }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, $"[UpdateService] Rollback failed for {toolName}");
             return (false, $"Rollback failed: {ex.Message}");
         }
+        finally { if (Directory.Exists(staging)) Directory.Delete(staging, true); }
+    }
+
+    public async Task RecoverPendingTransactionsAsync()
+    {
+        var transaction = new ToolUpdateTransaction(_appDir, _toolsDir);
+        foreach (var tool in new[] { "adb", "scrcpy", "pymobiledevice3" })
+            await transaction.RecoverAsync(tool).ConfigureAwait(false);
+    }
+
+    public bool HasPendingTransactions => new[] { "adb", "scrcpy", "pymobiledevice3" }
+        .Any(tool => File.Exists(Path.Combine(_appDir, ".logpro_transaction_" + tool + ".json")));
+
+    public async Task<(bool Success, string Message)> ValidateRollbackAsync(string toolName)
+    {
+        if (ToolLauncher.HasRunningTools) return (false, "Stop device operations before rolling back tools.");
+        try
+        {
+            await new ToolUpdateTransaction(_appDir, _toolsDir).ValidateBackupAsync(toolName).ConfigureAwait(false);
+            return (true, "Previous package verified.");
+        }
+        catch (Exception ex) { return (false, "Previous package cannot be restored: " + SecurityHelper.RedactSensitiveText(ex.Message)); }
     }
 
     private static (bool Success, string Message) HandleSelfUpdate(string installerPath)
@@ -462,6 +579,8 @@ public sealed class UpdateService : IDisposable
         await using var contentStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         await using var fileStream = File.Create(outputPath);
 
+        const long maxUpdateBytes = 500L * 1024 * 1024;
+        if (totalBytes > maxUpdateBytes) throw new InvalidDataException("Update archive exceeds the size limit.");
         var buffer = new byte[81920];
         long totalRead = 0;
         int bytesRead;
@@ -469,6 +588,7 @@ public sealed class UpdateService : IDisposable
         {
             await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
             totalRead += bytesRead;
+            if (totalRead > maxUpdateBytes) throw new InvalidDataException("Update archive exceeds the size limit.");
             if (totalBytes > 0)
                 progress?.Report((int)(totalRead * 100 / totalBytes));
         }

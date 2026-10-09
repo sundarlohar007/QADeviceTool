@@ -1,10 +1,12 @@
 LogPro for Windows
 
 ADB, scrcpy, the complete pymobiledevice3 runtime, and .NET are included.
-Setup checks compatible verified LogPro release packages when online. If offline,
-the included tools remain available. A newer LogPro installer is downloaded for
-installation from Settings after setup finishes; setup never runs two installers
-against the same directory at once.
+Setup removes an earlier LogPro program installation first, keeping local user
+settings, sessions and logs. It checks Google for newer ADB Platform-Tools,
+Genymobile for a newer Windows scrcpy, and PyPI for pymobiledevice3. Only a
+tested bundled pymobiledevice3 executable is used; a newer upstream version
+produces a notice. If offline, the included tools remain available. A newer
+LogPro installer is downloaded for installation from Settings after setup.
 
 Android USB: enable Developer options and USB debugging, unlock the device, and
 accept the RSA authorization prompt. Some manufacturers require their own Windows

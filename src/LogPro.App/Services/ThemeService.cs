@@ -49,8 +49,7 @@ public static class ThemeService
         var merged = Application.Current.Resources.MergedDictionaries;
         LoadThemeDictionary(merged, themeName);
 
-        PreferencesService.Current.ThemePreference = themeName;
-        PreferencesService.Save();
+        PreferencesService.Update(p => p.ThemePreference = themeName);
 
         CurrentTheme = themeName;
     }

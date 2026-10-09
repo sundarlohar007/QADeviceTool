@@ -97,13 +97,13 @@
                 <WrapPanel><Button Content="Pin this run as baseline" Command="{Binding PinBaselineCommand}" Style="{StaticResource GhostBtn}" Margin="0,0,8,0"/><Button Content="Clear baseline" Command="{Binding ClearBaselineCommand}" Style="{StaticResource GhostBtn}" /></WrapPanel>
                 <TextBlock Text="FPS trend (auto-scaled)" Foreground="{DynamicResource BrushTextSecondary}" />
                 <TextBlock Text="{Binding FpsChartRange}" Foreground="{DynamicResource BrushTextMuted}" />
-                <Polyline Points="{Binding ChartSamples, Converter={x:Static conv:ProfilerSparklineConverter.Instance}, ConverterParameter=fps}" Stroke="{DynamicResource BrushCyan}" StrokeThickness="2" Width="600" Height="70" Stretch="Uniform" />
+                <Polyline Points="{Binding ChartSamples, Converter={x:Static conv:ProfilerSparklineConverter.Instance}, ConverterParameter=fps}" Stroke="{DynamicResource BrushCyan}" StrokeThickness="2" HorizontalAlignment="Stretch" Height="70" Stretch="Uniform" />
                 <TextBlock Text="CPU % trend (auto-scaled)" Foreground="{DynamicResource BrushTextSecondary}" />
                 <TextBlock Text="{Binding CpuChartRange}" Foreground="{DynamicResource BrushTextMuted}" />
-                <Polyline Points="{Binding ChartSamples, Converter={x:Static conv:ProfilerSparklineConverter.Instance}, ConverterParameter=cpu}" Stroke="{DynamicResource BrushRed}" StrokeThickness="2" Width="600" Height="55" Stretch="Uniform" />
+                <Polyline Points="{Binding ChartSamples, Converter={x:Static conv:ProfilerSparklineConverter.Instance}, ConverterParameter=cpu}" Stroke="{DynamicResource BrushRed}" StrokeThickness="2" HorizontalAlignment="Stretch" Height="55" Stretch="Uniform" />
                 <TextBlock Text="Memory MB trend (auto-scaled)" Foreground="{DynamicResource BrushTextSecondary}" />
                 <TextBlock Text="{Binding MemoryChartRange}" Foreground="{DynamicResource BrushTextMuted}" />
-                <Polyline Points="{Binding ChartSamples, Converter={x:Static conv:ProfilerSparklineConverter.Instance}, ConverterParameter=mem}" Stroke="{DynamicResource BrushPrimaryLight}" StrokeThickness="2" Width="600" Height="55" Stretch="Uniform" />
+                <Polyline Points="{Binding ChartSamples, Converter={x:Static conv:ProfilerSparklineConverter.Instance}, ConverterParameter=mem}" Stroke="{DynamicResource BrushPrimaryLight}" StrokeThickness="2" HorizontalAlignment="Stretch" Height="55" Stretch="Uniform" />
                 <ItemsControl ItemsSource="{Binding Markers}" MaxHeight="55"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Foreground="{DynamicResource BrushTextMuted}"><Run Text="{Binding Timestamp, StringFormat={}{0:HH:mm:ss}}"/><Run Text=" — "/><Run Text="{Binding Label}"/></TextBlock></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                 <DataGrid ItemsSource="{Binding History}" AutoGenerateColumns="False" IsReadOnly="True" MaxHeight="160" HeadersVisibility="Column">
                     <DataGrid.Columns>
