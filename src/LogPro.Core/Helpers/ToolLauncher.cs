@@ -72,6 +72,16 @@ public static class ToolLauncher
     private static readonly Regex _tcpipPattern = new(
         @"-s\s+\S+\s+tcpip\s+\d+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private const int MaxCapturedOutputChars = 1_000_000;
+    private const int MaxLoggedOutputChars = 4096;
+
+    internal static string FormatCapturedOutputForLog(string stream, string output)
+    {
+        // Command output is returned to the caller separately. Large JSON and device
+        // dumps can overwhelm console/CI log sinks and make redaction expensive.
+        if (output.Length > MaxLoggedOutputChars)
+            return $"[ToolLauncher] {stream}: [{output.Length} chars omitted]";
+        return $"[ToolLauncher] {stream}:\n{SecurityHelper.RedactSensitiveText(output)}";
+    }
 
     private static async Task<IDisposable> EnterDeviceGateAsync(string arguments, CancellationToken cancellationToken = default)
     {
@@ -278,10 +288,10 @@ public static class ToolLauncher
             logger.Info($"[ToolLauncher] ExitCode: {result.ExitCode} | Success: {result.Success}");
 
             if (!suppressOutputLog && !string.IsNullOrWhiteSpace(result.Output))
-                logger.Debug(hidePayloadInLogs ? "[ToolLauncher] Deep link output hidden." : $"[ToolLauncher] STDOUT:\n{SecurityHelper.RedactSensitiveText(result.Output)}");
+                logger.Debug(hidePayloadInLogs ? "[ToolLauncher] Deep link output hidden." : FormatCapturedOutputForLog("STDOUT", result.Output));
 
             if (!string.IsNullOrWhiteSpace(result.Error))
-                logger.Error(hidePayloadInLogs ? "[ToolLauncher] Deep link error output hidden." : $"[ToolLauncher] STDERR:\n{SecurityHelper.RedactSensitiveText(result.Error)}");
+                logger.Error(hidePayloadInLogs ? "[ToolLauncher] Deep link error output hidden." : FormatCapturedOutputForLog("STDERR", result.Error));
         }
         catch (OperationCanceledException)
         {

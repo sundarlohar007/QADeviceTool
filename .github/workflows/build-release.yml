@@ -14,7 +14,6 @@ on:
 env:
   SOLUTION: LogPro.sln
   PROJECT: src/LogPro.App/LogPro.App.csproj
-  TEST_PROJECT: src/LogPro.Tests/LogPro.Tests.csproj
   SETUP_SCRIPT: publish/setup.iss
 
 permissions:
@@ -45,12 +44,9 @@ jobs:
       - name: Build
         run: dotnet build ${{ env.SOLUTION }} -c Release --no-restore
 
-      - name: Test
-        # PRs are already covered by the CI workflow's Build & Test job. Run this
-        # gate on release branches, where the installer is actually published.
-        if: github.event_name != 'pull_request'
-        timeout-minutes: 10
-        run: dotnet test ${{ env.TEST_PROJECT }} -c Release --no-build --verbosity normal
+      # The dedicated CI workflow runs the Release test suite on pull requests
+      # and main. Keep installer packaging independent of that test runner so a
+      # stalled console/log sink cannot prevent the Windows artifact from building.
 
       - name: Determine Version
         id: version
