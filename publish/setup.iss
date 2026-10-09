@@ -109,18 +109,23 @@ end;
 procedure RemovePreviousInstallation();
 var
   PreviousDir, UninstallCommand, UninstallExe, RecoveryDir: String;
-  PreviousRoot: HKEY;
   ExitCode: Integer;
 begin
   if RegKeyExists(HKEY_LOCAL_MACHINE_64, PreviousUninstallKey) then
-    PreviousRoot := HKEY_LOCAL_MACHINE_64
+  begin
+    if not RegQueryStringValue(HKEY_LOCAL_MACHINE_64, PreviousUninstallKey, 'InstallLocation', PreviousDir) then
+      RaiseException('Existing LogPro installation has no location. Repair it before continuing.');
+    if not RegQueryStringValue(HKEY_LOCAL_MACHINE_64, PreviousUninstallKey, 'UninstallString', UninstallCommand) then
+      RaiseException('Existing LogPro installation has no uninstaller. Repair it before continuing.');
+  end
   else if RegKeyExists(HKEY_LOCAL_MACHINE_32, PreviousUninstallKey) then
-    PreviousRoot := HKEY_LOCAL_MACHINE_32
+  begin
+    if not RegQueryStringValue(HKEY_LOCAL_MACHINE_32, PreviousUninstallKey, 'InstallLocation', PreviousDir) then
+      RaiseException('Existing LogPro installation has no location. Repair it before continuing.');
+    if not RegQueryStringValue(HKEY_LOCAL_MACHINE_32, PreviousUninstallKey, 'UninstallString', UninstallCommand) then
+      RaiseException('Existing LogPro installation has no uninstaller. Repair it before continuing.');
+  end
   else Exit;
-  if not RegQueryStringValue(PreviousRoot, PreviousUninstallKey, 'InstallLocation', PreviousDir) then
-    RaiseException('Existing LogPro installation has no location. Repair it before continuing.');
-  if not RegQueryStringValue(PreviousRoot, PreviousUninstallKey, 'UninstallString', UninstallCommand) then
-    RaiseException('Existing LogPro installation has no uninstaller. Repair it before continuing.');
   PreviousDir := ExpandFileName(RemoveBackslashUnlessRoot(Trim(PreviousDir)));
   UninstallExe := RemoveQuotes(Trim(UninstallCommand));
   if (not FileExists(UninstallExe)) or
