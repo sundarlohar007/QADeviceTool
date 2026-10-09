@@ -112,7 +112,7 @@ end;
 procedure RemovePreviousInstallation();
 var
   PreviousDir, UninstallCommand, UninstallExe, RecoveryDir: String;
-  ExitCode: Integer;
+  ExitCode, Attempt: Integer;
 begin
   if RegKeyExists(HKEY_LOCAL_MACHINE_64, PreviousUninstallKey) then
   begin
@@ -138,6 +138,15 @@ begin
   if (not Exec(UninstallExe, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', PreviousDir,
     SW_HIDE, ewWaitUntilTerminated, ExitCode)) or (ExitCode <> 0) then
     RaiseException('Previous LogPro uninstall failed. Setup cannot continue until it is removed.');
+  { Inno's uninstall clone can still be deleting the original uninstaller after
+    Exec returns. Do not create a new unins000.exe until that cleanup finishes. }
+  for Attempt := 1 to 50 do
+  begin
+    if not FileExists(UninstallExe) then Break;
+    Sleep(200);
+  end;
+  if FileExists(UninstallExe) then
+    RaiseException('Previous LogPro uninstall is still finishing. Wait a moment and retry setup.');
   if DirExists(PreviousDir) then
   begin
     { Preserve files that the old uninstaller did not own; do not silently delete user data. }
