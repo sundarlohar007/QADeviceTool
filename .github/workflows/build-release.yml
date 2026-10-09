@@ -240,8 +240,14 @@ jobs:
           if ($second.ExitCode -ne 0) { throw "Clean replacement install failed: $($second.ExitCode)" }
           if (Test-Path -LiteralPath $leftover) { throw "Old program directory was not cleaned" }
           if ((Get-Content -LiteralPath $userData -Raw).Trim() -ne "user settings survive") { throw "User data was lost during replacement" }
-          $recovered = @(Get-ChildItem (Join-Path $env:LOCALAPPDATA "LogPro/RecoveredInstallFiles") -Recurse -File -Filter "user-leftover.txt" -ErrorAction SilentlyContinue)
-          if ($recovered.Count -ne 1) { throw "Unowned old-installation file was not preserved" }
+          $recoveredLocal = @(Get-ChildItem (Join-Path $env:LOCALAPPDATA "LogPro/RecoveredInstallFiles") -Recurse -File -Filter "user-leftover.txt" -ErrorAction SilentlyContinue)
+          $adjacentName = (Split-Path $target -Leaf) + '.Recovered.*'
+          $recoveredAdjacent = @(Get-ChildItem -LiteralPath (Split-Path $target) -Directory -Filter $adjacentName -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -File -Filter 'user-leftover.txt' -ErrorAction SilentlyContinue
+          })
+          $recovered = @($recoveredLocal) + @($recoveredAdjacent)
+          if ($recovered.Count -ne 1) { throw "Unowned old-installation file was not preserved; found $($recovered.Count) recovery copies" }
+          Write-Host "Old-install leftover preserved at $($recovered[0].FullName)"
           $uninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1'
           $registered = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($uninstallKey)
           if ($null -eq $registered) { throw 'Replacement installation has no uninstall entry' }
