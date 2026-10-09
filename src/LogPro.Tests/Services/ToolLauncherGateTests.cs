@@ -6,6 +6,23 @@ namespace LogPro.Tests.Services;
 public class ToolLauncherGateTests
 {
     [Fact]
+    public void CapturedOutputLogging_OmitsLargePayloadBeforeRedaction()
+    {
+        var payload = "secret-" + new string('x', 1_200_000);
+        var summary = ToolLauncher.FormatCapturedOutputForLog("STDOUT", payload);
+        summary.Should().Contain("1200007 chars omitted");
+        summary.Should().NotContain("secret-");
+        summary.Length.Should().BeLessThan(200);
+    }
+
+    [Fact]
+    public void CapturedOutputLogging_RedactsSmallPayload()
+    {
+        ToolLauncher.FormatCapturedOutputForLog("STDERR", "password=topsecret")
+            .Should().NotContain("topsecret");
+    }
+
+    [Fact]
     public void OfflineProcessEnvironment_UsesUtf8ForPythonFallback()
     {
         var startInfo = new System.Diagnostics.ProcessStartInfo();
