@@ -7,6 +7,7 @@ namespace LogPro;
 
 public partial class MainWindow : Window
 {
+    private bool _closingInProgress, _closingCompleted;
     private CommandPaletteWindow? _commandPalette;
 
     public bool IsThemeSwitching { get; set; }
@@ -16,11 +17,27 @@ public partial class MainWindow : Window
         InitializeComponent();
         PreviewKeyDown += OnPreviewKeyDown;
         SourceInitialized += (_, _) => Services.WindowPlacementService.Restore(this);
-        Closing += (_, _) =>
+        Closing += async (_, e) =>
         {
-            Services.WindowPlacementService.Save(this);
-            _commandPalette?.Close();
-            if (!IsThemeSwitching && DataContext is MainViewModel vm) vm.Cleanup();
+            if (IsThemeSwitching || _closingCompleted) return;
+            e.Cancel = true;
+            if (_closingInProgress) return;
+            _closingInProgress = true;
+            IsEnabled = false;
+            try
+            {
+                Services.WindowPlacementService.Save(this);
+                _commandPalette?.Close();
+                if (DataContext is MainViewModel vm) await vm.ShutdownAsync();
+                _closingCompleted = true;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                IsEnabled = true;
+                _closingInProgress = false;
+                MessageBox.Show("Could not finalize all operations: " + LogPro.Helpers.SecurityHelper.RedactSensitiveText(ex.Message), "LogPro shutdown");
+            }
         };
         DataContextChanged += (_, e) =>
         {

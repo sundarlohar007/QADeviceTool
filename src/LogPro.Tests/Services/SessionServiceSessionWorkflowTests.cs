@@ -7,6 +7,32 @@ namespace LogPro.Tests.Services;
 
 public class SessionServiceSessionWorkflowTests
 {
+    [Fact]
+    public async Task LongExports_ResetContinuationSeverityAtBlankRecordBoundary()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"LogProLongExport_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var service = CreateService(root);
+            var session = service.CreateSession(new DeviceInfo { Serial = "unit-long", Platform = DevicePlatform.Android });
+            session.Format = LogcatFormat.Long;
+            await File.WriteAllTextAsync(session.LogFilePath,
+                "[ 10-06 12:00:00.000 123: 456 E/Tag ]\ncontinued\n\nunattributed\n");
+            var csv = Path.Combine(root, "out.csv");
+            var json = Path.Combine(root, "out.json");
+            (await service.ExportToCsvAsync(session, csv)).Should().BeTrue();
+            (await service.ExportToJsonAsync(session, json)).Should().BeTrue();
+            var rows = await File.ReadAllLinesAsync(csv);
+            rows[2].Should().Contain("Error").And.Contain("continued");
+            rows[3].Should().Contain("Unknown").And.Contain("unattributed");
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(json));
+            document.RootElement[1].GetProperty("Level").GetString().Should().Be("Error");
+            document.RootElement[2].GetProperty("Level").GetString().Should().Be("Unknown");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static SessionService CreateService(string root) => new(new AdbService(), new IosService())
     {
         SessionsRootDirectory = root

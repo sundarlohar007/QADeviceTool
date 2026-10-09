@@ -17,17 +17,10 @@ public static class Program
         _ = AppLogger.Log; // force NLog config init before we strip the console target
         QuietConsoleLogging();
 
-        if (!LogPro.Helpers.ToolResolver.VerifyBundledToolsAsync(requireManifest: false).GetAwaiter().GetResult())
+        if (!await LogPro.Helpers.ToolResolver.VerifyBundledToolsAsync(requireManifest: true))
         {
-            Console.Error.WriteLine("warning: bundled tool integrity mismatch; attempting manifest regeneration");
-            try
-            {
-                var toolsDir = LogPro.Helpers.ToolResolver.ToolsDirectory;
-                var manifestPath = System.IO.Path.Combine(AppContext.BaseDirectory, ToolManifest.DefaultFileName);
-                if (System.IO.Directory.Exists(toolsDir))
-                    ToolManifest.WriteAsync(toolsDir, manifestPath).GetAwaiter().GetResult();
-            }
-            catch { /* best effort */ }
+            Console.Error.WriteLine("Bundled tool verification failed. Repair from a verified LogPro package.");
+            return 2;
         }
 
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
@@ -168,10 +161,8 @@ public static class Program
         var sessions = new SessionService(adb, ios);
         if (!string.IsNullOrWhiteSpace(requestedOut))
             sessions.SessionsRootDirectory = safeOutDir;
-        if (!string.IsNullOrWhiteSpace(package))
-            PreferencesService.Current.TargetPackageName = package;
-
         var session = sessions.CreateSession(device);
+        session.TargetPackage = package ?? "";
         Console.WriteLine($"Capturing {seconds}s from {device.DisplayName} -> {session.SessionDirectory}");
         if (!await sessions.StartCaptureAsync(session))
         {
@@ -181,7 +172,9 @@ public static class Program
 
         await Task.Delay(TimeSpan.FromSeconds(seconds));
         sessions.StopCapture(session);
+        await sessions.WaitForCaptureStopAsync(session);
         Console.WriteLine($"Stopped. {session.LogLineCount} lines -> {session.LogFilePath}");
+        if (!session.CaptureComplete) { Console.Error.WriteLine(session.CaptureError); return 1; }
         return 0;
     }
 
@@ -221,10 +214,10 @@ public static class Program
         var history = profiler.History;
         var jsonPath = Path.Combine(outDir, "profile-report.json");
         var csvPath = Path.Combine(outDir, "profile.csv");
-        await LogPro.Services.Profiling.ProfilerReportWriter.WriteJsonAsync(history, jsonPath);
+        await LogPro.Services.Profiling.ProfilerReportWriter.WriteJsonAsync(history, jsonPath, fullRunSummary: profiler.Summary, totalSampleCount: profiler.TotalSampleCount);
         await LogPro.Services.Profiling.ProfilerReportWriter.WriteCsvAsync(history, csvPath);
 
-        var sum = LogPro.Services.Profiling.ProfilerReportWriter.Summarize(history);
+        var sum = profiler.Summary;
         Console.WriteLine($"Samples: {history.Count} | Avg FPS: {sum.AvgFps?.ToString("F1") ?? "n/a"} | Est. frame gaps: {sum.JankyFrames} | Max CPU: {sum.MaxCpuPercent?.ToString("F0") ?? "n/a"}% | Mem growth: {(sum.MemoryGrowthKb.HasValue ? $"{sum.MemoryGrowthKb / 1024} MB" : "n/a")} | Verdict: {sum.Verdict}");
         Console.WriteLine($"Report: {jsonPath}");
         return sum.HasSufficientData ? 0 : 1;
@@ -314,7 +307,7 @@ public static class Program
     private static async Task<int> Serve(AdbService adb, IosService ios, string[] args)
     {
         var port = int.TryParse(Opt(args, "--port"), out var p) ? p : 8417;
-        using var server = new ControlApiServer(adb, ios);
+        await using var server = new ControlApiServer(adb, ios);
         server.Start(port);
         Console.WriteLine($"Control API listening on http://127.0.0.1:{port} (Ctrl+C to stop)");
         Console.WriteLine($"Control API key: {server.ApiKey}");
@@ -457,7 +450,7 @@ public static class Program
             return 1;
         }
 
-        var manifestPath = Opt(args, "--manifest") ?? Path.Combine(toolsRoot, LogPro.Services.ToolManifest.DefaultFileName);
+        var manifestPath = Opt(args, "--manifest") ?? Path.Combine(AppContext.BaseDirectory, LogPro.Services.ToolManifest.DefaultFileName);
 
         if (sub == "manifest")
         {
@@ -469,7 +462,7 @@ public static class Program
         var result = await LogPro.Services.ToolManifest.VerifyAsync(toolsRoot, manifestPath);
         Console.WriteLine($"Tools root: {toolsRoot}");
         Console.WriteLine($"OK: {result.Ok.Count} | mismatched: {result.Mismatched.Count} | missing: {result.Missing.Count} | unexpected: {result.Unexpected.Count}");
-        foreach (var m in result.Mismatched) Console.WriteLine($"  MISMATCH {m.Path} (expected {m.Sha256[..12]}…)");
+        foreach (var m in result.Mismatched) Console.WriteLine($"  MISMATCH {m.Path} (expected {m.Sha256[..Math.Min(12, m.Sha256.Length)]}…)");
         foreach (var m in result.Missing) Console.WriteLine($"  MISSING  {m}");
         foreach (var u in result.Unexpected) Console.WriteLine($"  UNEXPECTED {u}");
         return result.IsHealthy ? 0 : 1;

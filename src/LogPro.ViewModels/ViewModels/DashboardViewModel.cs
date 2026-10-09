@@ -160,8 +160,7 @@ public partial class DashboardViewModel : ObservableObject, IDisposable
     {
         var target = value?.Trim() ?? string.Empty;
         if (PreferencesService.Current.TargetPackageName == target) return;
-        PreferencesService.Current.TargetPackageName = target;
-        PreferencesService.Save();
+        PreferencesService.Update(p => p.TargetPackageName = target);
     }
 
     partial void OnSelectedDeviceChanged(DeviceInfo? value)

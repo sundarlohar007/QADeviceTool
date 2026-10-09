@@ -22,6 +22,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly IUiDispatcher _dispatcher;
     private readonly IDeviceStore _deviceStore;
     private int _disposed;
+    private string? _propagatedSelection;
 
     [ObservableProperty]
     private ObservableObject? _currentView;
@@ -83,7 +84,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // Initialize child ViewModels — share the container's dispatcher so the whole graph is headless-testable
         DashboardVM = new DashboardViewModel(_adbService, _iosService, _scrcpyService, _sessionService, _deviceMonitor, _dependencyChecker, _deviceStore, _dispatcher);
         SessionVM = new SessionViewModel(_sessionService, _adbService, _iosService, _deviceMonitor, _dispatcher);
-        DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor, _sessionService, _dispatcher);
+        DeviceVM = new DeviceViewModel(_adbService, _iosService, _scrcpyService, _deviceMonitor, _sessionService, _dispatcher, isActive: false);
         DeviceVM.PropertyChanged += OnDeviceViewModelPropertyChanged;
         AppManagementVM = new AppManagementViewModel(_adbService, _iosService, _deviceMonitor, _sessionService, _dispatcher, _deviceStore);
         ShellVM = new ShellViewModel(_deviceMonitor, _iosService, _dispatcher);
@@ -91,7 +92,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         VitalsVM = new VitalsViewModel(_adbService, _deviceMonitor, _dispatcher);
         FileExplorerVM = new FileExplorerViewModel(_adbService, _iosService, _deviceMonitor, _dispatcher);
         FileExplorerVM.PropertyChanged += OnFileExplorerPropertyChanged;
-        MacroVM = new MacroViewModel(new MacroService(_adbService), _adbService, _deviceMonitor, _dispatcher);
+        MacroVM = new MacroViewModel(new MacroService(_adbService), _adbService, _deviceMonitor, _dispatcher, isActive: false);
         MacroVM.PropertyChanged += OnMacroPropertyChanged;
         StressTestVM = new StressTestViewModel(_adbService, _deviceMonitor, _dispatcher);
         SettingsVM = new SettingsViewModel(_dependencyChecker, _sessionService, _adbService, _dispatcher);
@@ -126,6 +127,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedDevice));
         // Propagate device selection to all child ViewModels
         var selection = _deviceStore.SelectedDevice;
+        var selectionKey = selection == null ? null : $"{selection.Platform}:{selection.Serial}";
+        if (_propagatedSelection == selectionKey) return;
+        _propagatedSelection = selectionKey;
         if (selection != null)
         {
             DashboardVM?.OnDeviceSelected(selection);
@@ -192,7 +196,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         var normalized = destination?.ToLowerInvariant() ?? "";
         if (CurrentView is VitalsViewModel vvm) vvm.OnNavigatedFrom();
-        SelectedNavItem = normalized;
+        SelectedNavItem = normalized == "devices" ? "device" : normalized;
         AppLogger.Log.Info($"[MainVM] Navigate({normalized}) — CurrentView: {CurrentView?.GetType().Name}");
         CurrentView = normalized switch
         {
@@ -210,8 +214,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
             "settings" => SettingsVM,
             _ => DashboardVM
         };
+        DeviceVM.SetActive(ReferenceEquals(CurrentView, DeviceVM));
+        MacroVM.SetActive(ReferenceEquals(CurrentView, MacroVM));
         if (CurrentView is VitalsViewModel vvm2) vvm2.OnNavigatedTo();
         if (CurrentView is DashboardViewModel dashboard) dashboard.RefreshMirrorState();
+    }
+
+    public async Task ShutdownAsync()
+    {
+        _deviceMonitor.StopMonitoring();
+        AppManagementVM.Dispose(); // Cancel installs before stopping their suspended captures.
+        await SessionVM.FinalizeRecordingAsync();
+        await Task.Run(_sessionService.StopAllCaptures);
+        Dispose();
     }
 
     public void Cleanup()

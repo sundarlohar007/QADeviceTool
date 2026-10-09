@@ -15,9 +15,9 @@ public partial class SettingsView : UserControl
         InitializeComponent();
         DataContextChanged += (_, _) =>
         {
-            if (_settings != null) _settings.PropertyChanged -= Settings_PropertyChanged;
+            if (_settings != null) System.ComponentModel.PropertyChangedEventManager.RemoveHandler(_settings, Settings_PropertyChanged, string.Empty);
             _settings = DataContext as SettingsViewModel;
-            if (_settings != null) _settings.PropertyChanged += Settings_PropertyChanged;
+            if (_settings != null) System.ComponentModel.PropertyChangedEventManager.AddHandler(_settings, Settings_PropertyChanged, string.Empty);
             PairingCodeInput.Clear();
         };
     }

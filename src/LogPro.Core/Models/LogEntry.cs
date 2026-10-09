@@ -37,6 +37,7 @@ public enum LogcatFormat
 
 public partial class LogEntry : ObservableObject
 {
+    public long Sequence { get; set; }
     [ObservableProperty] private string _timestamp = string.Empty;
     [ObservableProperty] private LogLevel _level = LogLevel.Unknown;
     [ObservableProperty] private string _tag = string.Empty;

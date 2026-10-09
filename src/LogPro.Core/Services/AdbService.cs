@@ -14,7 +14,7 @@ namespace LogPro.Services;
 /// Uses ToolResolver to find bundled or system ADB.
 /// All commands are serialized via semaphore to prevent concurrent USB transport access.
 /// </summary>
-public class AdbService : IAdbService
+public class AdbService : ICancellableDeviceQueries, IProgressiveAppInventory, IAdbService
 {
     private readonly string? _executableOverride;
     private string _adb => _executableOverride ?? ToolResolver.Resolve("adb");
@@ -177,16 +177,18 @@ public class AdbService : IAdbService
         return status;
     }
 
-    public async Task<List<DeviceInfo>> GetConnectedDevicesAsync()
-        => (await GetConnectedDevicesWithStatusAsync().ConfigureAwait(false)).Devices;
+    public Task<List<DeviceInfo>> GetConnectedDevicesAsync() => GetConnectedDevicesAsync(CancellationToken.None);
+    public async Task<List<DeviceInfo>> GetConnectedDevicesAsync(CancellationToken token)
+        => (await GetConnectedDevicesWithStatusAsync(token).ConfigureAwait(false)).Devices;
 
-    public async Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync()
+    public Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync() => GetConnectedDevicesWithStatusAsync(CancellationToken.None);
+    public async Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync(CancellationToken token)
     {
         var devices = new List<DeviceInfo>();
 
         try
         {
-            var result = await RunAdbAsync("devices -l", DefaultTimeoutMs);
+            var result = await RunAdbAsync("devices -l", DefaultTimeoutMs, cancellationToken: token);
             if (!result.Success || string.IsNullOrWhiteSpace(result.Output))
             {
                 AppLogger.Log.Debug("[AdbService] No devices found or ADB command failed");
@@ -227,7 +229,7 @@ public class AdbService : IAdbService
                     if (part.StartsWith("model:"))
                         device.Model = part["model:".Length..].Replace('_', ' ');
                     else if (part.StartsWith("device:"))
-                        device.Name = part["device:".Length..].Replace('_', ' ');
+                        device.Product = part["device:".Length..];
                     else if (part.StartsWith("product:"))
                         device.Product = part["product:".Length..];
                     else if (part.StartsWith("usb:"))
@@ -267,10 +269,11 @@ public class AdbService : IAdbService
         catch (Exception ex) { AppLogger.Log.Warn(ex, "[AdbService] GetConnectedDevicesAsync failed"); return null; }
     }
 
-    public async Task<string?> GetDevicePropertyAsync(string serial, string property)
+    public Task<string?> GetDevicePropertyAsync(string serial, string property) => GetDevicePropertyAsync(serial, property, CancellationToken.None);
+    public async Task<string?> GetDevicePropertyAsync(string serial, string property, CancellationToken token)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(serial) || !SecurityHelper.IsSafeDeviceArgument(property)) return null;
-        var result = await RunAdbAsync($"-s {serial} shell getprop {property}", FastTimeoutMs);
+        var result = await RunAdbAsync($"-s {serial} shell getprop {property}", FastTimeoutMs, cancellationToken: token);
         return result.Success ? result.Output.Trim() : null;
     }
 
@@ -284,7 +287,8 @@ public class AdbService : IAdbService
     }
 
 
-    public async Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device)
+    public Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device) => GetDeviceDetailsAsync(device, CancellationToken.None);
+    public async Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device, CancellationToken token)
     {
         if (device.ConnectionState != DeviceConnectionState.Online)
         {
@@ -294,10 +298,10 @@ public class AdbService : IAdbService
 
         try
         {
-            var osTask = GetDevicePropertyAsync(device.Serial, "ro.build.version.release");
-            var batteryTask = RunAdbAsync($"-s {device.Serial} shell dumpsys battery", FastTimeoutMs);
-            var mfrTask = GetDevicePropertyAsync(device.Serial, "ro.product.manufacturer");
-            var modelTask = GetDevicePropertyAsync(device.Serial, "ro.product.model");
+            var osTask = GetDevicePropertyAsync(device.Serial, "ro.build.version.release", token);
+            var batteryTask = RunAdbAsync($"-s {device.Serial} shell dumpsys battery", FastTimeoutMs, cancellationToken: token);
+            var mfrTask = GetDevicePropertyAsync(device.Serial, "ro.product.manufacturer", token);
+            var modelTask = GetDevicePropertyAsync(device.Serial, "ro.product.model", token);
 
             await Task.WhenAll(osTask, batteryTask, mfrTask, modelTask);
 
@@ -793,46 +797,25 @@ public class AdbService : IAdbService
     }
 
     public async Task<List<AppItem>> ListInstalledAppsAsync(string serial)
-    {
-        var apps = new List<AppItem>();
+        => (await GetAppInventoryAsync(serial).ConfigureAwait(false)).Apps.Where(a => a.Category == AppCategory.User).ToList();
 
-        try
-        {
-            var result = await RunAdbAsync($"-s {serial} shell pm list packages -3", 15000);
-            if (!result.Success) return apps;
-
-            var lines = result.Output.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
-            {
-                if (line.StartsWith("package:"))
-                {
-                    var pkg = line["package:".Length..].Trim();
-                    apps.Add(new AppItem { PackageId = pkg, Name = pkg, Platform = DevicePlatform.Android });
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Log.Error(ex, $"[AdbService] ListInstalledAppsAsync failed for {SecurityHelper.HashSerial(serial)}");
-        }
-
-        return apps.OrderBy(a => a.Name).ToList();
-    }
-
-    public async Task<AppInventoryResult> GetAppInventoryAsync(string serial)
+    private sealed record LabelKey(string Device, string Package, string Version, string Locale);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<LabelKey, (string Name, string Version)> _labels = new();
+    public Task<AppInventoryResult> GetAppInventoryAsync(string serial) => GetAppInventoryAsync(serial, null, CancellationToken.None);
+    public async Task<AppInventoryResult> GetAppInventoryAsync(string serial, Func<AppInventoryResult, Task>? progress, CancellationToken token)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(serial))
             return AppInventoryResult.Failed("Invalid device selector.");
 
         try
         {
-            var user = await RunAdbAsync($"-s {serial} shell pm list packages -3 --show-versioncode", 15000).ConfigureAwait(false);
+            var user = await RunAdbAsync($"-s {serial} shell pm list packages -3 --show-versioncode", 15000, cancellationToken: token).ConfigureAwait(false);
             if (!user.Success)
-                user = await RunAdbAsync($"-s {serial} shell pm list packages -3", 15000).ConfigureAwait(false);
+                user = await RunAdbAsync($"-s {serial} shell pm list packages -3", 15000, cancellationToken: token).ConfigureAwait(false);
             if (!user.Success) return AppInventoryResult.Failed(GetInventoryFailure(user));
-            var system = await RunAdbAsync($"-s {serial} shell pm list packages -s --show-versioncode", 15000).ConfigureAwait(false);
+            var system = await RunAdbAsync($"-s {serial} shell pm list packages -s --show-versioncode", 15000, cancellationToken: token).ConfigureAwait(false);
             if (!system.Success)
-                system = await RunAdbAsync($"-s {serial} shell pm list packages -s", 15000).ConfigureAwait(false);
+                system = await RunAdbAsync($"-s {serial} shell pm list packages -s", 15000, cancellationToken: token).ConfigureAwait(false);
             if (!system.Success) return AppInventoryResult.Failed(GetInventoryFailure(system));
 
             var apps = ParsePackageList(user.Output, AppCategory.User)
@@ -842,22 +825,80 @@ public class AdbService : IAdbService
                 .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            if (progress != null)
+                await progress(new AppInventoryResult(true, apps.Select(CloneApp).ToArray(), "Resolving app names and versions...")).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
             // One process-list command supplies running state for every package.
-            var processes = await RunAdbAsync($"-s {serial} shell ps -A -o NAME", 10000).ConfigureAwait(false);
+            var processes = await RunAdbAsync($"-s {serial} shell ps -A -o NAME", 10000, cancellationToken: token).ConfigureAwait(false);
             if (processes.Success)
             {
                 var names = processes.Output.Split('\n', '\r', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(s => s.Trim()).ToHashSet(StringComparer.Ordinal);
+                    .Select(s => s.Trim().Split(':')[0]).ToHashSet(StringComparer.Ordinal);
                 foreach (var app in apps)
-                    app.IsRunning = names.Contains(app.PackageId) || names.Any(n => n.StartsWith(app.PackageId + ":", StringComparison.Ordinal));
+                    app.IsRunning = names.Contains(app.PackageId);
             }
-            return new AppInventoryResult(true, apps, RunningStateAvailable: processes.Success);
+            var labelsAvailable = await EnrichAppLabelsAsync(serial, apps, token).ConfigureAwait(false);
+            return new AppInventoryResult(true, apps.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList(),
+                labelsAvailable ? "" : "Some app labels are unavailable; unresolved apps show package identifiers.", RunningStateAvailable: processes.Success);
         }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, $"[AdbService] GetAppInventoryAsync failed for {SecurityHelper.HashSerial(serial)}");
             return AppInventoryResult.Failed(ex.Message);
         }
+    }
+
+    private async Task<bool> EnrichAppLabelsAsync(string serial, List<AppItem> apps, CancellationToken token)
+    {
+        var locale = await GetDevicePropertyAsync(serial, "persist.sys.locale", token).ConfigureAwait(false);
+        var keys = apps.Select(a => new LabelKey(serial, a.PackageId, a.Version, locale ?? "")).ToArray();
+        var cacheable = !string.IsNullOrWhiteSpace(locale) && keys.All(k => k.Version.StartsWith("code ", StringComparison.Ordinal));
+        if (cacheable && keys.All(k => _labels.ContainsKey(k)))
+        {
+            for (var i = 0; i < apps.Count; i++)
+                if (_labels.TryGetValue(keys[i], out var label)) { apps[i].Name = label.Name; apps[i].Version = label.Version; }
+            return apps.All(a => a.Name != a.PackageId);
+        }
+        var helper = Path.Combine(ToolResolver.ToolsDirectory, "adb", "inventory.jar");
+        if (!File.Exists(helper) || !ToolResolver.BundledToolsTrusted) return false;
+        // Unique name prevents concurrent hosts from replacing a running helper.
+        var remote = "/data/local/tmp/logpro-inventory-" + Guid.NewGuid().ToString("N") + ".jar";
+        try
+        {
+            var push = await RunAdbAsync($"-s {serial} push {ToolLauncher.QuoteArgument(helper)} {remote}", 15000, cancellationToken: token).ConfigureAwait(false);
+            if (!push.Success) return false;
+            var result = await RunAdbAsync($"-s {serial} shell CLASSPATH={remote} app_process / com.logpro.AppInventory", 15000, cancellationToken: token).ConfigureAwait(false);
+            if (!result.Success) return false;
+            ApplyAppLabels(apps, result.Output);
+            if (cacheable)
+            {
+                if (_labels.Count + apps.Count > 10000) _labels.Clear();
+                for (var i = 0; i < Math.Min(apps.Count, 10000); i++)
+                    if (apps[i].Name != apps[i].PackageId) _labels[keys[i]] = (apps[i].Name, apps[i].Version);
+            }
+            return apps.All(a => a.Name != a.PackageId);
+        }
+        catch (Exception ex) { AppLogger.Log.Debug(ex, "Android labels unavailable; package identifiers retained"); return false; }
+        finally { await RunAdbAsync($"-s {serial} shell rm -f {remote}", 5000).ConfigureAwait(false); }
+    }
+
+    private static AppItem CloneApp(AppItem app) => new()
+    { PackageId = app.PackageId, Name = app.Name, Version = app.Version, Platform = app.Platform, Category = app.Category, IsRunning = app.IsRunning };
+
+    internal static bool ApplyAppLabels(IReadOnlyList<AppItem> apps, string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array) return false;
+        var lookup = apps.ToDictionary(a => a.PackageId, StringComparer.Ordinal);
+        var resolved = false;
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            if (!item.TryGetProperty("package", out var id) || !lookup.TryGetValue(id.GetString() ?? "", out var app)) continue;
+            if (item.TryGetProperty("label", out var label) && !string.IsNullOrWhiteSpace(label.GetString()))
+            { app.Name = label.GetString()!; resolved = true; }
+            if (item.TryGetProperty("version", out var version) && !string.IsNullOrWhiteSpace(version.GetString())) app.Version = version.GetString()!;
+        }
+        return resolved;
     }
 
     internal static List<AppItem> ParsePackageList(string output, AppCategory category)

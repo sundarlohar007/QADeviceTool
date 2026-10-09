@@ -79,8 +79,9 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         IIosService iosService,
         IScrcpyService scrcpyService,
         IDeviceMonitorService deviceMonitor,
-        ISessionService sessionService, IUiDispatcher? dispatcher = null, IPreferencesStore? preferences = null)
+        ISessionService sessionService, IUiDispatcher? dispatcher = null, IPreferencesStore? preferences = null, bool isActive = true)
     {
+        _isActive = isActive;
         _adbService = adbService;
         _iosService = iosService;
         _scrcpyService = scrcpyService;
@@ -143,17 +144,43 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedSerialDisplay));
     }
 
+    private bool _isActive;
+    private CancellationTokenSource? _detailsCts;
+    public void SetActive(bool active)
+    {
+        _isActive = active;
+        if (!active) { _detailsCts?.Cancel(); ++_detailsGeneration; _detailsKey = null; }
+        else OnSelectedDeviceChanged(SelectedDevice);
+    }
+    private string? _detailsKey;
+    private DateTime _detailsChecked;
+
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
-        var generation = ++_detailsGeneration;
         NotifyDeviceState();
         if (value != null)
         {
-            _ = LoadDeviceDetailsAsync(value, generation);
+            if (!value.IsReady)
+            {
+                _detailsCts?.Cancel();
+                ++_detailsGeneration;
+                _detailsKey = null;
+                DeviceDetails = value.StatusText;
+            }
+            var key = $"{value.Platform}:{value.Serial}:{value.IsReady}:{value.OsVersion}";
+            if (_isActive && value.IsReady && (_detailsKey != key || DateTime.UtcNow - _detailsChecked > TimeSpan.FromSeconds(60)))
+            {
+                _detailsKey = key;
+                _detailsChecked = DateTime.UtcNow;
+                _ = LoadDeviceDetailsAsync(value, ++_detailsGeneration);
+            }
             LoadDevicePreferences(value.Platform, value.Serial);
         }
         else
         {
+            ++_detailsGeneration;
+            _detailsCts?.Cancel();
+            _detailsKey = null;
             DeviceDetails = "Select a device to view details.";
             DeviceNotes = string.Empty;
             DeviceTag = string.Empty;
@@ -208,6 +235,9 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
 
     private async Task LoadDeviceDetailsAsync(DeviceInfo device, int generation)
     {
+        _detailsCts?.Cancel();
+        using var cts = new CancellationTokenSource();
+        _detailsCts = cts;
         DeviceDetails = "Loading device details...";
 
         try
@@ -216,11 +246,11 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
             var lookup = device.WithTemporaryUnavailable(device.IsTemporarilyUnavailable);
             DeviceInfo detailed;
             if (device.Platform == DevicePlatform.Android)
-                detailed = await _adbService.GetDeviceDetailsAsync(lookup);
+                detailed = await DeviceQueries.DetailsAsync(_adbService, lookup, cts.Token);
             else
-                detailed = await _iosService.GetDeviceDetailsAsync(lookup);
+                detailed = await DeviceQueries.DetailsAsync(_iosService, lookup, cts.Token);
 
-            if (_disposed || generation != _detailsGeneration) return;
+            if (cts.IsCancellationRequested || _disposed || generation != _detailsGeneration) return;
             DeviceDetails = $"""
                 {detailed.DisplayName}
                 
@@ -233,10 +263,12 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            if (cts.IsCancellationRequested) return;
             AppLogger.Log.Warn(ex, "[Device] Could not load details");
             if (!_disposed && generation == _detailsGeneration)
                 DeviceDetails = "Failed to load device details.";
         }
+        finally { if (ReferenceEquals(_detailsCts, cts)) _detailsCts = null; }
     }
 
     [RelayCommand]
@@ -489,6 +521,7 @@ public partial class DeviceViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _detailsCts?.Cancel();
         _disposed = true;
         _deviceMonitor.DevicesChanged -= OnDevicesChanged;
         _deviceMonitor.DiscoveryStatusChanged -= OnDiscoveryStatusChanged;

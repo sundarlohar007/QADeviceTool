@@ -36,9 +36,9 @@ public static class IssueExportService
 
         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
         var deviceHash = request.Device != null ? SecurityHelper.HashSerial(request.Device.Serial) : "nodevice";
-        var bundleDir = Path.Combine(outputDirectory, $"issue_{deviceHash}_{stamp}");
+        var bundleDir = Path.Combine(outputDirectory, $"issue_{deviceHash}_{stamp}_{Guid.NewGuid():N}");
         Directory.CreateDirectory(bundleDir);
-        PathHelper.RestrictDirectoryAccess(bundleDir);
+        if (!PathHelper.RestrictDirectoryAccess(bundleDir)) throw new IOException("Cannot secure the issue bundle directory.");
 
         var files = new List<string>();
 
@@ -53,23 +53,31 @@ public static class IssueExportService
             PathHelper.IsSafeLocalPath(request.SessionLogFilePath))
         {
             var dest = Path.Combine(bundleDir, "session_log.txt");
-            await RedactTextFileAsync(request.SessionLogFilePath, dest);
+            await RedactTextFileAsync(request.SessionLogFilePath, dest, request.Device?.Serial);
             files.Add(dest);
         }
 
         // 3. Attachments (screenshots, perf reports, recordings the user explicitly selected)
+        var attachmentIndex = 0;
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "issue.md", "session_log.txt", "bundle-info.json" };
+        var attachmentNames = new List<string>();
         foreach (var attachment in request.Attachments)
         {
             if (!File.Exists(attachment) || !PathHelper.IsSafeLocalPath(attachment)) continue;
-            var name = SecurityHelper.SanitizeFileName(Path.GetFileName(attachment));
+            var name = SecurityHelper.SanitizeFileName(RedactKnownIdentifier(Path.GetFileName(attachment), request.Device?.Serial));
             if (string.IsNullOrWhiteSpace(name)) continue;
-            var dest = Path.Combine(bundleDir, name);
+            var uniqueName = name;
+            while (!usedNames.Add(uniqueName)) uniqueName = $"attachment_{++attachmentIndex:D3}_{name}";
+            var dest = Path.Combine(bundleDir, uniqueName);
+            attachmentNames.Add(uniqueName);
             if (IsTextAttachment(attachment))
-                await RedactTextFileAsync(attachment, dest);
+                await RedactTextFileAsync(attachment, dest, request.Device?.Serial);
             else
                 File.Copy(attachment, dest, overwrite: true);
             files.Add(dest);
         }
+
+        await File.WriteAllTextAsync(mdPath, BuildMarkdown(request, deviceHash, attachmentNames));
 
         // 4. Manifest
         var manifestPath = Path.Combine(bundleDir, "bundle-info.json");
@@ -85,7 +93,7 @@ public static class IssueExportService
         return new IssueBundle { DirectoryPath = bundleDir, MarkdownPath = mdPath, Files = files };
     }
 
-    private static string BuildMarkdown(IssueExportRequest request, string deviceHash)
+    private static string BuildMarkdown(IssueExportRequest request, string deviceHash, IReadOnlyList<string>? attachmentNames = null)
     {
         var d = request.Device;
         var sb = new StringBuilder();
@@ -105,21 +113,24 @@ public static class IssueExportService
         sb.AppendLine("**Expected**").AppendLine();
         sb.AppendLine("**Attachments**");
         if (request.SessionLogFilePath != null) sb.AppendLine("- session_log.txt");
-        foreach (var a in request.Attachments)
-            sb.AppendLine("- ").AppendLine(SecurityHelper.SanitizeFileName(Path.GetFileName(a)));
+        foreach (var a in attachmentNames ?? request.Attachments)
+            sb.AppendLine("- ").AppendLine(Path.GetFileName(a));
         sb.AppendLine();
         sb.AppendLine("> Redaction note: device serials are hashed; the bundle is prepared for manual upload — it was never transmitted by the tool.");
-        return sb.ToString();
+        return RedactKnownIdentifier(sb.ToString(), request.Device?.Serial);
     }
 
     private static bool IsTextAttachment(string path)
-        => Path.GetExtension(path) is ".txt" or ".log" or ".json" or ".csv" or ".md";
+        => Path.GetExtension(path).ToLowerInvariant() is ".txt" or ".log" or ".json" or ".csv" or ".md";
 
-    private static async Task RedactTextFileAsync(string source, string destination)
+    private static string RedactKnownIdentifier(string text, string? serial)
+        => string.IsNullOrEmpty(serial) ? text : text.Replace(serial, "[DEVICE]", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task RedactTextFileAsync(string source, string destination, string? serial)
     {
         using var reader = new StreamReader(source);
         await using var writer = new StreamWriter(destination, false);
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
-            await writer.WriteLineAsync(SecurityHelper.RedactSensitiveText(line)).ConfigureAwait(false);
+            await writer.WriteLineAsync(SecurityHelper.RedactSensitiveText(RedactKnownIdentifier(line, serial))).ConfigureAwait(false);
     }
 }

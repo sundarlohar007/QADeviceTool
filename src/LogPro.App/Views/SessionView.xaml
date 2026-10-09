@@ -225,16 +225,13 @@
             <Border Grid.Column="2" Style="{StaticResource Card}">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHdr}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <WrapPanel Grid.Column="0" Orientation="Horizontal">
+                        <StackPanel>
+
+                            <WrapPanel Orientation="Horizontal">
                                 <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{DynamicResource BrushPrimaryLight}" Margin="0,0,8,0" VerticalAlignment="Center" />
                                 <TextBlock Text="LIVE OUTPUT" Style="{StaticResource HdrText}" VerticalAlignment="Center" />
                             </WrapPanel>
-                            <WrapPanel Grid.Column="1" Orientation="Horizontal">
+                            <WrapPanel Orientation="Horizontal">
                                 <TextBox Style="{StaticResource DarkInput}" Width="200" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
                                 <ToggleButton Style="{DynamicResource FilterPill}" Content=".*" ToolTip="Regex search" IsChecked="{Binding IsRegexSearch}" Margin="0,0,8,0" />
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ClearLogCommand}" Content="Clear" Margin="0,0,8,0" />
@@ -244,10 +241,10 @@
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding SearchEntireSessionCommand}" Content="Search all" Margin="8,0,0,0" />
                                 <Button Style="{StaticResource GhostBtn}" Command="{Binding ReturnToLiveTailCommand}" Content="Tail" Margin="8,0,0,0" />
                             </WrapPanel>
-                        </Grid>
+                        </StackPanel>
                     </Border>
                     <WrapPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8,4">
-                        <TextBlock Text="{Binding CaptureHealthText}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,12,0" />
+                        <TextBlock TextWrapping="Wrap" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=WrapPanel}}" Text="{Binding CaptureHealthText}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,12,0" />
                         <CheckBox Content="Raw" IsChecked="{Binding IsRawMode}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
                         <CheckBox Content="Auto-scroll" IsChecked="{Binding IsAutoScrollEnabled}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,12,0" />
                         <Button Style="{StaticResource GhostBtn}" Command="{Binding CopyToClipboardCommand}" Content="Copy visible" Margin="0,0,8,0" />
@@ -283,7 +280,18 @@
                                                    Foreground="{DynamicResource BrushTextMuted}"
                                                    HorizontalAlignment="Right" VerticalAlignment="Center" />
                                     </Border>
-                                    <TextBlock Grid.Column="1" Text="{Binding Message}" TextWrapping="NoWrap" Padding="8,0" />
+                                    <TextBlock Grid.Column="1" TextWrapping="NoWrap" Padding="8,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="{Binding Message}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding DataContext.IsRawMode, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True">
+                                                        <Setter Property="Text" Value="{Binding RawLine}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                     <Button Grid.Column="2" Content="★" Padding="2,0" Command="{Binding DataContext.ToggleBookmarkCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" ToolTip="Toggle bookmark">
                                         <Button.Style><Style TargetType="Button">
                                             <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />

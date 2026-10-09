@@ -9,6 +9,19 @@
 
 var joined = string.Join(' ', Environment.GetCommandLineArgs().Skip(1));
 
+if (joined.StartsWith("--production-stream", StringComparison.Ordinal))
+{
+    Console.OutputEncoding = System.Text.Encoding.UTF8;
+    for (var number = 1; number <= 2000; number++)
+        Console.WriteLine($"10-06 12:00:00.000 123 123 I Fixture: {number} \u202f 日本語");
+    Console.WriteLine(joined.EndsWith("ios", StringComparison.Ordinal)
+        ? "Oct 06 12:00:00 phone example[123] <Fault>: Exception Type: synthetic"
+        : "10-06 12:00:00.000 123 123 E AndroidRuntime: FATAL EXCEPTION: synthetic");
+    Console.Out.Flush();
+    await Task.Delay(TimeSpan.FromMinutes(1));
+    return 0;
+}
+
 // Isolated deep-link scenarios exercise host argv round trips and old Android result semantics.
 if (joined.Contains("shell am start -W", StringComparison.Ordinal))
 {
@@ -91,7 +104,7 @@ if (joined.Contains("SurfaceFlinger --latency", StringComparison.Ordinal))
     for (var i = 0; i < 90; i++)
     {
         present += frameNs;
-        Console.WriteLine($"{(i * frameNs):D14}\t{(i * frameNs + 2_000_000):D14}\t{present:D14}");
+        Console.WriteLine($"{(i * frameNs):D14}\t{present:D14}\t{(i * frameNs + 2_000_000):D14}");
     }
     return 0;
 }

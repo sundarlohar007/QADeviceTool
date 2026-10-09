@@ -29,6 +29,20 @@ public partial class LogSession : ObservableObject
 
     public string CaptureNotice { get; set; } = string.Empty;
 
+    public long StopRevision;
+    public string StopReason { get; set; } = "";
+    public int? ExitCode { get; set; }
+    public bool CaptureComplete { get; set; }
+    public DateTime? LastLogUtc { get; set; }
+    public int InterruptionCount { get; set; }
+    public DateTime? LastInterruptedUtc { get; set; }
+    public DateTime? LastResumedUtc { get; set; }
+    public LogcatBuffer Buffer { get; set; } = LogcatBuffer.Main;
+    public LogcatFormat Format { get; set; } = LogcatFormat.ThreadTime;
+    public string? TargetPackage { get; set; }
+    public LogPro.Services.CrashDetector Crashes { get; } = new();
+    public void RefreshDuration() { OnPropertyChanged(nameof(DurationText)); OnPropertyChanged(nameof(LogLineCount)); }
+
     public long LogLineCount { get; set; }
 
     public string DurationText
@@ -58,3 +72,5 @@ public enum SessionStatus
     Capturing,
     Stopped
 }
+
+public sealed record CaptureOptions(LogcatBuffer Buffer, LogcatFormat Format, string TargetPackage);

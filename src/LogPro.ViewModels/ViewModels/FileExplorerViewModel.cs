@@ -56,10 +56,10 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isTransferring;
 
-    public bool CanUseSelectedFile => SelectedDevice?.ConnectionState == DeviceConnectionState.Online &&
+    public bool CanUseSelectedFile => SelectedDevice?.IsReady == true &&
         SelectedFile != null && SelectedFile.Name != "..";
 
-    public bool CanTransfer => SelectedDevice?.ConnectionState == DeviceConnectionState.Online;
+    public bool CanTransfer => SelectedDevice?.IsReady == true;
 
     [ObservableProperty]
     private DeviceInfo? _selectedDevice;
@@ -111,7 +111,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                     else
                     {
                         if (found != index) AvailableDevices.Move(found, index);
-                        if (AvailableDevices[index].ConnectionState != devices[index].ConnectionState)
+                        if (!ReferenceEquals(AvailableDevices[index], devices[index]))
                             AvailableDevices[index] = devices[index];
                     }
                 }
@@ -126,7 +126,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 try { SelectedDevice = AvailableDevices.First(d => SameDevice(d, selected)); }
                 finally { _reconcilingDevices = false; }
             }
-            if (match != null && match.ConnectionState != selected!.ConnectionState)
+            if (match != null && (match.ConnectionState != selected!.ConnectionState || match.IsTemporarilyUnavailable != selected.IsTemporarilyUnavailable))
                 SelectedDevice = match;
             if (SelectedDevice != null && match == null)
             {
@@ -157,8 +157,8 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     public void OnDeviceSelected(DeviceInfo device)
     {
         var match = AvailableDevices.FirstOrDefault(d => SameDevice(d, device) &&
-            d.ConnectionState == device.ConnectionState) ?? device;
-        if (SameDevice(SelectedDevice, match) && SelectedDevice?.ConnectionState == match.ConnectionState)
+            d.ConnectionState == device.ConnectionState && d.IsTemporarilyUnavailable == device.IsTemporarilyUnavailable) ?? device;
+        if (SameDevice(SelectedDevice, match) && SelectedDevice?.ConnectionState == match.ConnectionState && SelectedDevice?.IsTemporarilyUnavailable == match.IsTemporarilyUnavailable)
             return;
         else
             SelectedDevice = match;
@@ -197,10 +197,10 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 StatusMessage = "[!] Device requires trust. Accept trust dialog on iOS device.";
                 return;
             }
-            if (value.ConnectionState != DeviceConnectionState.Online)
+            if (!value.IsReady)
             {
                 Files.Clear();
-                StatusMessage = $"[!] Device is {value.ConnectionState}.";
+                StatusMessage = $"[!] Device is {value.StatusText}.";
                 return;
             }
             CurrentPath = "/";
@@ -209,10 +209,10 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
         }
         else
         {
-            if (value.ConnectionState != DeviceConnectionState.Online)
+            if (!value.IsReady)
             {
                 Files.Clear();
-                StatusMessage = $"[!] Device is {value.ConnectionState}.";
+                StatusMessage = $"[!] Device is {value.StatusText}.";
                 return;
             }
             CurrentPath = "/sdcard/";
@@ -256,7 +256,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     private async Task LoadDirectoryAsync(string path)
     {
         if (Volatile.Read(ref _disposed) != 0) return;
-        if (SelectedDevice?.ConnectionState != DeviceConnectionState.Online) return;
+        if (SelectedDevice?.IsReady != true) return;
         if (string.IsNullOrWhiteSpace(path) || !path.StartsWith('/') ||
             path.Any(char.IsControl) || path.Split('/').Any(segment => segment is "." or ".."))
         {
@@ -447,7 +447,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
             while (_transferQueue.Count > 0 && Volatile.Read(ref _disposed) == 0)
             {
                 var item = _transferQueue.Dequeue();
-                if (!SameDevice(item.Device, SelectedDevice)) { item.Job.State = "Cancelled"; continue; }
+                if (!SameDevice(item.Device, SelectedDevice) || SelectedDevice?.IsReady != true) { item.Job.State = "Cancelled"; continue; }
                 using var cts = new CancellationTokenSource();
                 _transferCts = cts;
                 IsTransferring = true;
@@ -455,7 +455,12 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 StatusMessage = item.Job.Description + "...";
                 try
                 {
-                    var ok = item.BundleId != null
+                    DocumentTransferResult? document = null;
+                    if (item.BundleId != null && _iosService is IIosDocumentTransfers documents)
+                        document = item.Upload
+                            ? await documents.PushDocumentAsync(item.Device.Serial, item.BundleId, item.Local, item.Remote, cts.Token)
+                            : await documents.PullDocumentAsync(item.Device.Serial, item.BundleId, item.Remote, item.Local, cts.Token);
+                    var ok = document != null ? document.Success : item.BundleId != null
                         ? item.Upload
                             ? await _iosService.PushAppFileAsync(item.Device.Serial, item.BundleId, item.Local, item.Remote, cts.Token)
                             : await _iosService.PullAppFileAsync(item.Device.Serial, item.BundleId, item.Remote, item.Local, cts.Token)
@@ -469,7 +474,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                     item.Job.State = cts.IsCancellationRequested ? "Cancelled" : ok ? "Completed" : "Failed";
                     if (SameDevice(item.Device, SelectedDevice))
                     {
-                        StatusMessage = item.BundleId != null && !ok && !cts.IsCancellationRequested
+                        StatusMessage = document != null ? document.Message : item.BundleId != null && !ok && !cts.IsCancellationRequested
                             ? $"{item.Job.Description} failed. This app may not allow iOS File Sharing, or the document path may not exist."
                             : $"{item.Job.Description}: {item.Job.State}.";
                         if (ok && item.Upload && item.BundleId == null) await LoadDirectoryAsync(CurrentPath);

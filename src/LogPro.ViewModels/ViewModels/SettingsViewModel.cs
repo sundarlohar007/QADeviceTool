@@ -37,8 +37,8 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         get => PreferencesService.Current.UpdatePreferences.CheckIntervalHours;
         set
         {
-            PreferencesService.Current.UpdatePreferences.CheckIntervalHours = Math.Clamp(value, 1, 720);
-            PreferencesService.Save();
+            if (!PreferencesService.Update(p => p.UpdatePreferences.CheckIntervalHours = Math.Clamp(value, 1, 720)))
+                UpdateStatus = "Could not save update interval.";
             OnPropertyChanged();
         }
     }
@@ -129,6 +129,12 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         _sessionsDirectory = sessionService.SessionsRootDirectory;
 
         InitializeLogRetentionOptions();
+        try
+        {
+            var installationStatus = Path.Combine(AppContext.BaseDirectory, "installation-status.txt");
+            if (File.Exists(installationStatus)) UpdateStatus = File.ReadAllText(installationStatus);
+        }
+        catch (Exception ex) { AppLogger.Log.Debug(ex, "Could not read installation status"); }
 
 
         IsDarkTheme = UiServices.Theme.CurrentTheme == UiServices.Theme.ThemeDark;
@@ -190,13 +196,10 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     {
         if (SelectedLogRetention != null)
         {
-            var previous = PreferencesService.Current.LogRetentionDays;
-            PreferencesService.Current.LogRetentionDays = SelectedLogRetention.Value;
-            if (PreferencesService.Save())
+            if (PreferencesService.Update(p => p.LogRetentionDays = SelectedLogRetention.Value))
                 ClearDataStatus = $"Logs and completed sessions retained: {(SelectedLogRetention.Value == 0 ? "Forever" : SelectedLogRetention.Text)}";
             else
             {
-                PreferencesService.Current.LogRetentionDays = previous;
                 ClearDataStatus = "Could not save retention. Previous setting remains active.";
             }
         }
@@ -318,11 +321,8 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
                 StatusMessage = $"[!] Sessions folder is not writable: {ex.Message}";
                 return;
             }
-            var previous = PreferencesService.Current.SessionsRootDirectory;
-            PreferencesService.Current.SessionsRootDirectory = safeFolder;
-            if (!PreferencesService.Save())
+            if (!PreferencesService.Update(p => p.SessionsRootDirectory = safeFolder))
             {
-                PreferencesService.Current.SessionsRootDirectory = previous;
                 StatusMessage = "[!] Could not save Sessions folder.";
                 return;
             }
@@ -544,8 +544,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
             var unsupported = updates.Where(u => u.IsNewerAvailable && !u.IsInstallable).ToList();
             if (failures.Count == 0)
             {
-                PreferencesService.Current.UpdatePreferences.LastCheckUtc = DateTime.UtcNow;
-                PreferencesService.Save();
+                PreferencesService.Update(p => p.UpdatePreferences.LastCheckUtc = DateTime.UtcNow);
             }
 
             var suppressed = PreferencesService.Current.UpdatePreferences.SuppressedVersions;
@@ -566,7 +565,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
                 UpdateCheckDetails = string.Join(Environment.NewLine, updates.Select(u =>
                     $"{u.ToolName}: installed {u.CurrentVersion}; latest {(string.IsNullOrWhiteSpace(u.LatestVersion) ? "unavailable" : u.LatestVersion)}" +
                     (u.ReleaseNotes.StartsWith("Check failed:", StringComparison.Ordinal) ? $" — {u.ReleaseNotes}" :
-                     u.IsNewerAvailable && !u.IsInstallable ? " — no compatible verified download" : string.Empty)));
+                     u.IsNewerAvailable && !u.IsInstallable ? " — " + u.ReleaseNotes : string.Empty)));
                 UpdateStatus = failures.Count > 0
                     ? $"{failures.Count} update source(s) could not be checked. Retry later."
                     : unknown.Count > 0
@@ -637,8 +636,8 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         var suppressed = PreferencesService.Current.UpdatePreferences.SuppressedVersions;
         if (!suppressed.Contains(key))
         {
-            suppressed.Add(key);
-            PreferencesService.Save();
+            if (!PreferencesService.Update(p => { if (!p.UpdatePreferences.SuppressedVersions.Contains(key)) p.UpdatePreferences.SuppressedVersions.Add(key); }))
+            { UpdateStatus = "Could not save skipped version."; return; }
         }
         var item = AvailableUpdates.FirstOrDefault(u => u.ToolName == update.ToolName);
         if (item != null) AvailableUpdates.Remove(item);
@@ -649,10 +648,18 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private async Task RollbackToolAsync(string toolName)
     {
         if (IsCheckingUpdates || _disposed != 0) return;
-        if (ElevatedUpdateRequested != null) { ElevatedUpdateRequested.Invoke("rollback:" + toolName); return; }
+        if (_sessionService.ActiveSessions.Count > 0 || ToolLauncher.HasRunningTools)
+        { UpdateStatus = "Stop active device operations before rolling back tools."; return; }
+        if (!_updateService.HasRollback(toolName))
+        { UpdateStatus = "No verified previous installation is available."; return; }
         IsCheckingUpdates = true;
         try
         {
+            var validation = await _updateService.ValidateRollbackAsync(toolName);
+            if (!validation.Success) { UpdateStatus = validation.Message; return; }
+            if (_disposed != 0 || _sessionService.ActiveSessions.Count > 0 || ToolLauncher.HasRunningTools)
+            { UpdateStatus = "Stop active operations before rolling back tools."; return; }
+            if (ElevatedUpdateRequested != null) { ElevatedUpdateRequested.Invoke("rollback:" + toolName); return; }
             UpdateStatus = $"Restoring previous {toolName} installation...";
             var (_, message) = await _updateService.RollbackLastUpdateAsync(toolName);
             UpdateStatus = message;
@@ -664,12 +671,8 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
 
     partial void OnCheckForUpdatesOnStartupChanged(bool value)
     {
-        var prefs = PreferencesService.Current.UpdatePreferences;
-        var previous = prefs.CheckOnStartup;
-        prefs.CheckOnStartup = value;
-        if (!PreferencesService.Save())
+        if (!PreferencesService.Update(p => p.UpdatePreferences.CheckOnStartup = value))
         {
-            prefs.CheckOnStartup = previous;
             UpdateStatus = "Could not save update-check preference.";
         }
     }

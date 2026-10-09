@@ -1,26 +1,62 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+
 namespace LogPro.Models;
 
 /// <summary>
 /// Represents a detected device (Android or iOS).
 /// </summary>
-public class DeviceInfo
+public partial class DeviceInfo : ObservableObject
 {
-    public string Id { get; set; } = string.Empty;
-    public string Serial { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string Model { get; set; } = string.Empty;
-    public string OsVersion { get; set; } = string.Empty;
-    public DevicePlatform Platform { get; set; }
-    public DeviceConnectionState ConnectionState { get; set; }
-    public string BatteryLevel { get; set; } = "N/A";
-    public string BatteryStatus { get; set; } = string.Empty;
-    public string Manufacturer { get; set; } = string.Empty;
-    public string Product { get; set; } = string.Empty;
-    public string UsbInfo { get; set; } = string.Empty;
-    public string Notes { get; set; } = string.Empty;
-    public string Tag { get; set; } = string.Empty;
-    public DateTime? LastConnected { get; set; }
-    public bool IsTemporarilyUnavailable { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _id = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _serial = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _name = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _model = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _osVersion = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private DevicePlatform _platform;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private DeviceConnectionState _connectionState;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _batteryLevel = "N/A";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _batteryStatus = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _manufacturer = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _product = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _usbInfo = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _notes = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private string _tag = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private DateTime? _lastConnected;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName), nameof(StatusText), nameof(IsReady), nameof(MaskedSerial), nameof(DisplayNotes), nameof(PlatformIcon))]
+    private bool _isTemporarilyUnavailable;
+
+    public bool IsReady => ConnectionState == DeviceConnectionState.Online && !IsTemporarilyUnavailable;
 
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Model : Name;
     public string MaskedSerial => Serial.Length <= 4 ? "••••" : $"••••{Serial[^4..]}";

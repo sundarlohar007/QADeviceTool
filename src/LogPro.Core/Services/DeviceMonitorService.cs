@@ -83,7 +83,8 @@ public class DeviceMonitorService : IDeviceMonitorService
             var old = _devices.Where(d => d.Platform == platform).ToList();
             var next = result.Success ? result.Devices.DistinctBy(d => d.Serial).ToList()
                 : old.Select(d => d.WithTemporaryUnavailable(true)).ToList();
-            var connected = next.Where(d => old.All(o => o.Serial != d.Serial)).ToList();
+            var connected = next.Where(d => old.All(o => o.Serial != d.Serial) ||
+                (d.IsReady && old.Any(o => o.Serial == d.Serial && !o.IsReady))).ToList();
             var disconnected = new List<DeviceInfo>();
             if (result.Success)
             {

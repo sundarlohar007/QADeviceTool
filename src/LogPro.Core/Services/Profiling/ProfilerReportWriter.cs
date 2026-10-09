@@ -5,7 +5,7 @@ namespace LogPro.Services.Profiling;
 /// <summary>Writes bounded profiler runs to JSON or CSV without constructing a second full output document.</summary>
 public static class ProfilerReportWriter
 {
-    public static async Task WriteJsonAsync(IReadOnlyList<ProfilerSnapshot> snapshots, string outputPath, IReadOnlyList<ProfilerMarker>? markers = null)
+    public static async Task WriteJsonAsync(IReadOnlyList<ProfilerSnapshot> snapshots, string outputPath, IReadOnlyList<ProfilerMarker>? markers = null, ProfilerSummary? fullRunSummary = null, int? totalSampleCount = null)
     {
         await using var stream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
         await using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
@@ -13,7 +13,8 @@ public static class ProfilerReportWriter
         writer.WriteStartObject();
         writer.WriteString("GeneratedUtc", DateTime.UtcNow.ToString("O"));
         writer.WriteNumber("SampleCount", snapshots.Count);
-        var summary = Summarize(snapshots);
+        writer.WriteNumber("TotalRunSampleCount", totalSampleCount ?? snapshots.Count);
+        var summary = fullRunSummary ?? Summarize(snapshots);
         writer.WritePropertyName("Summary");
         writer.WriteStartObject();
         if (summary.AvgFps.HasValue) writer.WriteNumber("AvgFps", summary.AvgFps.Value); else writer.WriteNull("AvgFps");

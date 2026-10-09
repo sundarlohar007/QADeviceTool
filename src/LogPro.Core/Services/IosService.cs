@@ -18,7 +18,7 @@ namespace LogPro.Services;
 ///   2) system python.exe with `-m pymobiledevice3`
 /// CheckAvailabilityAsync probes both and reports which one is active.
 /// </summary>
-public class IosService : IIosService
+public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIosService
 {
     private sealed record ToolSelection(string Exe, bool IsModuleInvocation, string ToolKind, ToolLauncherResult ProbeResult);
     private static readonly object SelectionLock = new();
@@ -112,7 +112,9 @@ public class IosService : IIosService
             return new ToolLauncherResult { Success = false, Error = "Blocked by LogPro offline security policy." };
         if (string.IsNullOrWhiteSpace(subcommand) || subcommand.Any(c => c is '\r' or '\n'))
             return new ToolLauncherResult { Success = false, Error = "Invalid iOS command." };
-        var tool = await GetToolAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        var tool = await GetToolAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!tool.ProbeResult.Success) return tool.ProbeResult;
         return await ToolLauncher.RunAsync(tool.Exe, BuildCommandArgs(tool.IsModuleInvocation, udid, subcommand), timeoutMs, outputCallback, cancellationToken, forwardErrorToCallback).ConfigureAwait(false);
     }
@@ -133,7 +135,29 @@ public class IosService : IIosService
 
     public Task<ToolLauncherResult> ExecuteCommandAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs,
         Action<string>? outputCallback = null, CancellationToken cancellationToken = default)
-        => RunAsync(udid, subcommand, timeoutMs, outputCallback, cancellationToken);
+        => subcommand.Trim().Equals("syslog live", StringComparison.OrdinalIgnoreCase)
+            ? StreamLogsAsync(udid, outputCallback, cancellationToken)
+            : RunAsync(udid, subcommand, timeoutMs, outputCallback, cancellationToken);
+
+    private async Task<ToolLauncherResult> StreamLogsAsync(string? udid, Action<string>? output, CancellationToken token)
+    {
+        if (!SecurityHelper.IsValidOfflineDeviceSelector(udid))
+            return new ToolLauncherResult { Error = "Select a USB device before streaming logs." };
+        token.ThrowIfCancellationRequested();
+        using var process = await StartLongAsync(udid, "syslog live", drainStdout: false).ConfigureAwait(false);
+        if (process == null) return new ToolLauncherResult { Error = "Unable to start the iOS log stream." };
+        using var registration = token.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
+        try
+        {
+            while (await process.StandardOutput.ReadLineAsync(token).ConfigureAwait(false) is { } line) output?.Invoke(line);
+            await process.WaitForExitAsync(token).ConfigureAwait(false);
+            return new ToolLauncherResult { Success = process.ExitCode == 0, ExitCode = process.ExitCode, Error = ToolLauncher.GetProcessError(process) };
+        }
+        finally
+        {
+            try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { }
+        }
+    }
 
     public async Task<ToolStatus> CheckAvailabilityAsync()
     {
@@ -161,15 +185,17 @@ public class IosService : IIosService
         }
     }
 
-    public async Task<List<DeviceInfo>> GetConnectedDevicesAsync()
-        => (await GetConnectedDevicesWithStatusAsync().ConfigureAwait(false)).Devices;
+    public Task<List<DeviceInfo>> GetConnectedDevicesAsync() => GetConnectedDevicesAsync(CancellationToken.None);
+    public async Task<List<DeviceInfo>> GetConnectedDevicesAsync(CancellationToken token)
+        => (await GetConnectedDevicesWithStatusAsync(token).ConfigureAwait(false)).Devices;
 
-    public async Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync()
+    public Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync() => GetConnectedDevicesWithStatusAsync(CancellationToken.None);
+    public async Task<(bool Success, List<DeviceInfo> Devices)> GetConnectedDevicesWithStatusAsync(CancellationToken token)
     {
         var devices = new List<DeviceInfo>();
         try
         {
-            var result = await RunAsync(null, "usbmux list", InfoTimeoutMs).ConfigureAwait(false);
+            var result = await RunAsync(null, "usbmux list --usb --simple", InfoTimeoutMs, cancellationToken: token).ConfigureAwait(false);
             if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return (false, devices);
 
             var output = result.Output.TrimStart();
@@ -179,6 +205,14 @@ public class IosService : IIosService
             if (json.RootElement.ValueKind != JsonValueKind.Array) return (false, devices);
             foreach (var item in json.RootElement.EnumerateArray())
             {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    var serial = item.GetString() ?? "";
+                    if (SecurityHelper.IsValidOfflineDeviceSelector(serial))
+                        devices.Add(new DeviceInfo { Id = serial, Serial = serial, Name = "iOS Device", Platform = DevicePlatform.iOS, ConnectionState = DeviceConnectionState.PendingTrust });
+                    continue;
+                }
+                if (item.ValueKind != JsonValueKind.Object) continue;
                 var udid = item.TryGetProperty("UniqueDeviceID", out var u) ? u.GetString() ?? "" : "";
                 if (string.IsNullOrEmpty(udid)) continue;
                 var name = item.TryGetProperty("DeviceName", out var dn) ? dn.GetString() ?? "iOS Device" : "iOS Device";
@@ -186,6 +220,7 @@ public class IosService : IIosService
                 var osVer = item.TryGetProperty("ProductVersion", out var pv) ? pv.GetString() ?? "" : "";
                 var connType = item.TryGetProperty("ConnectionType", out var ct) ? ct.GetString() ?? "USB" : "USB";
 
+                if (!connType.Equals("USB", StringComparison.OrdinalIgnoreCase)) continue;
                 devices.Add(new DeviceInfo
                 {
                     Serial = udid,
@@ -220,19 +255,23 @@ public class IosService : IIosService
                 device.ConnectionState = cached.Device.ConnectionState;
                 device.Name = cached.Device.Name;
                 device.OsVersion = cached.Device.OsVersion;
+                device.Model = cached.Device.Model;
+                device.BatteryLevel = cached.Device.BatteryLevel;
+                device.BatteryStatus = cached.Device.BatteryStatus;
                 return;
             }
-            await GetDeviceDetailsAsync(device).ConfigureAwait(false);
+            await GetDeviceDetailsAsync(device, token).ConfigureAwait(false);
             _readiness[device.Serial] = (DateTime.UtcNow, device.WithTemporaryUnavailable(false));
         })).ConfigureAwait(false);
         return (true, devices);
     }
 
-    public async Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device)
+    public Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device) => GetDeviceDetailsAsync(device, CancellationToken.None);
+    public async Task<DeviceInfo> GetDeviceDetailsAsync(DeviceInfo device, CancellationToken token)
     {
         try
         {
-            var result = await RunAsync(device.Serial, "lockdown info", InfoTimeoutMs).ConfigureAwait(false);
+            var result = await RunAsync(device.Serial, "lockdown info", InfoTimeoutMs, cancellationToken: token).ConfigureAwait(false);
             if (!result.Success)
             {
                 device.ConnectionState = DeviceConnectionState.Offline;
@@ -768,39 +807,44 @@ public class IosService : IIosService
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] GetAppContainerPathAsync failed"); return ""; }
     }
 
-    public async Task<bool> PullAppFileAsync(string udid, string bundleId, string remotePath, string localPath,
+    public async Task<bool> PullAppFileAsync(string udid, string bundleId, string remotePath, string localPath, CancellationToken cancellationToken = default)
+        => (await PullDocumentAsync(udid, bundleId, remotePath, localPath, cancellationToken).ConfigureAwait(false)).Success;
+    public async Task<bool> PushAppFileAsync(string udid, string bundleId, string localPath, string remotePath, CancellationToken cancellationToken = default)
+        => (await PushDocumentAsync(udid, bundleId, localPath, remotePath, cancellationToken).ConfigureAwait(false)).Success;
+
+    public async Task<DocumentTransferResult> PullDocumentAsync(string udid, string bundleId, string remotePath, string localPath,
         CancellationToken cancellationToken = default)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidBundleId(bundleId) ||
-            !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath)) return false;
+            !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath)) return new(DocumentTransferOutcome.Failed, "Invalid path, missing local file, or invalid device/app identifier.");
         var isDirectory = Directory.Exists(localPath);
         var target = isDirectory ? localPath : localPath + ".logpro-part-" + Guid.NewGuid().ToString("N");
         try
         {
-            var result = await RunAsync(udid, $"apps pull {Quote(bundleId)} {Quote(remotePath)} {Quote(target)}",
+            var result = await RunAsync(udid, $"apps pull --documents {Quote(bundleId)} {Quote(remotePath)} {Quote(target)}",
                 300000, cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (!result.Success) return false;
-            if (isDirectory) return Directory.Exists(Path.Combine(localPath, Path.GetFileName(remotePath.TrimEnd('/'))));
-            if (!File.Exists(target)) return false;
+            if (!result.Success) return DocumentTransferResult.FromTool(result, cancellationToken);
+            if (isDirectory) return Directory.Exists(Path.Combine(localPath, Path.GetFileName(remotePath.TrimEnd('/')))) ? new(DocumentTransferOutcome.Completed, "Downloaded folder.") : new(DocumentTransferOutcome.Failed, "The tool returned no downloaded folder.");
+            if (!File.Exists(target)) return new(DocumentTransferOutcome.Failed, "Invalid path, missing local file, or invalid device/app identifier.");
             File.Move(target, localPath, true);
-            return true;
+            return new(DocumentTransferOutcome.Completed, "Downloaded document.");
         }
-        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PullAppFileAsync failed"); return false; }
+        catch (Exception ex) { return DocumentTransferResult.FromTool(new ToolLauncherResult { Error = ex.Message }, cancellationToken); }
         finally { if (!isDirectory && File.Exists(target)) File.Delete(target); }
     }
 
-    public async Task<bool> PushAppFileAsync(string udid, string bundleId, string localPath, string remotePath,
+    public async Task<DocumentTransferResult> PushDocumentAsync(string udid, string bundleId, string localPath, string remotePath,
         CancellationToken cancellationToken = default)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !SecurityHelper.IsValidBundleId(bundleId) ||
-            !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath) || !File.Exists(localPath)) return false;
+            !IsSafePath(remotePath) || !PathHelper.IsSafeLocalPath(localPath) || !File.Exists(localPath)) return new(DocumentTransferOutcome.Failed, "Invalid path, missing local file, or invalid device/app identifier.");
         try
         {
-            var result = await RunAsync(udid, $"apps push {Quote(bundleId)} {Quote(localPath)} {Quote(remotePath)}",
+            var result = await RunAsync(udid, $"apps push --documents {Quote(bundleId)} {Quote(localPath)} {Quote(remotePath)}",
                 300000, cancellationToken: cancellationToken).ConfigureAwait(false);
-            return result.Success;
+            return DocumentTransferResult.FromTool(result, cancellationToken);
         }
-        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PushAppFileAsync failed"); return false; }
+        catch (Exception ex) { return DocumentTransferResult.FromTool(new ToolLauncherResult { Error = ex.Message }, cancellationToken); }
     }
 
     private static bool IsSafePath(string path)

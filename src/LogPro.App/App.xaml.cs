@@ -67,6 +67,42 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        // Recover before registering this instance or resolving any device executable.
+        try
+        {
+            using var recovery = new UpdateService();
+            if (recovery.HasPendingTransactions)
+            {
+                if (Mutex.TryOpenExisting("LogProRunning", out var running))
+                { running.Dispose(); throw new InvalidOperationException("Close other LogPro windows to recover the interrupted update."); }
+                if (UpdateService.RequiresElevation)
+                {
+                    using var helper = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = Environment.ProcessPath!,
+                        Arguments = "--recover-updates",
+                        UseShellExecute = true,
+                        Verb = "runas",
+                        WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+                    }) ?? throw new InvalidOperationException("Could not start update recovery.");
+                    await helper.WaitForExitAsync();
+                    if (helper.ExitCode != 0) throw new InvalidOperationException("Interrupted update recovery failed. Repair LogPro using the Windows installer.");
+                }
+                else
+                {
+                    using var recovering = new Mutex(false, "LogProUpdating", out var created);
+                    if (!created) throw new InvalidOperationException("Another update operation is running.");
+                    await recovery.RecoverPendingTransactionsAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            EarlyLog("Startup update recovery failed", ex);
+            MessageBox.Show(SecurityHelper.RedactSensitiveText(ex.Message), "LogPro recovery", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown(1);
+            return;
+        }
         _runningMutex = new Mutex(false, "LogProRunning");
 
         // Register global exception handlers BEFORE any window/ViewModel creation
@@ -132,6 +168,9 @@ public partial class App : Application
         {
             EarlyLog("FATAL: MainViewModel creation failed", vmEx);
             try { Services.AppLogger.Log.Fatal(vmEx, "MainViewModel creation failed"); } catch { /* logger may not be ready */ }
+            MessageBox.Show("LogPro could not initialize. See startup-debug.log in the application data folder for details.", "LogPro startup failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
         }
         mainWindow.Show();
         ShutdownMode = ShutdownMode.OnMainWindowClose;
@@ -150,8 +189,7 @@ public partial class App : Application
                     "LogPro stores preferences, logs, screenshots and sessions locally. Optional update checks contact GitHub when enabled; diagnostic data is not included in those requests. Continue?",
                     "Privacy Notice", MessageBoxButton.YesNo, MessageBoxImage.Information);
                 if (accepted != MessageBoxResult.Yes) { Shutdown(); return; }
-                prefs.PrivacyNoticeAccepted = true;
-                if (!PreferencesService.Save()) { Shutdown(); return; }
+                if (!PreferencesService.Update(p => p.PrivacyNoticeAccepted = true)) { Shutdown(); return; }
             }
             // Cleanup only after the first-run notice is accepted.
             Services.PreferencesService.CleanupOldLogs();
@@ -207,9 +245,9 @@ public partial class App : Application
         Services.AppLogger.Log.Fatal(e.Exception, "DispatcherUnhandledException");
         WriteCrashReport(e.Exception);
 
-        var technicalDetails = e.Exception.ToString(); // full chain incl. inner exceptions (e.g. XamlParseException inner)
+        var technicalDetails = SecurityHelper.RedactSensitiveText(e.Exception.ToString()); // full chain incl. inner exceptions (e.g. XamlParseException inner)
         var result = MessageBox.Show(
-            "An unexpected error occurred. The application will try to continue.\n\nWould you like to copy technical details to clipboard?",
+            "An unexpected error occurred. LogPro will save active captures and close.\n\nWould you like to copy technical details to clipboard?",
             "LogPro - Error",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -220,6 +258,7 @@ public partial class App : Application
         }
 
         e.Handled = true;
+        if (MainWindow != null) MainWindow.Close(); else Shutdown(1);
     }
 
     private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)

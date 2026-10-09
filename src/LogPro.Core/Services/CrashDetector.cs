@@ -15,27 +15,27 @@ public class CrashDetector
     // Android crash patterns
     private static readonly Regex[] AndroidCrashPatterns =
     {
-        new(@"FATAL EXCEPTION:", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"AndroidRuntime:\s*FATAL", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bANR\s+in\b", RegexOptions.Compiled),
-        new(@"Process\s+.*\s+has\s+died", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\*\*\*\s+\*\*\*\s+\*\*\*\s+\*\*\*\s+\*\*\*\s+\*\*\*", RegexOptions.Compiled), // native tombstone
-        new(@"^DEBUG\s+\*\*\*", RegexOptions.Compiled), // native crash signal
-        new(@"BEGIN\s+CRASH", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"force\s+finishing\s+activity", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+        new(@"FATAL EXCEPTION:", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"AndroidRuntime:\s*FATAL", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"\bANR\s+in\b", RegexOptions.Compiled | RegexOptions.NonBacktracking),
+        new(@"Process\s+.*\s+has\s+died", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"\*\*\*\s+\*\*\*\s+\*\*\*\s+\*\*\*\s+\*\*\*\s+\*\*\*", RegexOptions.Compiled | RegexOptions.NonBacktracking), // native tombstone
+        new(@"^DEBUG\s+\*\*\*", RegexOptions.Compiled | RegexOptions.NonBacktracking), // native crash signal
+        new(@"BEGIN\s+CRASH", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"force\s+finishing\s+activity", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
     };
 
     // iOS crash patterns
     private static readonly Regex[] IosCrashPatterns =
     {
-        new(@"Exception\s+Type:", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"Crashed\s+Thread:", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"Termination\s+Reason:", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"Application\s+.*\s+terminated", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"Segmentation\s+fault", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"Bus\s+error", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"Abort\s+trap", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"Fatal\s+error", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+        new(@"Exception\s+Type:", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"Crashed\s+Thread:", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"Termination\s+Reason:", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"Application\s+.*\s+terminated", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"Segmentation\s+fault", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"Bus\s+error", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"Abort\s+trap", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
+        new(@"Fatal\s+error", RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase),
     };
 
     /// <summary>
@@ -79,7 +79,7 @@ public class CrashDetector
                     Platform = platform,
                     LineIndex = lineIndex
                 };
-                _detectedCrashes.Add(crash);
+                Restore(crash);
                 CrashDetected?.Invoke(crash);
                 return crash;
             }
@@ -121,6 +121,15 @@ public class CrashDetector
             lines.Add($"{marker}[{i:D6}] {logLines[i]}");
         }
         return string.Join(Environment.NewLine, lines);
+    }
+
+    public void Restore(CrashEvent crash)
+    {
+        lock (_crashLock)
+        {
+            _detectedCrashes.Add(crash);
+            if (_detectedCrashes.Count > 2000) _detectedCrashes.RemoveRange(0, _detectedCrashes.Count - 2000);
+        }
     }
 
     public void Clear()

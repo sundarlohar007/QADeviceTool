@@ -15,13 +15,13 @@ namespace LogPro.Cli;
 /// the engine is shared with the GUI apps. The API key is printed once by the CLI and is
 /// never accepted through a URL/query string.
 /// </summary>
-public sealed class ControlApiServer : IDisposable
+public sealed class ControlApiServer : IDisposable, IAsyncDisposable
 {
     private const int MaxRequestBodyBytes = 1_048_576;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    private readonly AdbService _adb;
-    private readonly IosService _ios;
+    private readonly IAdbService _adb;
+    private readonly IIosService _ios;
     private readonly object _lock = new();
     private readonly Dictionary<string, CaptureHandle> _captures = new();
     private readonly string _apiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -30,18 +30,22 @@ public sealed class ControlApiServer : IDisposable
     private CancellationTokenSource? _cts;
     private AndroidPerformanceProfiler? _profiler;
     private Task? _loop;
-    private bool _disposed;
+    private volatile bool _disposed;
+    private readonly SessionService _sessions;
+    private readonly SemaphoreSlim _requestSlots = new(8, 8);
 
     public string ApiKey => _apiKey;
 
-    public ControlApiServer(AdbService adb, IosService ios)
+    public ControlApiServer(IAdbService adb, IIosService ios)
     {
         _adb = adb;
         _ios = ios;
+        _sessions = new SessionService(adb, ios);
     }
 
     public void Start(int port)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (port is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
         if (_listener != null) throw new InvalidOperationException("Control API is already running.");
 
@@ -61,6 +65,7 @@ public sealed class ControlApiServer : IDisposable
             catch (HttpListenerException) { break; }
             catch (ObjectDisposedException) { break; }
 
+            if (!_requestSlots.Wait(0)) { ctx.Response.StatusCode = 503; ctx.Response.Close(); continue; }
             var request = HandleRequestAsync(ctx);
             lock (_requestTasks) _requestTasks.Add(request);
             _ = request.ContinueWith(completed =>
@@ -82,12 +87,14 @@ public sealed class ControlApiServer : IDisposable
 
             await HandleAsync(ctx);
         }
+        catch (OperationCanceledException) when (_disposed) { try { ctx.Response.Close(); } catch { } }
         catch (Exception ex)
         {
             AppLogger.Log.Error(ex, "[ControlApi] Request failed");
             try { await WriteJsonAsync(ctx.Response, 500, new { error = SecurityHelper.RedactSensitiveText(ex.Message) }); }
             catch { /* client disconnected */ }
         }
+        finally { _requestSlots.Release(); }
     }
 
     private bool IsAuthorized(HttpListenerContext ctx)
@@ -139,18 +146,24 @@ public sealed class ControlApiServer : IDisposable
                     var device = await FindDeviceAsync(req.Serial);
                     if (device == null) { await WriteJsonAsync(ctx.Response, 404, new { error = "device not found" }); return; }
 
-                    var sessions = new SessionService(_adb, _ios);
-                    if (!string.IsNullOrWhiteSpace(req.Out)) sessions.SessionsRootDirectory = req.Out;
-                    if (!string.IsNullOrWhiteSpace(req.Package)) PreferencesService.Current.TargetPackageName = req.Package;
-
-                    var session = sessions.CreateSession(device);
-                    if (!await sessions.StartCaptureAsync(session))
+                    if (_disposed) return;
+                    var session = _sessions.CreateSessionAt(device, null, string.IsNullOrWhiteSpace(req.Out) ? _sessions.SessionsRootDirectory : req.Out);
+                    session.TargetPackage = req.Package ?? string.Empty;
+                    if (!await _sessions.StartCaptureAsync(session, new CaptureOptions(LogcatBuffer.Main, LogcatFormat.ThreadTime, req.Package ?? string.Empty), _cts?.Token ?? CancellationToken.None))
                     {
-                        await WriteJsonAsync(ctx.Response, 500, new { error = "failed to start capture" });
+                        await WriteJsonAsync(ctx.Response, 409, new { error = string.IsNullOrWhiteSpace(session.CaptureError) ? "a capture is already active for this device" : session.CaptureError });
                         return;
                     }
-
-                    lock (_lock) _captures[session.Id] = new CaptureHandle(sessions, session);
+                    lock (_lock)
+                    {
+                        if (!_disposed) _captures[session.Id] = new CaptureHandle(_sessions, session);
+                    }
+                    if (_disposed)
+                    {
+                        _sessions.StopCapture(session);
+                        await _sessions.WaitForCaptureStopAsync(session);
+                        return;
+                    }
                     await WriteJsonAsync(ctx.Response, 200, new { sessionId = session.Id, directory = session.SessionDirectory });
                     return;
                 }
@@ -167,7 +180,8 @@ public sealed class ControlApiServer : IDisposable
                     if (handle == null) { await WriteJsonAsync(ctx.Response, 404, new { error = "session not found" }); return; }
 
                     handle.Sessions.StopCapture(handle.Session);
-                    await WriteJsonAsync(ctx.Response, 200, new { lines = handle.Session.LogLineCount, logFile = handle.Session.LogFilePath });
+                    await handle.Sessions.WaitForCaptureStopAsync(handle.Session);
+                    await WriteJsonAsync(ctx.Response, 200, new { lines = handle.Session.LogLineCount, logFile = handle.Session.LogFilePath, complete = handle.Session.CaptureComplete, error = handle.Session.CaptureError });
                     return;
                 }
 
@@ -188,6 +202,7 @@ public sealed class ControlApiServer : IDisposable
                     lock (_lock)
                     {
                         alreadyProfiling = _profiler != null;
+                        if (_disposed) return;
                         if (!alreadyProfiling)
                         {
                             _profiler = new AndroidPerformanceProfiler(_adb, serial, string.IsNullOrWhiteSpace(package) ? null : package);
@@ -223,11 +238,11 @@ public sealed class ControlApiServer : IDisposable
                     if (profiler == null) { await WriteJsonAsync(ctx.Response, 404, new { error = "not profiling" }); return; }
 
                     await profiler.StopAsync();
-                    var summary = ProfilerReportWriter.Summarize(profiler.History);
+                    var summary = profiler.Summary;
                     profiler.Dispose();
                     await WriteJsonAsync(ctx.Response, 200, new
                     {
-                        samples = profiler.History.Count,
+                        samples = profiler.TotalSampleCount,
                         avgFps = summary.AvgFps,
                         minFps = summary.MinFps,
                         jankyFrames = summary.JankyFrames,
@@ -290,8 +305,13 @@ public sealed class ControlApiServer : IDisposable
     }
 
     private async Task<DeviceInfo?> FindDeviceAsync(string serial)
-        => (await _adb.GetConnectedDevicesAsync()).Concat(await _ios.GetConnectedDevicesAsync())
-            .FirstOrDefault(d => d.Serial.Equals(serial, StringComparison.OrdinalIgnoreCase));
+    {
+        var token = _cts?.Token ?? CancellationToken.None;
+        var android = await DeviceQueries.DiscoverAsync(_adb, token);
+        var ios = await DeviceQueries.DiscoverAsync(_ios, token);
+        token.ThrowIfCancellationRequested();
+        return android.Concat(ios).FirstOrDefault(d => d.Serial.Equals(serial, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static async Task<T?> ReadJsonAsync<T>(HttpListenerRequest request, CancellationToken cancellationToken)
     {
@@ -336,30 +356,31 @@ public sealed class ControlApiServer : IDisposable
     private sealed class CaptureStopRequest { public string? SessionId { get; set; } }
     private sealed class SoakRequest { public string? Serial { get; set; } public int Seconds { get; set; } = 300; public string? Package { get; set; } }
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _cts?.Cancel();
-        _listener?.Stop();
-        _listener?.Close();
-        try { _loop?.Wait(TimeSpan.FromSeconds(2)); } catch { }
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
+    public async ValueTask DisposeAsync()
+    {
+        lock (_lock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
+        _cts?.Cancel();
+        _listener?.Close();
+        if (_loop != null) await _loop.ConfigureAwait(false);
+        // Permanently reject starts, including requests already awaiting device discovery.
+        await Task.Run(_sessions.StopAllCaptures).ConfigureAwait(false);
         Task[] requests;
         lock (_requestTasks) requests = _requestTasks.ToArray();
-        try { Task.WaitAll(requests, TimeSpan.FromSeconds(2)); } catch { }
-
-        List<CaptureHandle> captures;
+        await Task.WhenAll(requests).ConfigureAwait(false);
         AndroidPerformanceProfiler? profiler;
         lock (_lock)
         {
-            captures = _captures.Values.ToList();
             _captures.Clear();
             profiler = _profiler;
             _profiler = null;
         }
-
-        foreach (var h in captures) h.Sessions.StopCapture(h.Session);
-        profiler?.Dispose();
+        if (profiler != null) { await profiler.StopAsync().ConfigureAwait(false); profiler.Dispose(); }
+        _cts?.Dispose();
     }
 }

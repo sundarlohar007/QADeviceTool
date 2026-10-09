@@ -80,17 +80,28 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _cpuChartRange = "unavailable";
     [ObservableProperty] private string _memoryChartRange = "unavailable";
 
+    private bool _reconcilingDevices;
+    private int? _initialPss;
+    private ProfilerAccumulator _runStatistics = new();
+    private ProfilerSummary? _completedSummary;
+    private int _completedSampleCount;
+
     public DeviceInfo? SelectedDevice
     {
         get => _store.SelectedDevice;
-        set { if (value != null && !_store.Devices.Any(d => d.Serial == value.Serial && d.Platform == value.Platform)) return; _store.SelectedDevice = value; }
+        set { if (_reconcilingDevices) return; if (value != null && !_store.Devices.Any(d => d.Serial == value.Serial && d.Platform == value.Platform)) return; _store.SelectedDevice = value; }
     }
 
     private void OnDevicesChanged()
     {
         if (_disposed) return;
-        AvailableDevices.Clear();
-        foreach (var device in _store.Devices.Where(d => d.Platform == DevicePlatform.Android)) AvailableDevices.Add(device);
+        _reconcilingDevices = true;
+        try
+        {
+            AvailableDevices.Clear();
+            foreach (var device in _store.Devices.Where(d => d.Platform == DevicePlatform.Android)) AvailableDevices.Add(device);
+        }
+        finally { _reconcilingDevices = false; }
         OnPropertyChanged(nameof(SelectedDevice));
         if (_listedSerial != SelectedDevice?.Serial)
         {
@@ -158,6 +169,10 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
         catch (ArgumentException ex) { StatusMessage = ex.Message; return; }
 
         History.Clear();
+        _initialPss = null;
+        _runStatistics = new();
+        _completedSummary = null;
+        _completedSampleCount = 0;
         _completedSamples = Array.Empty<ProfilerSnapshot>();
         Markers.Clear();
         ChartSamples = Array.Empty<ProfilerSnapshot>();
@@ -196,13 +211,15 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
             _sampleHandler = null;
             await profiler.StopAsync();
             _completedSamples = profiler.History;
+            _completedSummary = profiler.Summary;
+            _completedSampleCount = profiler.TotalSampleCount;
             await profiler.DisposeAsync();
             _stoppingProfiler = null;
             Markers.Add(new ProfilerMarker(DateTime.UtcNow, "Run stopped"));
             IsProfiling = false;
             MetricAvailability = "Stopped · cards show the last captured values";
             _activeSerial = null;
-            var summary = ProfilerReportWriter.Summarize(_completedSamples);
+            var summary = _completedSummary ?? ProfilerReportWriter.Summarize(_completedSamples);
             SessionVerdict = $"{summary.Verdict} · FPS {summary.FpsSampleCount}/{_completedSamples.Count}, CPU {summary.CpuSampleCount}/{_completedSamples.Count}, memory {summary.MemorySampleCount}/{_completedSamples.Count}";
             if (_baseline?.AvgFps is { } baseline && summary.AvgFps is { } current)
                 BaselineComparison = $"Average FPS vs baseline: {current - baseline:+0.0;-0.0;0.0}";
@@ -218,7 +235,7 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
                 alerts.Add($"FPS regressed over {allowedRegression:F0}% vs baseline");
             PerformanceAlerts = alerts.Count == 0 ? "No threshold alerts" : string.Join(" · ", alerts);
             if (summary.HasSufficientData && !_baselinePinned) _baseline = summary;
-            RecentRuns.Insert(0, $"{DateTime.Now:g} · {_activePackage} · {_completedSamples.Count} samples · {summary.Verdict} · avg FPS {summary.AvgFps?.ToString("F1") ?? "n/a"}");
+            RecentRuns.Insert(0, $"{DateTime.Now:g} · {_activePackage} · {_completedSampleCount} samples · {summary.Verdict} · avg FPS {summary.AvgFps?.ToString("F1") ?? "n/a"}");
             while (RecentRuns.Count > 20) RecentRuns.RemoveAt(RecentRuns.Count - 1);
             StatusMessage = profiler.TotalSamples > _completedSamples.Count
                 ? $"Stopped — showing the last {_completedSamples.Count} of {profiler.TotalSamples} samples (buffer limit); {summary.Verdict.ToLowerInvariant()}."
@@ -237,7 +254,7 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
     public void PinBaseline()
     {
         if (IsProfiling) { StatusMessage = "Stop the run before pinning it as a baseline."; return; }
-        var summary = ProfilerReportWriter.Summarize(_completedSamples.Count > 0 ? _completedSamples : History.ToArray());
+        var summary = _completedSummary ?? (_runStatistics.Count > 0 ? _runStatistics.Summary : ProfilerReportWriter.Summarize(History.ToArray()));
         if (!summary.HasSufficientData) { StatusMessage = "Collect at least two live FPS samples before pinning a baseline."; return; }
         _baseline = summary;
         _baselinePinned = true;
@@ -268,7 +285,7 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
         if (!PathHelper.IsSafeLocalPath(path)) { StatusMessage = "Choose a safe local export path."; return; }
         try
         {
-            if (json) await ProfilerReportWriter.WriteJsonAsync(samples, path, Markers.ToArray());
+            if (json) await ProfilerReportWriter.WriteJsonAsync(samples, path, Markers.ToArray(), _profiler?.Summary ?? _stoppingProfiler?.Summary ?? _completedSummary ?? _runStatistics.Summary, _profiler?.TotalSampleCount ?? _stoppingProfiler?.TotalSampleCount ?? (_completedSampleCount > 0 ? _completedSampleCount : _runStatistics.Count));
             else await ProfilerReportWriter.WriteCsvAsync(samples, path, Markers.ToArray());
             StatusMessage = $"Exported {samples.Length} samples to {Path.GetFileName(path)}.";
         }
@@ -319,7 +336,7 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
             if (snapshot.JankyFrames.HasValue) JankDisplay = JankyFrames.ToString();
             MetricAvailability = $"FPS {Availability(snapshot.Fps)} · CPU {Availability(snapshot.CpuPercent)} · PSS {Availability(snapshot.PssKb)} · thermal {Freshness(snapshot.ThermalStatus, snapshot.ThermalFresh)} · battery {Freshness(snapshot.BatteryLevel, snapshot.BatteryFresh)}";
             ThermalAlert = snapshot.ThermalStatus is >= 3 ? "Thermal alert: severe or higher; performance may be throttled." : string.Empty;
-            var firstPss = History.FirstOrDefault(s => s.PssKb.HasValue)?.PssKb;
+            var firstPss = _initialPss ??= snapshot.PssKb;
             MemoryTrend = firstPss.HasValue && snapshot.PssKb.HasValue
                 ? $"Memory trend: {(snapshot.PssKb.Value - firstPss.Value) / 1024.0:+0.0;-0.0;0.0} MB since start"
                 : "Memory trend unavailable";
@@ -338,8 +355,9 @@ public partial class ProfilerViewModel : ObservableObject, IDisposable
             FpsChartRange = Range(ChartSamples.Select(s => s.Fps), "FPS");
             CpuChartRange = Range(ChartSamples.Select(s => s.CpuPercent), "%");
             MemoryChartRange = Range(ChartSamples.Select(s => s.PssKb.HasValue ? s.PssKb.Value / 1024.0 : (double?)null), "MB");
-            var quality = ProfilerReportWriter.Summarize(History.ToArray());
-            SessionVerdict = $"{quality.Verdict} · FPS {quality.FpsSampleCount}/{History.Count}, CPU {quality.CpuSampleCount}/{History.Count}, memory {quality.MemorySampleCount}/{History.Count}";
+            _runStatistics.Add(snapshot);
+            var quality = _runStatistics.Summary;
+            SessionVerdict = $"{quality.Verdict} · FPS {quality.FpsSampleCount}/{_runStatistics.Count}, CPU {quality.CpuSampleCount}/{_runStatistics.Count}, memory {quality.MemorySampleCount}/{_runStatistics.Count}";
         });
     }
 

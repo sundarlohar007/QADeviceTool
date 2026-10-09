@@ -69,12 +69,22 @@ public partial class MacroViewModel : ObservableObject, IDisposable
     private string? _recordInputDevice;
     private string? _recordSerial;
     private CancellationTokenSource? _recordTimeoutCts;
+    private bool _isActive;
+    private CancellationTokenSource? _capabilityCts;
+    private string? _capabilityKey;
+    public void SetActive(bool active)
+    {
+        _isActive = active;
+        if (!active) { _capabilityCts?.Cancel(); ++_capabilityVersion; }
+        else _ = ProbeCapabilityAsync();
+    }
     private int _capabilityVersion;
     private bool _updatingDevices;
     private bool _disposed;
 
-    public MacroViewModel(MacroService macroService, IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null, string? macroDirectory = null)
+    public MacroViewModel(MacroService macroService, IAdbService adbService, IDeviceMonitorService deviceMonitor, IUiDispatcher? dispatcher = null, string? macroDirectory = null, bool isActive = true)
     {
+        _isActive = isActive;
         _macroService = macroService;
         _adbService = adbService;
         _deviceMonitor = deviceMonitor;
@@ -117,7 +127,9 @@ public partial class MacroViewModel : ObservableObject, IDisposable
                 StopPlayback();
                 if (IsRecording) _ = StopRecordingAsync();
             }
-            _ = ProbeCapabilityAsync();
+            if (previous?.Serial != SelectedDevice?.Serial || previous?.Platform != SelectedDevice?.Platform ||
+                previous?.IsReady != SelectedDevice?.IsReady || previous?.OsVersion != SelectedDevice?.OsVersion)
+                _ = ProbeCapabilityAsync();
         });
     }
 
@@ -141,6 +153,12 @@ public partial class MacroViewModel : ObservableObject, IDisposable
 
     private async Task ProbeCapabilityAsync()
     {
+        if (!_isActive || _disposed) return;
+        var key = $"{SelectedDevice?.Platform}:{SelectedDevice?.Serial}:{SelectedDevice?.IsReady}:{SelectedDevice?.OsVersion}";
+        if (key == _capabilityKey) return;
+        _capabilityCts?.Cancel();
+        _capabilityCts = null;
+        _capabilityKey = null;
         var version = Interlocked.Increment(ref _capabilityVersion);
         var device = SelectedDevice;
         CanRawRecord = false;
@@ -155,12 +173,15 @@ public partial class MacroViewModel : ObservableObject, IDisposable
         if (device.ConnectionState != DeviceConnectionState.Online || device.IsTemporarilyUnavailable)
         { CapabilityMessage = "Device is offline or reconnecting. Connect it to use macros."; return; }
         CapabilityMessage = "Checking touchscreen access…";
+        using var cts = new CancellationTokenSource();
+        _capabilityCts = cts;
         try
         {
-            var path = await _macroService.DetectTouchDeviceAsync(device.Serial);
-            if (version != _capabilityVersion || _disposed) return;
-            var canReplay = path != null && await _macroService.CanInjectRawEventsAsync(device.Serial, path);
-            if (version != _capabilityVersion || _disposed) return;
+            var path = await _macroService.DetectTouchDeviceAsync(device.Serial, cts.Token);
+            if (cts.IsCancellationRequested || version != _capabilityVersion || _disposed) return;
+            var canReplay = path != null && await _macroService.CanInjectRawEventsAsync(device.Serial, path, cts.Token);
+            if (cts.IsCancellationRequested || version != _capabilityVersion || _disposed) return;
+            _capabilityKey = key;
             CanRawRecord = path != null;
             CanRawReplay = canReplay;
             CapabilityMessage = path == null
@@ -170,10 +191,11 @@ public partial class MacroViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            if (version != _capabilityVersion || _disposed) return;
+            if (cts.IsCancellationRequested || version != _capabilityVersion || _disposed) return;
             AppLogger.Log.Debug(ex, "[Macro] Capability probe failed");
             CapabilityMessage = "Could not check raw touch access. High-level sequences may still work.";
         }
+        finally { if (ReferenceEquals(_capabilityCts, cts)) _capabilityCts = null; }
     }
 
     [RelayCommand]
@@ -695,6 +717,7 @@ public partial class MacroViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _capabilityCts?.Cancel();
         _disposed = true;
         var timeout = Interlocked.Exchange(ref _recordTimeoutCts, null);
         timeout?.Cancel();

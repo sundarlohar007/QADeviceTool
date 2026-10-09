@@ -17,6 +17,9 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
     private readonly int _historyLimit;
     private readonly object _lock = new();
     private readonly List<ProfilerSnapshot> _history = new();
+    private readonly ProfilerAccumulator _statistics = new();
+    public ProfilerSummary Summary { get { lock (_lock) return _statistics.Summary; } }
+    public int TotalSampleCount { get { lock (_lock) return _statistics.Count; } }
     private CancellationTokenSource? _cts;
     private Task? _loop;
     private string? _resolvedLayer;
@@ -70,6 +73,7 @@ public sealed class AndroidPerformanceProfiler : IDisposable, IAsyncDisposable
                     var snapshot = await SampleOnceAsync(token).ConfigureAwait(false);
                     lock (_lock)
                     {
+                        _statistics.Add(snapshot);
                         _history.Add(snapshot);
                         if (_history.Count > _historyLimit) _history.RemoveAt(0);
                     }

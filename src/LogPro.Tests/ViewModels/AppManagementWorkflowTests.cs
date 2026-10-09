@@ -8,6 +8,22 @@ namespace LogPro.Tests.ViewModels;
 
 public class AppManagementWorkflowTests
 {
+    [Fact]
+    public async Task ReconnectingDevice_DisablesActionsAndReloadsWhenReady()
+    {
+        var ctx = Create(Device("A"));
+        using var vm = ctx.Vm;
+        await UntilAsync(() => !vm.IsLoading);
+        var unavailable = Device("A");
+        unavailable.IsTemporarilyUnavailable = true;
+        ctx.Monitor.Raise(x => x.DevicesChanged += null, new List<DeviceInfo> { unavailable });
+        vm.CanInstall.Should().BeFalse();
+        vm.CanRefresh.Should().BeFalse();
+        ctx.Monitor.Raise(x => x.DevicesChanged += null, new List<DeviceInfo> { Device("A") });
+        await UntilAsync(() => !vm.IsLoading);
+        vm.CanInstall.Should().BeTrue();
+    }
+
     private sealed class AsyncOnlyFiles(string path) : IFileDialogService
     {
         public string? OpenFile(string title, string filter) => null;

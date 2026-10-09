@@ -40,6 +40,15 @@ public static class SoakRunner
         if (duration <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(duration));
         using var profiler = new AndroidPerformanceProfiler(adb, serial,
             string.IsNullOrWhiteSpace(package) ? null : package, intervalMs: sampleIntervalMs);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        double startSum = 0, endSum = 0;
+        int startCount = 0, endCount = 0;
+        profiler.SnapshotSampled += sample =>
+        {
+            if (sample.Fps is not { } fps) return;
+            if (elapsed.Elapsed.TotalMilliseconds <= duration.TotalMilliseconds / 3) { startSum += fps; startCount++; }
+            if (elapsed.Elapsed.TotalMilliseconds >= duration.TotalMilliseconds * 2 / 3) { endSum += fps; endCount++; }
+        };
         profiler.Start();
 
         using var durationCts = new CancellationTokenSource(duration);
@@ -74,41 +83,30 @@ public static class SoakRunner
         if (history.Count == 0)
             return new SoakReport { Duration = duration, LoadError = loadError, LoadCompletedEarly = loadCompletedEarly };
 
-        double? AverageFps(IEnumerable<ProfilerSnapshot> s)
-        {
-            var values = s.Where(x => x.Fps.HasValue).Select(x => x.Fps!.Value).ToList();
-            return values.Count > 0 ? values.Average() : null;
-        }
-
-        var fpsHistory = history.Where(s => s.Fps.HasValue).ToList();
-        var third = Math.Max(1, fpsHistory.Count / 3);
-        var firstThird = fpsHistory.Take(third);
-        var lastThird = fpsHistory.Skip(Math.Max(0, fpsHistory.Count - third));
-        var avgStart = AverageFps(firstThird);
-        var avgEnd = AverageFps(lastThird);
-
-        var pss = history.Where(s => s.PssKb.HasValue).Select(s => s.PssKb!.Value).ToList();
-        var memoryGrowth = pss.Count > 1 ? pss[^1] - pss[0] : 0;
-        var thermalMax = history.Where(s => s.ThermalStatus.HasValue).Select(s => s.ThermalStatus!.Value).DefaultIfEmpty(0).Max();
+        var summary = profiler.Summary;
+        double? avgStart = startCount > 0 ? startSum / startCount : null;
+        double? avgEnd = endCount > 0 ? endSum / endCount : null;
+        var memoryGrowth = summary.MemoryGrowthKb ?? 0;
+        var thermalMax = summary.MaxThermalStatus ?? 0;
 
         var fpsDecay = avgStart.HasValue && avgEnd.HasValue ? avgStart - avgEnd : null;
 
         return new SoakReport
         {
             Duration = duration,
-            SampleCount = history.Count,
+            SampleCount = profiler.TotalSampleCount,
             AvgFpsStart = avgStart,
             AvgFpsEnd = avgEnd,
             FpsDecay = fpsDecay,
             MemoryGrowthKb = memoryGrowth,
-            JankyFrames = history.Sum(s => s.JankyFrames ?? 0),
+            JankyFrames = summary.JankyFrames,
             MaxThermalStatus = thermalMax,
             MemoryGrowthFlagged = memoryGrowth > MemoryGrowthFlagKb,
             FpsDecayFlagged = fpsDecay is > FpsDecayFlag,
             ThermalFlagged = thermalMax >= ThermalFlag,
             LoadError = loadError,
             LoadCompletedEarly = loadCompletedEarly,
-            HasSufficientData = history.Count(s => s.Fps.HasValue) >= 2 && history.Count(s => s.PssKb.HasValue) >= 2
+            HasSufficientData = summary.FpsSampleCount >= 2 && summary.MemorySampleCount >= 2 && avgStart.HasValue && avgEnd.HasValue
         };
     }
 }
