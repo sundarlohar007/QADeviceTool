@@ -28,6 +28,8 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     private readonly Queue<(FileTransfer Job, DeviceInfo Device, string Remote, string Local, bool Upload, string? BundleId)> _transferQueue = new();
     private bool _processingTransfers;
     private bool _reconcilingDevices;
+    private bool _isActive;
+    private bool _directoryLoaded;
     private int _disposed;
 
     [ObservableProperty]
@@ -167,10 +169,24 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
     private static bool SameDevice(DeviceInfo? a, DeviceInfo? b) => a != null && b != null &&
         a.Serial == b.Serial && a.Platform == b.Platform;
 
+    public void SetActive(bool active)
+    {
+        if (_isActive == active) return;
+        _isActive = active;
+        if (!active)
+        {
+            InvalidateLoad();
+            return;
+        }
+        if (!_directoryLoaded && SelectedDevice?.IsReady == true)
+            _ = LoadDirectoryAsync(CurrentPath);
+    }
+
     partial void OnSelectedDeviceChanged(DeviceInfo? value)
     {
         if (_reconcilingDevices) return;
         InvalidateLoad();
+        _directoryLoaded = false;
         _transferCts?.Cancel();
         while (_transferQueue.Count > 0) _transferQueue.Dequeue().Job.State = "Cancelled";
         _allFiles.Clear();
@@ -203,7 +219,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                 StatusMessage = $"[!] Device is {value.StatusText}.";
                 return;
             }
-            CurrentPath = "/";
+            CurrentPath = "/DCIM";
             PathInput = CurrentPath;
             StatusMessage = "Main list shows iOS AFC media files. Use App Documents below for eligible apps.";
         }
@@ -219,7 +235,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
             PathInput = CurrentPath;
         }
 
-        _ = LoadDirectoryAsync(CurrentPath);
+        if (_isActive) _ = LoadDirectoryAsync(CurrentPath);
     }
 
     partial void OnSelectedFileChanged(DeviceFile? value) => OnPropertyChanged(nameof(CanUseSelectedFile));
@@ -278,7 +294,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
             if (device.Platform == DevicePlatform.Android)
                 loadedFiles = await _adbService.ListDirectoryAsync(device.Serial, path);
             else
-                loadedFiles = await _iosService.ListDirectoryAsync(device.Serial, path);
+                loadedFiles = await _iosService.ListDirectoryAsync(device.Serial, path, token);
 
             token.ThrowIfCancellationRequested();
             _dispatcher.Post(() =>
@@ -300,6 +316,7 @@ public partial class FileExplorerViewModel : ObservableObject, IDisposable
                     _allFiles.Add(f);
 
                 CurrentPath = path;
+                _directoryLoaded = true;
                 PathInput = path;
                 SelectedFile = null;
                 UpdateBreadcrumbs(path);

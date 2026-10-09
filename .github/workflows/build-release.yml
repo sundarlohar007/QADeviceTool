@@ -46,6 +46,10 @@ jobs:
         run: dotnet build ${{ env.SOLUTION }} -c Release --no-restore
 
       - name: Test
+        # PRs are already covered by the CI workflow's Build & Test job. Run this
+        # gate on release branches, where the installer is actually published.
+        if: github.event_name != 'pull_request'
+        timeout-minutes: 10
         run: dotnet test ${{ env.TEST_PROJECT }} -c Release --no-build --verbosity normal
 
       - name: Determine Version

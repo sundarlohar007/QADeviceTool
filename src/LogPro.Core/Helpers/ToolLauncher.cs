@@ -11,6 +11,7 @@ public class ToolLauncherResult
     public string Output { get; set; } = string.Empty;
     public string Error { get; set; } = string.Empty;
     public int ExitCode { get; set; } = -1;
+    public bool OutputTruncated { get; set; }
 }
 
 public static class ToolLauncher
@@ -159,8 +160,11 @@ public static class ToolLauncher
 
     public static async Task<ToolLauncherResult> RunAsync(string exeName, string arguments, int timeoutMs = 15000,
         Action<string>? outputCallback = null, CancellationToken cancellationToken = default, bool forwardErrorToCallback = false,
-        bool hidePayloadInLogs = false, int? gateTimeoutMs = null)
+        bool hidePayloadInLogs = false, int? gateTimeoutMs = null, int maxCapturedOutputChars = MaxCapturedOutputChars,
+        bool suppressOutputLog = false)
     {
+        if (maxCapturedOutputChars < 1 || maxCapturedOutputChars > 32_000_000)
+            throw new ArgumentOutOfRangeException(nameof(maxCapturedOutputChars));
         var result = new ToolLauncherResult();
         var fullExePath = ResolveExecutablePath(exeName);
 
@@ -192,7 +196,7 @@ public static class ToolLauncher
         }
         using var gateLease = gate;
         Process? process = null;
-        Task outputTask = Task.CompletedTask;
+        Task<bool> outputTask = Task.FromResult(false);
         Task errorTask = Task.CompletedTask;
 
         try
@@ -212,7 +216,9 @@ public static class ToolLauncher
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8
             };
             ConfigureOfflineEnvironment(process.StartInfo);
             if (Path.GetFileNameWithoutExtension(fullExePath).Equals("scrcpy", StringComparison.OrdinalIgnoreCase))
@@ -224,8 +230,8 @@ public static class ToolLauncher
             var fullOutput = new System.Text.StringBuilder();
             var fullError = new System.Text.StringBuilder();
 
-            outputTask = DrainOutputAsync(process.StandardOutput, fullOutput, outputCallback);
-            errorTask = DrainOutputAsync(process.StandardError, fullError, forwardErrorToCallback ? outputCallback : null);
+            outputTask = DrainOutputAsync(process.StandardOutput, fullOutput, outputCallback, maxCapturedOutputChars);
+            errorTask = DrainOutputAsync(process.StandardError, fullError, forwardErrorToCallback ? outputCallback : null, MaxCapturedOutputChars);
 
             using var timeoutCts = new CancellationTokenSource(Math.Max(1, timeoutMs));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -251,6 +257,8 @@ public static class ToolLauncher
 
             await AwaitReaderAsync(outputTask).ConfigureAwait(false);
             await AwaitReaderAsync(errorTask).ConfigureAwait(false);
+            if (outputTask.IsCompletedSuccessfully)
+                result.OutputTruncated = outputTask.Result;
 
             if (cancelled)
             {
@@ -269,7 +277,7 @@ public static class ToolLauncher
 
             logger.Info($"[ToolLauncher] ExitCode: {result.ExitCode} | Success: {result.Success}");
 
-            if (!string.IsNullOrWhiteSpace(result.Output))
+            if (!suppressOutputLog && !string.IsNullOrWhiteSpace(result.Output))
                 logger.Debug(hidePayloadInLogs ? "[ToolLauncher] Deep link output hidden." : $"[ToolLauncher] STDOUT:\n{SecurityHelper.RedactSensitiveText(result.Output)}");
 
             if (!string.IsNullOrWhiteSpace(result.Error))
@@ -349,7 +357,6 @@ public static class ToolLauncher
             ConfigureOfflineEnvironment(process.StartInfo);
             if (Path.GetFileNameWithoutExtension(fullExePath).Equals("scrcpy", StringComparison.OrdinalIgnoreCase))
                 process.StartInfo.Environment["ADB"] = ToolResolver.Resolve("adb");
-            process.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
             process.EnableRaisingEvents = true;
             process.Exited += (_, _) =>
             {
@@ -430,24 +437,31 @@ public static class ToolLauncher
         startInfo.EnvironmentVariables["ADB_MDNS_AUTO_CONNECT"] = "0";
         startInfo.EnvironmentVariables["ADB_MDNS_OPENSCREEN"] = "0";
         startInfo.EnvironmentVariables["PYTHONNOUSERSITE"] = "1";
+        startInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
     }
 
-    private static async Task DrainOutputAsync(StreamReader reader, System.Text.StringBuilder buffer, Action<string>? callback)
+    private static async Task<bool> DrainOutputAsync(StreamReader reader, System.Text.StringBuilder buffer, Action<string>? callback, int maxCapturedChars)
     {
+        var truncated = false;
         try
         {
             while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
             {
-                if (buffer.Length < MaxCapturedOutputChars)
+                if (buffer.Length < maxCapturedChars)
                 {
-                    var remaining = MaxCapturedOutputChars - buffer.Length;
-                    buffer.AppendLine(line.Length <= remaining ? line : line[..remaining]);
+                    var remaining = maxCapturedChars - buffer.Length;
+                    var captured = Math.Min(line.Length, remaining);
+                    buffer.Append(line.AsSpan(0, captured));
+                    if (captured < line.Length) truncated = true;
+                    if (captured < remaining) buffer.AppendLine();
                 }
+                else truncated = true;
                 try { callback?.Invoke(line); } catch (Exception ex) { AppLogger.Log.Debug(ex, "[ToolLauncher] output callback failed"); }
             }
         }
         catch (ObjectDisposedException) { }
         catch (IOException) { }
+        return truncated;
     }
 
     private static async Task TerminateProcessAsync(Process process)
