@@ -215,6 +215,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _ => DashboardVM
         };
         DeviceVM.SetActive(ReferenceEquals(CurrentView, DeviceVM));
+        FileExplorerVM.SetActive(ReferenceEquals(CurrentView, FileExplorerVM));
         MacroVM.SetActive(ReferenceEquals(CurrentView, MacroVM));
         if (CurrentView is VitalsViewModel vvm2) vvm2.OnNavigatedTo();
         if (CurrentView is DashboardViewModel dashboard) dashboard.RefreshMirrorState();

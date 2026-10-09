@@ -9,6 +9,14 @@
 
 var joined = string.Join(' ', Environment.GetCommandLineArgs().Skip(1));
 
+if (joined == "--large-json")
+{
+    Console.Write("{\"payload\":\"");
+    Console.Write(new string('x', 1_200_000));
+    Console.WriteLine("\"}");
+    return 0;
+}
+
 if (joined.StartsWith("--production-stream", StringComparison.Ordinal))
 {
     Console.OutputEncoding = System.Text.Encoding.UTF8;

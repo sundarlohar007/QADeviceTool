@@ -1,7 +1,7 @@
 [
   {
     "path": "pymobiledevice3/pymobiledevice3.exe",
-    "sha256": "67f48302144866be5926c4eade2c68ba3184cd29ff3b14e2da470a09f14f79ca"
+    "sha256": "e77e466175a4ce209493d09a28ddbe6ddf5aa06a868116c54ed4d68d8b985116"
   },
   {
     "path": "scrcpy-win64-v3.3.4/AdbWinApi.dll",

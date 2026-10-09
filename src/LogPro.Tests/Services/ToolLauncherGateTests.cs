@@ -6,6 +6,33 @@ namespace LogPro.Tests.Services;
 public class ToolLauncherGateTests
 {
     [Fact]
+    public void OfflineProcessEnvironment_UsesUtf8ForPythonFallback()
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo();
+        ToolLauncher.ConfigureOfflineEnvironment(startInfo);
+        startInfo.Environment["PYTHONIOENCODING"].Should().Be("utf-8");
+    }
+
+    [Fact]
+    public async Task LargeStructuredOutput_IsCompleteWhenCallerRequestsLargerLimit()
+    {
+        var fake = Path.Combine(AppContext.BaseDirectory, "adb.exe");
+        var result = await ToolLauncher.RunAsync(fake, "--large-json", maxCapturedOutputChars: 2_000_000);
+        result.Success.Should().BeTrue();
+        result.OutputTruncated.Should().BeFalse();
+        using var document = System.Text.Json.JsonDocument.Parse(result.Output);
+        document.RootElement.GetProperty("payload").GetString()!.Length.Should().Be(1_200_000);
+    }
+
+    [Fact]
+    public async Task DefaultCaptureLimit_ReportsTruncationInsteadOfSilentSuccess()
+    {
+        var fake = Path.Combine(AppContext.BaseDirectory, "adb.exe");
+        var result = await ToolLauncher.RunAsync(fake, "--large-json");
+        result.OutputTruncated.Should().BeTrue();
+    }
+
+    [Fact]
     public void QuoteArgument_EscapesTrailingSlashAndEmbeddedQuote()
     {
         ToolLauncher.QuoteArgument(@"C:\dir\").Should().Be("\"C:\\dir\\\\\"");

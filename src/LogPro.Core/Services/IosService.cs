@@ -50,6 +50,8 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
     private const int InfoTimeoutMs = 45000;
     private const int InstallTimeoutMs = 600000;
     private const int CliProbeTimeoutMs = 45000;
+    private const int AppListCaptureChars = 16_000_000;
+    private const string UnicodeProbeText = "LogPro Unicode: \u202f \ud83d\udcf1 \u65e5\u672c\u8a9e";
 
     private static async Task<ToolSelection> SelectToolAsync()
     {
@@ -61,9 +63,10 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
         ToolLauncherResult? bundledProbe = null;
         if (bundled != null)
         {
-            bundledProbe = await ToolLauncher.RunAsync(bundled, "--no-color syslog live --help", CliProbeTimeoutMs).ConfigureAwait(false);
-            if (bundledProbe.Success)
+            bundledProbe = await ToolLauncher.RunAsync(bundled, "--logpro-encoding-check", CliProbeTimeoutMs).ConfigureAwait(false);
+            if (bundledProbe.Success && bundledProbe.Output == UnicodeProbeText && bundledProbe.Error == UnicodeProbeText)
                 return new ToolSelection(bundled, false, $"bundled ({bundled})", bundledProbe);
+            bundledProbe = new ToolLauncherResult { Error = "Bundled iOS runtime failed its Unicode check. Rebuild or repair LogPro to restore reliable iOS logging." };
         }
         if (systemPython != null)
         {
@@ -106,7 +109,8 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
     private static string Quote(string s) => ToolLauncher.QuoteArgument(s);
 
     private async Task<ToolLauncherResult> RunAsync(string? udid, string subcommand, int timeoutMs = DefaultTimeoutMs,
-        Action<string>? outputCallback = null, CancellationToken cancellationToken = default, bool forwardErrorToCallback = false)
+        Action<string>? outputCallback = null, CancellationToken cancellationToken = default, bool forwardErrorToCallback = false,
+        int maxCapturedOutputChars = 1_000_000, bool suppressOutputLog = false)
     {
         if (udid != null && !SecurityHelper.IsValidOfflineDeviceSelector(udid))
             return new ToolLauncherResult { Success = false, Error = "Blocked by LogPro offline security policy." };
@@ -116,7 +120,9 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
         var tool = await GetToolAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         if (!tool.ProbeResult.Success) return tool.ProbeResult;
-        return await ToolLauncher.RunAsync(tool.Exe, BuildCommandArgs(tool.IsModuleInvocation, udid, subcommand), timeoutMs, outputCallback, cancellationToken, forwardErrorToCallback).ConfigureAwait(false);
+        return await ToolLauncher.RunAsync(tool.Exe, BuildCommandArgs(tool.IsModuleInvocation, udid, subcommand), timeoutMs,
+            outputCallback, cancellationToken, forwardErrorToCallback, maxCapturedOutputChars: maxCapturedOutputChars,
+            suppressOutputLog: suppressOutputLog).ConfigureAwait(false);
     }
 
     private static string GetFailureMessage(ToolLauncherResult result)
@@ -359,15 +365,24 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
             return (false, "Invalid device or output path.");
         try
         {
-            // developer screenshot uses the deprecated lockdown screenshot service — works without DeveloperDiskImage.
+            // The CLI may report exit 0 even when the developer service or tunnel fails.
             var result = await RunAsync(udid, $"developer screenshot {Quote(outputPath)}", DefaultTimeoutMs).ConfigureAwait(false);
             if (result.Success && File.Exists(outputPath)) return (true, "Screenshot saved.");
-            var error = GetFailureMessage(result);
-            if (error.Contains("Developer", StringComparison.OrdinalIgnoreCase))
-                return (false, "iOS screenshot requires Developer Mode and possibly a mounted Developer Disk Image.");
-            return (false, result.Success ? "Screenshot command succeeded but produced no image." : $"iOS screenshot failed: {error}");
+            return (false, GetScreenshotFailureMessage(result));
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] CaptureScreenshotAsync failed"); return (false, ex.Message); }
+    }
+
+    internal static string GetScreenshotFailureMessage(ToolLauncherResult result)
+    {
+        var diagnostic = result.Error + "\n" + result.Output;
+        if (diagnostic.Contains("tunneld", StringComparison.OrdinalIgnoreCase) ||
+            diagnostic.Contains("InvalidServiceError", StringComparison.OrdinalIgnoreCase))
+            return "iOS screenshot needs a working USB developer tunnel. Unlock and trust the iPhone, enable Developer Mode, and start the pymobiledevice3 tunnel service before retrying.";
+        if (diagnostic.Contains("Developer", StringComparison.OrdinalIgnoreCase))
+            return "iOS screenshot requires Developer Mode and possibly a mounted Developer Disk Image.";
+        var error = GetFailureMessage(result);
+        return result.Success ? "Screenshot command succeeded but produced no image." : $"iOS screenshot failed: {error}";
     }
 
     public Task<(bool Success, string Message)> InstallIpaAsync(string udid, string ipaPath, Action<string>? outputCallback = null)
@@ -393,11 +408,20 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
         var apps = new List<AppItem>();
         try
         {
-            var result = await RunAsync(udid, "apps list", DefaultTimeoutMs).ConfigureAwait(false);
-            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return apps;
+            var result = await RunAsync(udid, "apps list", DefaultTimeoutMs,
+                maxCapturedOutputChars: AppListCaptureChars, suppressOutputLog: true).ConfigureAwait(false);
+            if (result.OutputTruncated) throw new IOException("iOS app list exceeded the supported response size.");
+            if (!result.Success) throw new IOException($"iOS app list failed: {GetFailureMessage(result)}");
+            if (string.IsNullOrWhiteSpace(result.Output)) return apps;
             apps = ParseAppsList(result.Output);
+            if (apps.Count == 0 && result.Output.Trim() is not "{}")
+                throw new IOException("Could not parse the iOS app list.");
         }
-        catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] ListInstalledAppsAsync failed"); }
+        catch (Exception ex)
+        {
+            AppLogger.Log.Error(ex, "[IosService] ListInstalledAppsAsync failed");
+            throw;
+        }
         return apps.OrderBy(a => a.Name).ToList();
     }
 
@@ -411,7 +435,10 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
             foreach (var (type, category) in new[] {
                 ("User", AppCategory.User), ("System", AppCategory.System), ("Hidden", AppCategory.Hidden) })
             {
-                var result = await RunAsync(udid, $"apps list --type {type}", DefaultTimeoutMs).ConfigureAwait(false);
+                var result = await RunAsync(udid, $"apps list --type {type}", DefaultTimeoutMs,
+                    maxCapturedOutputChars: AppListCaptureChars, suppressOutputLog: true).ConfigureAwait(false);
+                if (result.OutputTruncated)
+                    return AppInventoryResult.Failed($"The iOS {type.ToLowerInvariant()} app list exceeded the supported response size.");
                 if (!result.Success)
                     return AppInventoryResult.Failed(GetFailureMessage(result));
                 if (string.IsNullOrWhiteSpace(result.Output)) continue;
@@ -511,13 +538,17 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] UninstallAppAsync failed"); return false; }
     }
 
-    public async Task<List<DeviceFile>> ListDirectoryAsync(string udid, string path)
+    public Task<List<DeviceFile>> ListDirectoryAsync(string udid, string path)
+        => ListDirectoryAsync(udid, path, CancellationToken.None);
+
+    public async Task<List<DeviceFile>> ListDirectoryAsync(string udid, string path, CancellationToken cancellationToken)
     {
         if (!SecurityHelper.IsValidOfflineDeviceSelector(udid) || !IsSafePath(path)) return new List<DeviceFile>();
         var files = new List<DeviceFile>();
         try
         {
-            var result = await RunAsync(udid, $"afc ls {Quote(path)}", DefaultTimeoutMs).ConfigureAwait(false);
+            var result = await RunAsync(udid, $"afc ls {Quote(path)}", path == "/" ? 10000 : DefaultTimeoutMs,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
             if (!result.Success)
                 throw new IOException($"iOS AFC could not list {path}: {GetFailureMessage(result)}");
             if (string.IsNullOrWhiteSpace(result.Output)) return files;
@@ -593,7 +624,7 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
             var target = isDirectory ? localPath : localPath + ".logpro-part-" + Guid.NewGuid().ToString("N");
             try
             {
-                var result = await RunAsync(udid, $"afc pull {Quote(remotePath)} {Quote(target)}", 300000, cancellationToken: cancellationToken).ConfigureAwait(false);
+                var result = await RunAsync(udid, BuildAfcPullCommand(remotePath, target), 300000, cancellationToken: cancellationToken).ConfigureAwait(false);
                 if (!result.Success) return false;
                 if (isDirectory) return Directory.Exists(Path.Combine(localPath, Path.GetFileName(remotePath.TrimEnd('/'))));
                 if (!File.Exists(target)) return false;
@@ -604,6 +635,9 @@ public class IosService : ICancellableDeviceQueries, IIosDocumentTransfers, IIos
         }
         catch (Exception ex) { AppLogger.Log.Error(ex, "[IosService] PullFileAsync failed"); return false; }
     }
+
+    internal static string BuildAfcPullCommand(string remotePath, string localPath)
+        => $"afc pull --ignore-errors {Quote(remotePath)} {Quote(localPath)}";
 
     public async Task<bool> PushFileAsync(string udid, string localPath, string remotePath)
         => await PushFileAsync(udid, localPath, remotePath, CancellationToken.None);

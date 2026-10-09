@@ -8,6 +8,64 @@ namespace LogPro.Tests.ViewModels;
 public class FileExplorerWorkflowTests
 {
     [Fact]
+    public void InactiveFileExplorer_DoesNotQueryDeviceAtStartup()
+    {
+        var context = Create(new List<DeviceInfo> { Android("A") });
+        using var vm = context.Vm;
+        context.Adb.Verify(x => x.ListDirectoryAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task OpeningFileExplorer_LoadsItsCurrentDirectory()
+    {
+        var context = Create(new List<DeviceInfo> { Android("A") });
+        using var vm = context.Vm;
+        vm.SetActive(true);
+        await vm.LoadDirectoryCommand.ExecuteAsync(vm.CurrentPath);
+        context.Adb.Verify(x => x.ListDirectoryAsync("A", "/sdcard/"), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void IosFileExplorer_StartsAtAccessibleMediaFolderWithoutHiddenQuery()
+    {
+        var ios = new Mock<IIosService>();
+        var monitor = new Mock<IDeviceMonitorService>();
+        monitor.Setup(x => x.CurrentDevices).Returns(new List<DeviceInfo> { new()
+        {
+            Serial = "IOS_A", Platform = DevicePlatform.iOS,
+            ConnectionState = DeviceConnectionState.Online
+        } });
+        using var vm = new FileExplorerViewModel(new Mock<IAdbService>().Object,
+            ios.Object, monitor.Object, new ImmediateUiDispatcher());
+        vm.CurrentPath.Should().Be("/DCIM");
+        ios.Verify(x => x.ListDirectoryAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public void LeavingFileExplorer_CancelsActiveIosDirectoryQuery()
+    {
+        var ios = new Mock<IIosService>();
+        var pending = new TaskCompletionSource<List<DeviceFile>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken queryToken = default;
+        ios.Setup(x => x.ListDirectoryAsync("IOS_A", "/DCIM", It.IsAny<CancellationToken>()))
+            .Callback<string, string, CancellationToken>((_, _, token) => queryToken = token)
+            .Returns(pending.Task);
+        var monitor = new Mock<IDeviceMonitorService>();
+        monitor.Setup(x => x.CurrentDevices).Returns(new List<DeviceInfo> { new()
+        {
+            Serial = "IOS_A", Platform = DevicePlatform.iOS,
+            ConnectionState = DeviceConnectionState.Online
+        } });
+        using var vm = new FileExplorerViewModel(new Mock<IAdbService>().Object,
+            ios.Object, monitor.Object, new ImmediateUiDispatcher());
+        vm.SetActive(true);
+        queryToken.CanBeCanceled.Should().BeTrue();
+        vm.SetActive(false);
+        queryToken.IsCancellationRequested.Should().BeTrue();
+        pending.SetResult(new List<DeviceFile>());
+    }
+
+    [Fact]
     public async Task ReconnectingDevice_DisablesTransferAndDirectoryQueries()
     {
         var context = Create(new List<DeviceInfo> { Android("A") });

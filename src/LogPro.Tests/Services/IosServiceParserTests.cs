@@ -10,6 +10,25 @@ namespace LogPro.Tests.Services;
 public class IosServiceParserTests
 {
     [Fact]
+    public void AfcPullCommand_UsesPinnedCliRequiredFlag()
+    {
+        IosService.BuildAfcPullCommand("/DCIM/photo.jpg", @"C:\photo.jpg")
+            .Should().Contain("afc pull --ignore-errors ");
+    }
+
+    [Fact]
+    public void ScreenshotFailure_ExplainsMissingDeveloperTunnelEvenOnZeroExit()
+    {
+        var result = new LogPro.Helpers.ToolLauncherResult
+        {
+            Success = true,
+            ExitCode = 0,
+            Error = "InvalidServiceError: cannot connect to tunneld"
+        };
+        IosService.GetScreenshotFailureMessage(result).Should().Contain("tunnel");
+    }
+
+    [Fact]
     public void ParseLockdownInfo_JsonForm_PopulatesAllFields()
     {
         var device = new DeviceInfo();
