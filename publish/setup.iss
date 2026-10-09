@@ -33,6 +33,9 @@ RestartApplications=no
 CloseApplicationsFilter=LogPro.exe
 AppMutex=LogProRunning
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; A clean replacement must create its own uninstaller instead of appending to
+; the old install log, which the registered previous uninstaller removes.
+UninstallLogMode=new
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

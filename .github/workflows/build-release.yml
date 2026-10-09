@@ -254,7 +254,12 @@ jobs:
           try {
             $registeredPath = [IO.Path]::GetFullPath([string]$registered.GetValue('InstallLocation')).TrimEnd('\')
             if ($registeredPath -ne [IO.Path]::GetFullPath($target).TrimEnd('\')) { throw 'Uninstall entry points to the wrong installation' }
-            if (-not (Test-Path -LiteralPath ([string]$registered.GetValue('UninstallString')).Trim('"') -PathType Leaf)) { throw 'Replacement uninstaller is missing' }
+            $uninstallCommand = [string]$registered.GetValue('UninstallString')
+            $uninstallExe = $uninstallCommand.Trim('"')
+            if (-not (Test-Path -LiteralPath $uninstallExe -PathType Leaf)) {
+              $present = @(Get-ChildItem -LiteralPath $target -File -Filter 'unins*.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+              throw "Replacement uninstaller is missing. Registered: $uninstallCommand; present: $($present -join ', ')"
+            }
           } finally { $registered.Dispose() }
           $verify = Start-Process -FilePath (Join-Path $target "LogPro.exe") -ArgumentList '--verify-installation' -WindowStyle Hidden -Wait -PassThru
           if ($verify.ExitCode -ne 0) { throw "Replacement installation failed integrity verification" }
